@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import { UserCouponsList } from "@/components/dashboard/user-coupons-list"
 import { AvailableCouponCard } from "@/components/dashboard/available-coupon-card"
+import { CouponFiltersClient } from "@/components/dashboard/coupon-filters-client"
 
 export default async function PartnersPage() {
   const session = await auth()
@@ -10,6 +11,13 @@ export default async function PartnersPage() {
   if (!session?.user?.id) {
     redirect("/auth/login")
   }
+
+  // Obtener todas las marcas activas para los filtros
+  const { data: allPartners } = await supabaseAdmin
+    .from("partners")
+    .select("id, name, logo_url, category, website_url, discount_percentage, discount_description, cover_image_url, terms_and_conditions")
+    .eq("is_active", true)
+    .order("name")
 
   // Obtener cupones asignados al usuario
   const { data: userCoupons } = await supabaseAdmin
@@ -98,7 +106,7 @@ export default async function PartnersPage() {
     <div className="max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-4xl font-heading text-zinc-900 mb-2">Aliados</h1>
+        <h1 className="text-4xl uppercase font-heading text-zinc-900 mb-2">Aliados</h1>
         <p className="text-zinc-600">
           Genera cupones de descuento exclusivos para usar en nuestras marcas aliadas
         </p>
@@ -108,7 +116,7 @@ export default async function PartnersPage() {
         {/* Mis Cupones */}
         {userCoupons && userCoupons.length > 0 && (
           <div>
-            <h2 className="text-2xl font-heading text-zinc-900 mb-4">Mis Cupones</h2>
+            <h2 className="text-2xl uppercase font-heading text-zinc-900 mb-4">Mis Cupones</h2>
             <UserCouponsList coupons={userCoupons} />
           </div>
         )}
@@ -116,37 +124,20 @@ export default async function PartnersPage() {
         {/* Cupones Disponibles */}
         <div>
           <div className="mb-4">
-            <h2 className="text-2xl font-heading text-zinc-900 mb-1">
+            <h2 className="text-2xl uppercase font-heading text-zinc-900 mb-1">
               Cupones Disponibles
             </h2>
             <p className="text-sm text-zinc-600">
               Obtén cupones exclusivos de nuestras marcas aliadas
             </p>
           </div>
-          
-          {campaignsWithUserCount && campaignsWithUserCount.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {campaignsWithUserCount.map((coupon, index) => (
-                <AvailableCouponCard 
-                  key={`${coupon.partner.id}-${index}`}
-                  coupon={coupon}
-                  userId={session.user.id}
-                  availableCount={coupon.available_count}
-                  userObtainedCount={coupon.user_obtained_count}
-                  maxPerUser={coupon.max_per_user}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl p-12 shadow-sm border border-zinc-200 text-center">
-              <p className="text-zinc-600">
-                No hay cupones disponibles en este momento.
-              </p>
-              <p className="text-sm text-zinc-500 mt-2">
-                Vuelve pronto para ver nuevas ofertas
-              </p>
-            </div>
-          )}
+
+          {/* Componente de filtros con estado del cliente */}
+          <CouponFiltersClient
+            partners={allPartners || []}
+            campaigns={campaignsWithUserCount || []}
+            userId={session.user.id}
+          />
         </div>
       </div>
     </div>

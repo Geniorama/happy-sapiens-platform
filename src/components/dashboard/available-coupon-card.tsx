@@ -128,8 +128,8 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
 
           {/* Título sobre la imagen */}
           <div className="absolute bottom-3 left-3 right-3">
-            <p className="text-xs text-white/90 mb-1 drop-shadow-lg">{coupon.partner.name}</p>
-            <h3 className="font-heading text-lg text-white drop-shadow-lg">
+            <p className="text-sm text-white/90 mb-1 drop-shadow-lg">{coupon.partner.name}</p>
+            <h3 className="font-heading uppercase text-lg text-white drop-shadow-lg">
               {couponTitle}
             </h3>
           </div>
@@ -141,8 +141,8 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
         <div className="w-full h-48 bg-gradient-to-br from-primary/10 to-secondary/20 flex items-center justify-center p-6">
           <div className="text-center">
             <Ticket className="w-12 h-12 text-primary/40 mx-auto mb-2" strokeWidth={1} />
-            <p className="text-xs text-zinc-600">{coupon.partner.name}</p>
-            <h3 className="font-heading text-lg text-zinc-900">{couponTitle}</h3>
+            <p className="text-sm text-zinc-600">{coupon.partner.name}</p>
+            <h3 className="font-heading uppercase text-lg text-zinc-900">{couponTitle}</h3>
           </div>
         </div>
       )}
