@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 
-export async function assignCoupon(partnerId: string) {
+export async function assignCoupon(partnerId: string, campaignTitle?: string | null, campaignDescription?: string | null) {
   const session = await auth()
 
   if (!session?.user?.id) {
@@ -12,25 +12,22 @@ export async function assignCoupon(partnerId: string) {
   }
 
   try {
-    // Verificar si el usuario ya tiene un cupón asignado para esta marca
-    const { data: existingCoupon } = await supabaseAdmin
-      .from("coupons")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .eq("partner_id", partnerId)
-      .eq("is_assigned", true)
-      .maybeSingle()
-
-    if (existingCoupon) {
-      return { error: "Ya tienes un cupón asignado para esta marca" }
-    }
-
-    // Buscar un cupón disponible para esta marca
-    const { data: availableCoupon, error: fetchError } = await supabaseAdmin
+    // Buscar un cupón disponible para esta campaña específica
+    let query = supabaseAdmin
       .from("coupons")
       .select("*")
       .eq("partner_id", partnerId)
       .eq("is_assigned", false)
+
+    // Filtrar por campaña (title + description)
+    if (campaignTitle !== undefined) {
+      query = query.eq("title", campaignTitle)
+    }
+    if (campaignDescription !== undefined) {
+      query = query.eq("description", campaignDescription)
+    }
+
+    const { data: availableCoupon, error: fetchError } = await query
       .limit(1)
       .maybeSingle()
 
@@ -40,7 +37,31 @@ export async function assignCoupon(partnerId: string) {
     }
 
     if (!availableCoupon) {
-      return { error: "No hay cupones disponibles para esta marca en este momento" }
+      return { error: "No hay cupones disponibles para esta campaña" }
+    }
+
+    // Verificar límite por usuario de esta campaña
+    if (availableCoupon.max_per_user !== null) {
+      // Contar cuántos cupones de esta campaña ya tiene el usuario
+      let countQuery = supabaseAdmin
+        .from("coupons")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", session.user.id)
+        .eq("partner_id", partnerId)
+        .eq("is_assigned", true)
+
+      if (campaignTitle !== undefined) {
+        countQuery = countQuery.eq("title", campaignTitle)
+      }
+      if (campaignDescription !== undefined) {
+        countQuery = countQuery.eq("description", campaignDescription)
+      }
+
+      const { count } = await countQuery
+
+      if (count !== null && count >= availableCoupon.max_per_user) {
+        return { error: `Ya obtuviste el máximo de ${availableCoupon.max_per_user} cupones de esta campaña` }
+      }
     }
 
     // Asignar el cupón al usuario

@@ -7,6 +7,9 @@ import { markCouponAsUsed } from "@/app/dashboard/partners/actions"
 interface Coupon {
   id: string
   coupon_code: string
+  title: string | null
+  description: string | null
+  cover_image_url: string | null
   is_assigned: boolean
   assigned_at: string
   used_at: string | null
@@ -16,6 +19,7 @@ interface Coupon {
     name: string
     website_url: string | null
     discount_description: string | null
+    cover_image_url: string | null
   }
 }
 
@@ -73,29 +77,66 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
         const StatusIcon = statusInfo.icon
         const isActive = !coupon.used_at && 
           (!coupon.expires_at || new Date(coupon.expires_at) > new Date())
+        
+        // Usar imagen del cupón, si no existe usar la de la marca
+        const coverImage = coupon.cover_image_url || coupon.partner.cover_image_url
+        const couponTitle = coupon.title || coupon.partner.name
+        const couponDescription = coupon.description || coupon.partner.discount_description
 
         return (
           <div
             key={coupon.id}
-            className="bg-white rounded-xl p-6 shadow-sm border border-zinc-200"
+            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-zinc-200"
           >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="font-heading text-lg text-zinc-900 mb-1">
-                  {coupon.partner.name}
-                </h3>
-                {coupon.partner.discount_description && (
-                  <p className="text-sm text-zinc-600">
-                    {coupon.partner.discount_description}
-                  </p>
-                )}
+            {/* Imagen de Portada */}
+            {coverImage && (
+              <div className="relative w-full h-32 bg-zinc-100">
+                <img
+                  src={coverImage}
+                  alt={couponTitle}
+                  className="w-full h-full object-cover"
+                />
+                {/* Overlay gradiente */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent" />
+                
+                {/* Badge de estado sobre la imagen */}
+                <span className={`absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color} backdrop-blur-sm`}>
+                  <StatusIcon className="w-3 h-3" strokeWidth={2} />
+                  {statusInfo.label}
+                </span>
+
+                {/* Título sobre la imagen */}
+                <div className="absolute bottom-3 left-3 right-3">
+                  <h3 className="font-heading text-lg text-white mb-1 drop-shadow-lg">
+                    {couponTitle}
+                  </h3>
+                </div>
               </div>
-              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
-                <StatusIcon className="w-3 h-3" strokeWidth={2} />
-                {statusInfo.label}
-              </span>
-            </div>
+            )}
+
+            {/* Contenido */}
+            <div className="p-6">
+              {/* Header (si no hay imagen) */}
+              {!coverImage && (
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="font-heading text-lg text-zinc-900 mb-1">
+                      {couponTitle}
+                    </h3>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
+                    <StatusIcon className="w-3 h-3" strokeWidth={2} />
+                    {statusInfo.label}
+                  </span>
+                </div>
+              )}
+
+              {/* Descripción */}
+              {couponDescription && (
+                <p className="text-sm text-zinc-600 mb-4">
+                  {couponDescription}
+                </p>
+              )}
 
             {/* Código de cupón */}
             <div className="bg-secondary/20 rounded-lg p-4 mb-4">
@@ -179,6 +220,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                 </button>
               </div>
             )}
+            </div>
           </div>
         )
       })}

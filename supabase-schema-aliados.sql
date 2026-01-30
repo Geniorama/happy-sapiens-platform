@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS partners (
   name TEXT NOT NULL,
   description TEXT,
   logo_url TEXT,
+  cover_image_url TEXT, -- Imagen de portada humanizada
   website_url TEXT,
   category TEXT, -- deportes, nutricion, tecnologia, etc
   discount_percentage INTEGER, -- porcentaje de descuento que ofrece
@@ -25,6 +26,10 @@ CREATE TABLE IF NOT EXISTS coupons (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
   coupon_code TEXT NOT NULL UNIQUE,
+  title TEXT, -- Título personalizado del cupón (opcional)
+  description TEXT, -- Descripción específica del cupón (opcional)
+  cover_image_url TEXT, -- Imagen de portada del cupón (opcional, si no se usa la de la marca)
+  max_per_user INTEGER DEFAULT NULL, -- Límite de cupones por usuario (NULL = sin límite)
   is_assigned BOOLEAN DEFAULT false,
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   assigned_at TIMESTAMPTZ,
@@ -79,11 +84,12 @@ CREATE POLICY "Usuarios pueden actualizar sus propios cupones"
   USING (auth.uid()::text = user_id::text);
 
 -- Insertar marcas aliadas de ejemplo
-INSERT INTO partners (name, description, logo_url, website_url, category, discount_percentage, discount_description, terms_and_conditions) VALUES
+INSERT INTO partners (name, description, logo_url, cover_image_url, website_url, category, discount_percentage, discount_description, terms_and_conditions) VALUES
   (
     'Nike',
     'Marca líder en ropa y calzado deportivo',
     NULL,
+    'https://images.unsplash.com/photo-1556906781-9a412961c28c?w=800&h=400&fit=crop',
     'https://www.nike.com',
     'deportes',
     15,
@@ -94,6 +100,7 @@ INSERT INTO partners (name, description, logo_url, website_url, category, discou
     'Under Armour',
     'Ropa deportiva de alto rendimiento',
     NULL,
+    'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&h=400&fit=crop',
     'https://www.underarmour.com',
     'deportes',
     20,
@@ -104,6 +111,7 @@ INSERT INTO partners (name, description, logo_url, website_url, category, discou
     'MyProtein',
     'Suplementos deportivos y nutrición',
     NULL,
+    'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=800&h=400&fit=crop',
     'https://www.myprotein.com',
     'nutricion',
     25,
@@ -114,6 +122,7 @@ INSERT INTO partners (name, description, logo_url, website_url, category, discou
     'Garmin',
     'Relojes y dispositivos deportivos',
     NULL,
+    'https://images.unsplash.com/photo-1551958219-acbc608c6377?w=800&h=400&fit=crop',
     'https://www.garmin.com',
     'tecnologia',
     10,
@@ -124,6 +133,7 @@ INSERT INTO partners (name, description, logo_url, website_url, category, discou
     'Decathlon',
     'Todo para el deporte y actividades al aire libre',
     NULL,
+    'https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=800&h=400&fit=crop',
     'https://www.decathlon.com',
     'deportes',
     15,

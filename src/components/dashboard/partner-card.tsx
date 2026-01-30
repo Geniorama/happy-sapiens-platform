@@ -9,6 +9,7 @@ interface Partner {
   name: string
   description: string | null
   logo_url: string | null
+  cover_image_url: string | null
   website_url: string | null
   category: string | null
   discount_percentage: number | null
@@ -51,21 +52,37 @@ export function PartnerCard({ partner }: PartnerCardProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-zinc-200 flex flex-col">
-      {/* Logo/Icono */}
-      <div className="mb-4">
-        {partner.logo_url ? (
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-zinc-200 flex flex-col">
+      {/* Imagen de Portada */}
+      {partner.cover_image_url ? (
+        <div className="relative w-full h-48 bg-zinc-100">
           <img
-            src={partner.logo_url}
+            src={partner.cover_image_url}
             alt={partner.name}
-            className="h-12 w-auto object-contain"
+            className="w-full h-full object-cover"
           />
-        ) : (
-          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Gift className="w-6 h-6 text-primary" strokeWidth={1.5} />
-          </div>
-        )}
-      </div>
+          {/* Overlay gradiente */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent" />
+          
+          {/* Logo sobre la imagen */}
+          {partner.logo_url && (
+            <div className="absolute bottom-4 left-4 w-16 h-16 bg-white rounded-xl p-2 shadow-lg">
+              <img
+                src={partner.logo_url}
+                alt={partner.name}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="w-full h-48 bg-gradient-to-br from-primary/10 to-secondary/20 flex items-center justify-center">
+          <Gift className="w-16 h-16 text-primary/40" strokeWidth={1} />
+        </div>
+      )}
+
+      {/* Contenido */}
+      <div className="p-6 flex flex-col flex-grow">
 
       {/* Categoría */}
       {partner.category && (
@@ -147,6 +164,7 @@ export function PartnerCard({ partner }: PartnerCardProps) {
           <p className="text-xs text-zinc-600">{partner.terms_and_conditions}</p>
         </div>
       )}
+      </div>
     </div>
   )
 }
