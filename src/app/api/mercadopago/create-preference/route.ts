@@ -3,7 +3,7 @@ import { preferenceClient, SUBSCRIPTION_PLAN } from '@/lib/mercadopago'
 
 export async function POST(req: Request) {
   try {
-    const { userEmail, userName, userPassword } = await req.json()
+    const { userEmail, userName, userPassword, referralCode } = await req.json()
 
     if (!userEmail || !userName || !userPassword) {
       return NextResponse.json(
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
           user_name: userName,
           user_password: userPassword,
           subscription_type: 'monthly',
+          referral_code: referralCode || null,
         },
       },
     })

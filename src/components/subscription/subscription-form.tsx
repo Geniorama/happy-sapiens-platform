@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Check } from "lucide-react"
 import { SUBSCRIPTION_PLAN } from "@/lib/mercadopago"
 
@@ -11,8 +12,18 @@ declare global {
 }
 
 export function SubscriptionForm() {
+  const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [referralCode, setReferralCode] = useState<string>("")
+
+  useEffect(() => {
+    // Capturar código de referido de la URL
+    const refCode = searchParams.get("ref")
+    if (refCode) {
+      setReferralCode(refCode.toUpperCase())
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -24,6 +35,7 @@ export function SubscriptionForm() {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
     const confirmPassword = formData.get("confirmPassword") as string
+    const refCode = formData.get("referralCode") as string
 
     // Validaciones
     if (password !== confirmPassword) {
@@ -49,6 +61,7 @@ export function SubscriptionForm() {
           userName: name,
           userEmail: email,
           userPassword: password,
+          referralCode: refCode || null,
         }),
       })
 
@@ -180,6 +193,30 @@ export function SubscriptionForm() {
               className="w-full px-4 py-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               placeholder="••••••••"
             />
+          </div>
+
+          <div>
+            <label
+              htmlFor="referralCode"
+              className="block text-sm font-medium mb-2"
+            >
+              Código de referido (opcional)
+            </label>
+            <input
+              id="referralCode"
+              name="referralCode"
+              type="text"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+              maxLength={8}
+              className="w-full px-4 py-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent uppercase font-mono"
+              placeholder="ABC12345"
+            />
+            {referralCode && (
+              <p className="mt-1 text-xs text-green-600">
+                ✓ Código de referido aplicado
+              </p>
+            )}
           </div>
 
           <button

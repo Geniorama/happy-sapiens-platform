@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import { Calendar, Mail, Hash, Check, Sparkles } from "lucide-react"
 import { ProfileForm } from "@/components/dashboard/profile-form"
+import { AvatarUpload } from "@/components/dashboard/avatar-upload"
+import { ReferralCode } from "@/components/dashboard/referral-code"
 
 export default async function ProfilePage() {
   const session = await auth()
@@ -16,6 +18,13 @@ export default async function ProfilePage() {
     .from("users")
     .select("*")
     .eq("id", session.user.id)
+    .single()
+
+  // Obtener estadísticas de referidos
+  const { data: referralStats } = await supabaseAdmin
+    .from("referral_stats")
+    .select("*")
+    .eq("user_id", session.user.id)
     .single()
 
   const subscriptionStatusLabels: Record<string, { label: string; color: string }> = {
@@ -37,28 +46,14 @@ export default async function ProfilePage() {
       </div>
 
       <div className="space-y-6">
-        {/* Avatar */}
+        {/* Avatar y carga de imagen */}
         <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-              {session.user.image ? (
-                <img
-                  src={session.user.image}
-                  alt="Avatar"
-                  className="w-20 h-20 rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-primary font-heading text-3xl">
-                  {session.user.name?.charAt(0)?.toUpperCase() || "U"}
-                </span>
-              )}
-            </div>
-            <div>
-              <p className="text-sm text-zinc-500 mb-1">Tu avatar</p>
-              <p className="text-zinc-900 font-medium">{session.user.name || "Sin nombre"}</p>
-              <p className="text-sm text-zinc-600">{session.user.email}</p>
-            </div>
-          </div>
+          <h2 className="text-2xl font-heading text-zinc-900 mb-6">Foto de Perfil</h2>
+          <AvatarUpload 
+            currentImage={user?.image}
+            userName={session.user.name}
+            userId={session.user.id}
+          />
         </div>
 
         {/* Formulario de Información Personal */}
@@ -110,6 +105,14 @@ export default async function ProfilePage() {
             </div>
           </div>
         </div>
+
+        {/* Código de Referido */}
+        {user?.referral_code && (
+          <ReferralCode 
+            referralCode={user.referral_code}
+            referralStats={referralStats}
+          />
+        )}
 
         {/* Información de Suscripción */}
         <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">

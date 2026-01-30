@@ -26,10 +26,26 @@ export async function POST(req: Request) {
         const userEmail = payment.metadata?.user_email as string
         const userName = payment.metadata?.user_name as string
         const userPassword = payment.metadata?.user_password as string
+        const referralCode = payment.metadata?.referral_code as string | null
 
         if (!userEmail || !userName || !userPassword) {
           console.error('Faltan datos en metadata del pago')
           return NextResponse.json({ error: 'Datos incompletos' }, { status: 400 })
+        }
+
+        // Si hay código de referido, buscar el usuario referidor
+        let referrerId: string | null = null
+        if (referralCode) {
+          const { data: referrer } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('referral_code', referralCode)
+            .single()
+          
+          if (referrer) {
+            referrerId = referrer.id
+            console.log('Usuario referido por:', referralCode)
+          }
         }
 
         // Verificar si el usuario ya existe
@@ -90,6 +106,7 @@ export async function POST(req: Request) {
               subscription_status: 'active',
               subscription_start_date: startDate.toISOString(),
               subscription_end_date: endDate.toISOString(),
+              referred_by: referrerId,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
