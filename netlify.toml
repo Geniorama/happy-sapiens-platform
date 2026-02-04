@@ -9,8 +9,8 @@
   # Usar npm con legacy peer deps
   NPM_FLAGS = "--legacy-peer-deps"
   
-  # Versión de Node.js (recomendado especificar)
-  NODE_VERSION = "18"
+  # Versión de Node.js (Next.js requiere >= 20.9.0)
+  NODE_VERSION = "20"
 
 # Configuración para Next.js
 [[plugins]]
