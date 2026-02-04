@@ -1,16 +1,19 @@
 [build]
-  # Comando de build
-  command = "npm run build"
+  # Comando de build para Next.js
+  command = "npm install --legacy-peer-deps && npm run build"
   
-  # Directorio a publicar
+  # Directorio a publicar (Next.js standalone)
   publish = ".next"
 
 [build.environment]
-  # Usar npm con legacy peer deps
-  NPM_FLAGS = "--legacy-peer-deps"
-  
   # Versión de Node.js (Next.js requiere >= 20.9.0)
   NODE_VERSION = "20"
+  
+  # Configuración de npm
+  NPM_FLAGS = "--legacy-peer-deps"
+  
+  # Skip Husky hooks si existen
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS = "1"
 
 # Configuración para Next.js
 [[plugins]]
