@@ -39,11 +39,12 @@ Pasos resumidos:
 Asegúrate de tener en tu `.env.local`:
 
 ```env
-AWS_ACCESS_KEY_ID=tu-access-key-id
-AWS_SECRET_ACCESS_KEY=tu-secret-access-key
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=happy-sapiens-avatars
-AWS_CLOUDFRONT_DOMAIN=tu-distribucion.cloudfront.net  # Opcional
+# Nota: Usamos el prefijo HS_ porque AWS_ está restringido en Netlify
+HS_AWS_ACCESS_KEY_ID=tu-access-key-id
+HS_AWS_SECRET_ACCESS_KEY=tu-secret-access-key
+HS_AWS_REGION=us-east-1
+HS_AWS_S3_BUCKET=happy-sapiens-avatars
+HS_AWS_CLOUDFRONT_DOMAIN=tu-distribucion.cloudfront.net  # Opcional
 ```
 
 ### 3️⃣ ¡Listo!

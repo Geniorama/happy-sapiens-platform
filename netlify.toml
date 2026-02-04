@@ -1,0 +1,17 @@
+[build]
+  # Comando de build
+  command = "npm run build"
+  
+  # Directorio a publicar
+  publish = ".next"
+
+[build.environment]
+  # Usar npm con legacy peer deps
+  NPM_FLAGS = "--legacy-peer-deps"
+  
+  # Versión de Node.js (recomendado especificar)
+  NODE_VERSION = "18"
+
+# Configuración para Next.js
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

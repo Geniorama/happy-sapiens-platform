@@ -137,15 +137,17 @@ Agrega a tu archivo `.env.local`:
 
 ```env
 # AWS S3 para almacenamiento de imágenes
-AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
-AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-AWS_REGION="us-east-1"
-AWS_S3_BUCKET="happy-sapiens-avatars"
-AWS_CLOUDFRONT_DOMAIN="d1234abcd.cloudfront.net"  # Opcional
+# Nota: Usamos el prefijo HS_ porque AWS_ está restringido en Netlify
+HS_AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+HS_AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+HS_AWS_REGION="us-east-1"
+HS_AWS_S3_BUCKET="happy-sapiens-avatars"
+HS_AWS_CLOUDFRONT_DOMAIN="d1234abcd.cloudfront.net"  # Opcional
 ```
 
 ### Notas:
-- Si NO usas CloudFront, deja `AWS_CLOUDFRONT_DOMAIN` vacío o coméntalo
+- **¿Por qué HS_?**: Netlify y otros servicios restringen variables que empiezan con `AWS_`
+- Si NO usas CloudFront, deja `HS_AWS_CLOUDFRONT_DOMAIN` vacío o coméntalo
 - Las imágenes se servirán directamente desde S3
 - Con CloudFront, las imágenes se cachean globalmente (mejor rendimiento)
 

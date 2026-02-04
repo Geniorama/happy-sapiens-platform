@@ -1,18 +1,19 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
 
 // Configurar cliente S3
+// Nota: Usamos HS_ como prefijo porque AWS_ está restringido en Netlify
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || "us-east-1",
+  region: process.env.HS_AWS_REGION || "us-east-1",
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.HS_AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.HS_AWS_SECRET_ACCESS_KEY!,
   },
 })
 
 export const S3_CONFIG = {
-  bucket: process.env.AWS_S3_BUCKET!,
-  region: process.env.AWS_REGION || "us-east-1",
-  cloudfrontDomain: process.env.AWS_CLOUDFRONT_DOMAIN, // Opcional
+  bucket: process.env.HS_AWS_S3_BUCKET!,
+  region: process.env.HS_AWS_REGION || "us-east-1",
+  cloudfrontDomain: process.env.HS_AWS_CLOUDFRONT_DOMAIN, // Opcional
 }
 
 /**
