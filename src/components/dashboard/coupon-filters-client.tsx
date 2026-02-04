@@ -184,7 +184,7 @@ export function CouponFiltersClient({ partners, campaigns: initialCampaigns, use
       {/* Resultados filtrados */}
       {filteredCampaigns.length > 0 ? (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
             {filteredCampaigns.map((coupon, index) => (
               <AvailableCouponCard
                 key={`${coupon.partner.id}-${coupon.title || 'standard'}-${coupon.description || ''}-${index}`}
@@ -213,7 +213,7 @@ export function CouponFiltersClient({ partners, campaigns: initialCampaigns, use
           </div>
         </>
       ) : (
-        <div className="bg-white rounded-2xl p-12 shadow-sm border border-zinc-200 text-center">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-6 sm:p-8 lg:p-12 shadow-sm border border-zinc-200 text-center">
           <p className="text-zinc-600">
             {campaigns.length === 0 
               ? "No hay cupones disponibles en este momento."

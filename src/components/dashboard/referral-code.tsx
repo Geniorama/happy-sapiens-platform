@@ -47,13 +47,13 @@ export function ReferralCode({ referralCode, referralStats }: ReferralCodeProps)
   }
 
   return (
-    <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
+    <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
           <Gift className="w-5 h-5 text-primary" strokeWidth={1.5} />
         </div>
         <div>
-          <h2 className="text-2xl font-heading text-zinc-900">Programa de Referidos</h2>
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900">Programa de Referidos</h2>
           <p className="text-sm text-zinc-600">Invita amigos y obtén beneficios</p>
         </div>
       </div>
@@ -65,7 +65,7 @@ export function ReferralCode({ referralCode, referralStats }: ReferralCodeProps)
         </label>
         <div className="flex gap-2">
           <div className="flex-1 px-4 py-3 bg-primary/5 rounded-lg border-2 border-primary/20">
-            <code className="text-2xl font-mono font-bold text-primary tracking-widest">
+            <code className="text-lg sm:text-xl lg:text-2xl font-mono font-bold text-primary tracking-widest">
               {referralCode}
             </code>
           </div>

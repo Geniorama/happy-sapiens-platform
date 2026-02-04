@@ -53,9 +53,9 @@ export function ProfileForm({ user }: ProfileFormProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-heading text-zinc-900">Información Personal</h2>
+    <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900">Información Personal</h2>
         {!isEditing && (
           <button
             onClick={() => setIsEditing(true)}

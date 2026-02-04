@@ -2,8 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ReactNode } from "react"
-import { User, LogOut, Handshake } from "lucide-react"
+import { ReactNode, useState } from "react"
+import { User, LogOut, Handshake, Menu, X } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -28,6 +28,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, userName, userEmail }: DashboardLayoutProps) {
   const pathname = usePathname()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const navigation = [
     { name: "Mi Perfil", href: "/dashboard/profile", icon: User },
@@ -38,16 +39,57 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
 
   return (
     <div className="min-h-screen bg-zinc-50">
+      {/* Mobile Header */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-4 z-50">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+            <span className="text-white font-bold text-sm">HS</span>
+          </div>
+          <span className="font-heading text-lg text-zinc-900">Happy Sapiens</span>
+        </Link>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 rounded-lg hover:bg-zinc-100 transition-colors"
+          aria-label="Toggle menu"
+        >
+          {mobileMenuOpen ? (
+            <X className="w-6 h-6 text-zinc-700" />
+          ) : (
+            <Menu className="w-6 h-6 text-zinc-700" />
+          )}
+        </button>
+      </header>
+
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-zinc-200 flex flex-col">
+      <aside className={`
+        fixed inset-y-0 left-0 w-64 bg-white border-r border-zinc-200 flex flex-col z-50
+        transform transition-transform duration-300 ease-in-out
+        lg:translate-x-0
+        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
         {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-zinc-200">
-          <Link href="/dashboard" className="flex items-center gap-3">
+        <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-200">
+          <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
               <span className="text-white font-bold text-sm">HS</span>
             </div>
-            <span className="font-heading text-xl text-zinc-900">Happy Sapiens</span>
+            <span className="font-heading text-xl text-zinc-900 hidden sm:inline">Happy Sapiens</span>
           </Link>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5 text-zinc-700" />
+          </button>
         </div>
 
         {/* User Info */}
@@ -76,6 +118,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                   ${
@@ -99,8 +142,8 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
       </aside>
 
       {/* Main Content */}
-      <main className="pl-64">
-        <div className="min-h-screen p-8">
+      <main className="lg:pl-64">
+        <div className="min-h-screen p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">
           {children}
         </div>
       </main>

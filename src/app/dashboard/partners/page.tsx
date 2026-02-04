@@ -107,9 +107,9 @@ export default async function PartnersPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl uppercase font-heading text-zinc-900 mb-2">Aliados</h1>
-        <p className="text-zinc-600">
+      <div className="mb-4 sm:mb-6 lg:mb-8">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl uppercase font-heading text-zinc-900 mb-1 sm:mb-2">Aliados</h1>
+        <p className="text-sm sm:text-base text-zinc-600">
           Genera cupones de descuento exclusivos para usar en nuestras marcas aliadas
         </p>
       </div>
@@ -118,18 +118,18 @@ export default async function PartnersPage() {
         {/* Mis Cupones */}
         {userCoupons && userCoupons.length > 0 && (
           <div>
-            <h2 className="text-2xl uppercase font-heading text-zinc-900 mb-4">Mis Cupones</h2>
+            <h2 className="text-xl sm:text-2xl uppercase font-heading text-zinc-900 mb-3 sm:mb-4">Mis Cupones</h2>
             <UserCouponsList coupons={userCoupons} />
           </div>
         )}
 
         {/* Cupones Disponibles */}
         <div>
-          <div className="mb-4">
-            <h2 className="text-2xl uppercase font-heading text-zinc-900 mb-1">
+          <div className="mb-3 sm:mb-4">
+            <h2 className="text-xl sm:text-2xl uppercase font-heading text-zinc-900 mb-1">
               Cupones Disponibles
             </h2>
-            <p className="text-sm text-zinc-600">
+            <p className="text-xs sm:text-sm text-zinc-600">
               Obtén cupones exclusivos de nuestras marcas aliadas
             </p>
           </div>

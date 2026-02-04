@@ -40,15 +40,15 @@ export default async function ProfilePage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-heading text-zinc-900 mb-2">Mi Perfil</h1>
-        <p className="text-zinc-600">Gestiona tu información personal y suscripción</p>
+      <div className="mb-4 sm:mb-6 lg:mb-8">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-heading text-zinc-900 mb-1 sm:mb-2">Mi Perfil</h1>
+        <p className="text-sm sm:text-base text-zinc-600">Gestiona tu información personal y suscripción</p>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Avatar y carga de imagen */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
-          <h2 className="text-2xl font-heading text-zinc-900 mb-6">Foto de Perfil</h2>
+        <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900 mb-4 sm:mb-6">Foto de Perfil</h2>
           <AvatarUpload 
             currentImage={user?.image}
             userName={session.user.name}
@@ -60,10 +60,10 @@ export default async function ProfilePage() {
         <ProfileForm user={user} />
 
         {/* Información de Cuenta */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
-          <h2 className="text-2xl font-heading text-zinc-900 mb-6">Información de Cuenta</h2>
+        <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900 mb-4 sm:mb-6">Información de Cuenta</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 mb-2">
                 <Mail className="w-4 h-4" strokeWidth={1.5} />
@@ -115,8 +115,8 @@ export default async function ProfilePage() {
         )}
 
         {/* Información de Suscripción */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-zinc-200">
-          <h2 className="text-2xl font-heading text-zinc-900 mb-6">Suscripción</h2>
+        <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900 mb-4 sm:mb-6">Suscripción</h2>
           
           <div className="space-y-4">
             {/* Estado de suscripción */}

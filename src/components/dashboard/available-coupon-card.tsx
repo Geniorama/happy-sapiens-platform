@@ -87,7 +87,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
   const isExpiringSoon = coupon.expires_at && new Date(coupon.expires_at) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-zinc-200 flex flex-col hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-zinc-200 flex flex-col hover:shadow-md transition-shadow">
       {/* Imagen de Portada */}
       {coverImage && (
         <div className="relative w-full h-48 bg-zinc-100">
@@ -176,7 +176,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
       )}
 
       {/* Contenido */}
-      <div className="p-6 flex flex-col flex-grow">
+      <div className="p-4 sm:p-6 flex flex-col flex-grow">
         {/* Descripción */}
         {couponDescription && (
           <p className="text-sm text-zinc-600 mb-4">
@@ -187,7 +187,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
         {/* Descuento */}
         {coupon.partner.discount_percentage && (
           <div className="bg-secondary/30 rounded-lg p-3 mb-4">
-            <div className="text-2xl font-heading text-primary">
+            <div className="text-xl sm:text-2xl font-heading text-primary">
               {coupon.partner.discount_percentage}% OFF
             </div>
           </div>
@@ -250,7 +250,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
           <button
             onClick={handleAssignCoupon}
             disabled={isAssigning || !canObtain}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-primary text-white text-sm sm:text-base font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Ticket className="w-4 h-4" strokeWidth={1.5} />
             {isAssigning ? "Obteniendo..." : 

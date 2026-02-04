@@ -55,7 +55,7 @@ export function CouponFilters({
   }
 
   return (
-    <div className="mb-6 bg-zinc-50 rounded-xl border border-zinc-200 p-5">
+    <div className="mb-4 sm:mb-6 bg-zinc-50 rounded-xl border border-zinc-200 p-3 sm:p-4 lg:p-5">
       {/* Header con botón de toggle en móvil */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -63,8 +63,8 @@ export function CouponFilters({
             <Filter className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
           <div>
-            <h3 className="font-heading text-xl text-zinc-900">Filtros</h3>
-            <p className="text-sm text-zinc-600 font-medium">
+            <h3 className="font-heading text-lg sm:text-xl text-zinc-900">Filtros</h3>
+            <p className="text-xs sm:text-sm text-zinc-600 font-medium">
               {hasActiveFilters ? `${filteredCount} de ${totalCoupons}` : `${totalCoupons} cupones`}
             </p>
           </div>
@@ -104,15 +104,15 @@ export function CouponFilters({
       </div>
 
       {/* Buscador */}
-      <div className="mb-4">
+      <div className="mb-3 sm:mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-400" strokeWidth={1.5} />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-zinc-400" strokeWidth={1.5} />
           <input
             type="text"
             placeholder="Buscar por marca, título o descripción..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full pl-9 sm:pl-10 pr-8 sm:pr-10 py-2 sm:py-2.5 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           />
           {searchQuery && (
             <button
@@ -142,19 +142,19 @@ export function CouponFilters({
           <label className="block text-sm font-semibold text-zinc-800 mb-3 uppercase tracking-wide">
             Por Marca
           </label>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             {partners.map((partner) => (
               <button
                 key={partner.id}
                 onClick={() => onPartnerChange(selectedPartner === partner.id ? null : partner.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg border-2 transition-all text-xs sm:text-sm ${
                   selectedPartner === partner.id
                     ? "border-primary bg-primary/5 shadow-sm"
                     : "border-zinc-200 hover:border-zinc-300 bg-white"
                 }`}
               >
                 {partner.logo_url ? (
-                  <div className="w-6 h-6 rounded-full bg-white border border-zinc-200 p-0.5 flex-shrink-0">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white border border-zinc-200 p-0.5 flex-shrink-0">
                     <img
                       src={partner.logo_url}
                       alt={partner.name}
@@ -162,13 +162,13 @@ export function CouponFilters({
                     />
                   </div>
                 ) : (
-                  <div className="w-6 h-6 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-bold text-zinc-600">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] sm:text-xs font-bold text-zinc-600">
                       {partner.name.charAt(0)}
                     </span>
                   </div>
                 )}
-                <span className={`text-sm font-medium ${
+                <span className={`text-xs sm:text-sm font-medium ${
                   selectedPartner === partner.id ? "text-primary" : "text-zinc-700"
                 }`}>
                   {partner.name}
