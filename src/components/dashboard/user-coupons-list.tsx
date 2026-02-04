@@ -20,6 +20,7 @@ interface Coupon {
     website_url: string | null
     discount_description: string | null
     cover_image_url: string | null
+    logo_url: string | null
   }
 }
 
@@ -71,7 +72,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {coupons.map((coupon) => {
         const statusInfo = getStatusInfo(coupon.used_at, coupon.expires_at)
         const StatusIcon = statusInfo.icon
@@ -86,11 +87,11 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
         return (
           <div
             key={coupon.id}
-            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-zinc-200"
+            className="bg-white rounded-xl overflow-hidden shadow-sm border border-zinc-200"
           >
             {/* Imagen de Portada */}
             {coverImage && (
-              <div className="relative w-full h-32 bg-zinc-100">
+              <div className="relative w-full h-20 bg-zinc-100">
                 <img
                   src={coverImage}
                   alt={couponTitle}
@@ -100,32 +101,52 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent" />
                 
                 {/* Badge de estado sobre la imagen */}
-                <span className={`absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color} backdrop-blur-sm`}>
-                  <StatusIcon className="w-3 h-3" strokeWidth={2} />
+                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusInfo.color} backdrop-blur-sm`}>
+                  <StatusIcon className="w-2.5 h-2.5" strokeWidth={2} />
                   {statusInfo.label}
                 </span>
 
                 {/* Título sobre la imagen */}
-                <div className="absolute bottom-3 left-3 right-3">
-                  <h3 className="font-heading text-lg text-white mb-1 drop-shadow-lg">
-                    {couponTitle}
-                  </h3>
+                <div className="absolute bottom-2 left-2 right-2">
+                  <div className="flex items-center gap-1.5">
+                    {coupon.partner.logo_url && (
+                      <div className="w-4 h-4 rounded-full bg-white p-0.5 flex-shrink-0">
+                        <img
+                          src={coupon.partner.logo_url}
+                          alt={coupon.partner.name}
+                          className="w-full h-full object-contain rounded-full"
+                        />
+                      </div>
+                    )}
+                    <h3 className="font-heading text-sm text-white drop-shadow-lg truncate">
+                      {couponTitle}
+                    </h3>
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Contenido */}
-            <div className="p-6">
+            <div className="p-4">
               {/* Header (si no hay imagen) */}
               {!coverImage && (
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="font-heading text-lg text-zinc-900 mb-1">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {coupon.partner.logo_url && (
+                      <div className="w-5 h-5 rounded-full bg-white border border-zinc-200 p-0.5 flex-shrink-0 shadow-sm">
+                        <img
+                          src={coupon.partner.logo_url}
+                          alt={coupon.partner.name}
+                          className="w-full h-full object-contain rounded-full"
+                        />
+                      </div>
+                    )}
+                    <h3 className="font-heading text-sm text-zinc-900 truncate">
                       {couponTitle}
                     </h3>
                   </div>
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
-                    <StatusIcon className="w-3 h-3" strokeWidth={2} />
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusInfo.color} flex-shrink-0 ml-2`}>
+                    <StatusIcon className="w-2.5 h-2.5" strokeWidth={2} />
                     {statusInfo.label}
                   </span>
                 </div>
@@ -133,34 +154,34 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
 
               {/* Descripción */}
               {couponDescription && (
-                <p className="text-sm text-zinc-600 mb-4">
+                <p className="text-xs text-zinc-600 mb-3 line-clamp-2">
                   {couponDescription}
                 </p>
               )}
 
             {/* Código de cupón */}
-            <div className="bg-secondary/20 rounded-lg p-4 mb-4">
-              <p className="text-xs text-zinc-600 mb-1">Código de cupón</p>
-              <div className="flex items-center justify-between">
-                <code className="text-xl font-mono font-bold text-zinc-900 tracking-wider">
+            <div className="bg-secondary/20 rounded-lg p-2.5 mb-3">
+              <p className="text-[10px] text-zinc-600 mb-1">Código de cupón</p>
+              <div className="flex items-center justify-between gap-2">
+                <code className="text-base font-mono font-bold text-zinc-900 tracking-wider truncate flex-1">
                   {coupon.coupon_code}
                 </code>
                 <button
                   onClick={() => handleCopy(coupon.coupon_code)}
-                  className="p-2 hover:bg-white rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-white rounded-lg transition-colors flex-shrink-0"
                   title="Copiar código"
                 >
                   {copiedCode === coupon.coupon_code ? (
-                    <Check className="w-5 h-5 text-green-600" strokeWidth={2} />
+                    <Check className="w-4 h-4 text-green-600" strokeWidth={2} />
                   ) : (
-                    <Copy className="w-5 h-5 text-zinc-600" strokeWidth={1.5} />
+                    <Copy className="w-4 h-4 text-zinc-600" strokeWidth={1.5} />
                   )}
                 </button>
               </div>
             </div>
 
             {/* Información de fechas */}
-            <div className="space-y-2 mb-4 text-xs text-zinc-600">
+            <div className="space-y-1 mb-3 text-[10px] text-zinc-600">
               <div className="flex justify-between">
                 <span>Asignado:</span>
                 <span>
@@ -199,24 +220,24 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
 
             {/* Botones */}
             {isActive && (
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 {coupon.partner.website_url && (
                   <a
                     href={coupon.partner.website_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors"
                   >
-                    <ExternalLink className="w-4 h-4" strokeWidth={1.5} />
+                    <ExternalLink className="w-3.5 h-3.5" strokeWidth={1.5} />
                     Usar ahora
                   </a>
                 )}
                 <button
                   onClick={() => handleMarkAsUsed(coupon.id)}
                   disabled={isMarkingUsed === coupon.id}
-                  className="px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50"
+                  className="px-3 py-1.5 border border-zinc-300 text-zinc-700 text-xs font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 whitespace-nowrap"
                 >
-                  {isMarkingUsed === coupon.id ? "..." : "Marcar como usado"}
+                  {isMarkingUsed === coupon.id ? "..." : "Usado"}
                 </button>
               </div>
             )}

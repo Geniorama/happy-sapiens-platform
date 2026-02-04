@@ -24,13 +24,13 @@ export default async function PartnersPage() {
     .from("coupons")
     .select(`
       *,
-      partner:partners(*)
+      partner:partners(id, name, website_url, discount_description, cover_image_url, logo_url)
     `)
     .eq("user_id", session.user.id)
     .eq("is_assigned", true)
     .order("assigned_at", { ascending: false })
 
-  // Obtener cupones disponibles agrupados por campaña
+  // Cargar solo la primera página de cupones disponibles (el componente cliente manejará la paginación)
   const { data: availableCoupons } = await supabaseAdmin
     .from("coupons")
     .select(`
@@ -48,12 +48,14 @@ export default async function PartnersPage() {
         discount_percentage,
         discount_description,
         cover_image_url,
+        logo_url,
         terms_and_conditions
       )
     `)
     .eq("is_assigned", false)
     .eq("partner.is_active", true)
     .order("created_at", { ascending: false })
+    .limit(12)
 
   // Agrupar cupones por campaña (partner + title + description)
   const groupedCoupons = availableCoupons?.reduce((acc: any[], coupon: any) => {

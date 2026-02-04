@@ -19,6 +19,7 @@ interface Coupon {
     discount_percentage: number | null
     discount_description: string | null
     cover_image_url: string | null
+    logo_url: string | null
     terms_and_conditions: string | null
   }
 }
@@ -128,7 +129,18 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
 
           {/* Título sobre la imagen */}
           <div className="absolute bottom-3 left-3 right-3">
-            <p className="text-sm text-white/90 mb-1 drop-shadow-lg">{coupon.partner.name}</p>
+            <div className="flex items-center gap-2 mb-1">
+              {coupon.partner.logo_url && (
+                <div className="w-5 h-5 rounded-full bg-white p-0.5 flex-shrink-0">
+                  <img
+                    src={coupon.partner.logo_url}
+                    alt={coupon.partner.name}
+                    className="w-full h-full object-contain rounded-full"
+                  />
+                </div>
+              )}
+              <p className="text-sm text-white/90 drop-shadow-lg">{coupon.partner.name}</p>
+            </div>
             <h3 className="font-heading uppercase text-lg text-white drop-shadow-lg">
               {couponTitle}
             </h3>
@@ -140,9 +152,25 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
       {!coverImage && (
         <div className="w-full h-48 bg-gradient-to-br from-primary/10 to-secondary/20 flex items-center justify-center p-6">
           <div className="text-center">
-            <Ticket className="w-12 h-12 text-primary/40 mx-auto mb-2" strokeWidth={1} />
-            <p className="text-sm text-zinc-600">{coupon.partner.name}</p>
-            <h3 className="font-heading uppercase text-lg text-zinc-900">{couponTitle}</h3>
+            {coupon.partner.logo_url ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-10 h-10 rounded-full bg-white p-1 shadow-md">
+                  <img
+                    src={coupon.partner.logo_url}
+                    alt={coupon.partner.name}
+                    className="w-full h-full object-contain rounded-full"
+                  />
+                </div>
+                <p className="text-sm text-zinc-600">{coupon.partner.name}</p>
+                <h3 className="font-heading uppercase text-lg text-zinc-900">{couponTitle}</h3>
+              </div>
+            ) : (
+              <>
+                <Ticket className="w-12 h-12 text-primary/40 mx-auto mb-2" strokeWidth={1} />
+                <p className="text-sm text-zinc-600">{coupon.partner.name}</p>
+                <h3 className="font-heading uppercase text-lg text-zinc-900">{couponTitle}</h3>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { X, Filter } from "lucide-react"
+import { X, Filter, ChevronDown, ChevronUp, Search } from "lucide-react"
 
 interface Partner {
   id: string
@@ -15,8 +15,10 @@ interface CouponFiltersProps {
   categories: string[]
   selectedPartner: string | null
   selectedCategory: string | null
+  searchQuery: string
   onPartnerChange: (partnerId: string | null) => void
   onCategoryChange: (category: string | null) => void
+  onSearchChange: (query: string) => void
   totalCoupons: number
   filteredCount: number
 }
@@ -26,18 +28,21 @@ export function CouponFilters({
   categories,
   selectedPartner,
   selectedCategory,
+  searchQuery,
   onPartnerChange,
   onCategoryChange,
+  onSearchChange,
   totalCoupons,
   filteredCount,
 }: CouponFiltersProps) {
   const [showFilters, setShowFilters] = useState(false)
 
-  const hasActiveFilters = selectedPartner !== null || selectedCategory !== null
+  const hasActiveFilters = selectedPartner !== null || selectedCategory !== null || searchQuery.length > 0
 
   const clearFilters = () => {
     onPartnerChange(null)
     onCategoryChange(null)
+    onSearchChange("")
   }
 
   const getCategoryColor = (category: string) => {
@@ -50,44 +55,91 @@ export function CouponFilters({
   }
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 bg-zinc-50 rounded-xl border border-zinc-200 p-5">
       {/* Header con botón de toggle en móvil */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Filter className="w-5 h-5 text-zinc-600" strokeWidth={1.5} />
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Filter className="w-5 h-5 text-primary" strokeWidth={2} />
+          </div>
           <div>
-            <h3 className="font-heading text-lg text-zinc-900">Filtros</h3>
-            <p className="text-sm text-zinc-600">
+            <h3 className="font-heading text-xl text-zinc-900">Filtros</h3>
+            <p className="text-sm text-zinc-600 font-medium">
               {hasActiveFilters ? `${filteredCount} de ${totalCoupons}` : `${totalCoupons} cupones`}
             </p>
           </div>
         </div>
 
-        {/* Botón toggle para móvil */}
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="lg:hidden px-3 py-2 border border-zinc-300 rounded-lg text-sm font-medium hover:bg-zinc-50"
-        >
-          {showFilters ? "Ocultar" : "Mostrar"}
-        </button>
-
-        {/* Limpiar filtros (desktop) */}
-        {hasActiveFilters && (
+        {/* Botones de acción */}
+        <div className="flex items-center gap-2">
+          {/* Limpiar filtros */}
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:text-zinc-900 hover:bg-white rounded-lg transition-colors font-medium"
+            >
+              <X className="w-4 h-4" strokeWidth={2} />
+              <span className="hidden sm:inline">Limpiar filtros</span>
+            </button>
+          )}
+          
+          {/* Botón toggle */}
           <button
-            onClick={clearFilters}
-            className="hidden lg:flex items-center gap-2 px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-zinc-300 rounded-lg text-sm font-medium hover:border-primary hover:bg-primary/5 transition-all shadow-sm"
           >
-            <X className="w-4 h-4" strokeWidth={2} />
-            Limpiar filtros
+            {showFilters ? (
+              <>
+                <ChevronUp className="w-4 h-4" strokeWidth={2} />
+                <span className="hidden sm:inline">Ocultar</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4" strokeWidth={2} />
+                <span className="hidden sm:inline">Mostrar</span>
+              </>
+            )}
           </button>
-        )}
+        </div>
+      </div>
+
+      {/* Buscador */}
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-400" strokeWidth={1.5} />
+          <input
+            type="text"
+            placeholder="Buscar por marca, título o descripción..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange("")}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              <X className="w-4 h-4" strokeWidth={2} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtros */}
-      <div className={`space-y-4 ${showFilters ? "block" : "hidden lg:block"}`}>
+      <div 
+        className={`overflow-hidden transition-all duration-500 ease-in-out ${
+          showFilters 
+            ? "max-h-[5000px] opacity-100 mb-0" 
+            : "max-h-0 opacity-0 mb-0"
+        }`}
+        style={{
+          transitionProperty: 'max-height, opacity',
+        }}
+      >
+        <div className="space-y-5 pt-2">
         {/* Filtro por Marca */}
         <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-3">
+          <label className="block text-sm font-semibold text-zinc-800 mb-3 uppercase tracking-wide">
             Por Marca
           </label>
           <div className="flex flex-wrap gap-3">
@@ -102,13 +154,15 @@ export function CouponFilters({
                 }`}
               >
                 {partner.logo_url ? (
-                  <img
-                    src={partner.logo_url}
-                    alt={partner.name}
-                    className="w-6 h-6 object-contain"
-                  />
+                  <div className="w-6 h-6 rounded-full bg-white border border-zinc-200 p-0.5 flex-shrink-0">
+                    <img
+                      src={partner.logo_url}
+                      alt={partner.name}
+                      className="w-full h-full object-contain rounded-full"
+                    />
+                  </div>
                 ) : (
-                  <div className="w-6 h-6 rounded bg-zinc-100 flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center flex-shrink-0">
                     <span className="text-xs font-bold text-zinc-600">
                       {partner.name.charAt(0)}
                     </span>
@@ -126,7 +180,7 @@ export function CouponFilters({
 
         {/* Filtro por Categoría */}
         <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-3">
+          <label className="block text-sm font-semibold text-zinc-800 mb-3 uppercase tracking-wide">
             Por Categoría
           </label>
           <div className="flex flex-wrap gap-3">
@@ -145,17 +199,7 @@ export function CouponFilters({
             ))}
           </div>
         </div>
-
-        {/* Limpiar filtros (móvil) */}
-        {hasActiveFilters && (
-          <button
-            onClick={clearFilters}
-            className="lg:hidden w-full flex items-center justify-center gap-2 px-4 py-2 border border-zinc-300 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            <X className="w-4 h-4" strokeWidth={2} />
-            Limpiar filtros
-          </button>
-        )}
+        </div>
       </div>
     </div>
   )
