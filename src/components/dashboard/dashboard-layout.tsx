@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
-import { User, LogOut, Handshake, Menu, X } from "lucide-react"
+import { User, LogOut, Handshake, Menu, X, Users } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -33,6 +33,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
   const navigation = [
     { name: "Mi Perfil", href: "/dashboard/profile", icon: User },
     { name: "Aliados", href: "/dashboard/partners", icon: Handshake },
+    { name: "Ritual Coaches", href: "/dashboard/coaches", icon: Users },
     // Aquí se pueden agregar más módulos en el futuro
     // { name: "Configuración", href: "/dashboard/settings", icon: Settings },
   ]

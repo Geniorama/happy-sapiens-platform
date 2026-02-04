@@ -5,6 +5,8 @@ import { Calendar, Mail, Hash, Check, Sparkles } from "lucide-react"
 import { ProfileForm } from "@/components/dashboard/profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 import { ReferralCode } from "@/components/dashboard/referral-code"
+import { HealthProfileForm } from "@/components/dashboard/health-profile-form"
+import { getHealthProfile } from "@/app/dashboard/coaches/actions"
 
 export default async function ProfilePage() {
   const session = await auth()
@@ -26,6 +28,9 @@ export default async function ProfilePage() {
     .select("*")
     .eq("user_id", session.user.id)
     .single()
+
+  // Obtener perfil de salud
+  const { profile: healthProfile } = await getHealthProfile()
 
   const subscriptionStatusLabels: Record<string, { label: string; color: string }> = {
     active: { label: "Activa", color: "bg-green-100 text-green-700" },
@@ -105,6 +110,12 @@ export default async function ProfilePage() {
             </div>
           </div>
         </div>
+
+        {/* Perfil de Salud */}
+        <HealthProfileForm
+          userId={session.user.id}
+          existingProfile={healthProfile || undefined}
+        />
 
         {/* Código de Referido */}
         {user?.referral_code && (
