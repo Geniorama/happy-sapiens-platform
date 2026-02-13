@@ -49,6 +49,7 @@ const loginSchema = z.object({
 })
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true, // Confiar en el host automáticamente (útil para desarrollo)
   session: {
     strategy: "jwt",
   },

@@ -1,8 +1,12 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   // Configuración para Netlify
   output: 'standalone',
+  
+  // Especificar el directorio raíz del proyecto para evitar warnings de múltiples lockfiles
+  outputFileTracingRoot: path.join(__dirname),
   
   // Optimizaciones de imagen
   images: {
