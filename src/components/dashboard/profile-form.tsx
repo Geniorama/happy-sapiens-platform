@@ -59,7 +59,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         {!isEditing && (
           <button
             onClick={() => setIsEditing(true)}
-            className="px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
           >
             Editar
           </button>
@@ -143,7 +143,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isLoading ? "Guardando..." : "Guardar Cambios"}
             </button>
@@ -154,7 +154,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
                 setMessage(null)
               }}
               disabled={isLoading}
-              className="px-6 py-3 border border-zinc-300 text-zinc-700 font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 border border-zinc-300 text-zinc-700 font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               Cancelar
             </button>

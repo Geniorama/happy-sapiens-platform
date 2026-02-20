@@ -71,7 +71,7 @@ export function ReferralCode({ referralCode, referralStats }: ReferralCodeProps)
           </div>
           <button
             onClick={() => handleCopy(referralCode)}
-            className="px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
             title="Copiar código"
           >
             {copied ? (
@@ -97,7 +97,7 @@ export function ReferralCode({ referralCode, referralStats }: ReferralCodeProps)
           <button
             onClick={() => handleCopy(referralUrl)}
             disabled={!referralUrl}
-            className="px-4 py-3 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-3 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             title="Copiar link"
           >
             <Copy className="w-5 h-5" strokeWidth={1.5} />
@@ -105,7 +105,7 @@ export function ReferralCode({ referralCode, referralStats }: ReferralCodeProps)
           <button
             onClick={handleShare}
             disabled={!referralUrl}
-            className="px-4 py-3 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-3 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             title="Compartir"
           >
             <Share2 className="w-5 h-5" strokeWidth={1.5} />

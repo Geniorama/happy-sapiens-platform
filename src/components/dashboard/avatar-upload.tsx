@@ -104,7 +104,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
+            className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed cursor-pointer"
           >
             {isUploading ? (
               <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={2} />
@@ -124,7 +124,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <Upload className="w-4 h-4" strokeWidth={1.5} />
               Subir nueva
@@ -134,7 +134,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
               <button
                 onClick={handleDelete}
                 disabled={isUploading}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <X className="w-4 h-4" strokeWidth={1.5} />
                 Eliminar

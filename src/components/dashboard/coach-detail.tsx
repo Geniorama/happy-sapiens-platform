@@ -301,7 +301,7 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
                         key={time}
                         type="button"
                         onClick={() => setSelectedTime(time)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                           selectedTime === time
                             ? "bg-primary text-white"
                             : "bg-zinc-50 text-zinc-700 hover:bg-zinc-100 border border-zinc-200"
@@ -341,7 +341,7 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
           <button
             type="submit"
             disabled={isSubmitting || !selectedDate || !selectedTime}
-            className="w-full sm:w-auto px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isSubmitting ? "Agendando..." : "Confirmar Cita"}
           </button>

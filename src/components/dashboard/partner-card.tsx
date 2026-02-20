@@ -128,7 +128,7 @@ export function PartnerCard({ partner }: PartnerCardProps) {
         <button
           onClick={handleAssignCoupon}
           disabled={isGenerating}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           <Ticket className="w-4 h-4" strokeWidth={1.5} />
           {isGenerating ? "Asignando..." : "Obtener Cupón"}
@@ -140,7 +140,7 @@ export function PartnerCard({ partner }: PartnerCardProps) {
               href={partner.website_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer"
             >
               <ExternalLink className="w-4 h-4" strokeWidth={1.5} />
               Visitar
@@ -150,7 +150,7 @@ export function PartnerCard({ partner }: PartnerCardProps) {
           {partner.terms_and_conditions && (
             <button
               onClick={() => setShowTerms(!showTerms)}
-              className="flex-1 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer"
             >
               {showTerms ? "Ocultar" : "Ver"} Términos
             </button>

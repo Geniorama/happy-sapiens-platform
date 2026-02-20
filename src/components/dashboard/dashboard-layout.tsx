@@ -11,7 +11,7 @@ function LogoutButton() {
     <form action={handleSignOut}>
       <button
         type="submit"
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-600 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
       >
         <LogOut className="w-4 h-4" />
         Cerrar Sesión
@@ -50,7 +50,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
         </Link>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg hover:bg-zinc-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
           aria-label="Toggle menu"
         >
           {mobileMenuOpen ? (
@@ -64,7 +64,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 cursor-pointer"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
@@ -86,7 +86,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
           </Link>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 transition-colors"
+            className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
             aria-label="Close menu"
           >
             <X className="w-5 h-5 text-zinc-700" />
@@ -121,7 +121,7 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
                 className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer
                   ${
                     isActive
                       ? "bg-primary/10 text-primary"

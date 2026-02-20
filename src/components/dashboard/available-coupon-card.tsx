@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ExternalLink, Tag, Ticket, Calendar, Info, Package, User } from "lucide-react"
+import { ExternalLink, Tag, Ticket, Calendar, Info, Package, User, FileText, X } from "lucide-react"
 import { assignCoupon } from "@/app/dashboard/partners/actions"
 
 interface Coupon {
@@ -34,6 +34,7 @@ interface AvailableCouponCardProps {
 
 export function AvailableCouponCard({ coupon, userId, availableCount, userObtainedCount, maxPerUser }: AvailableCouponCardProps) {
   const [isAssigning, setIsAssigning] = useState(false)
+  const [termsModalOpen, setTermsModalOpen] = useState(false)
   const [localCount, setLocalCount] = useState(availableCount)
   const [localUserCount, setLocalUserCount] = useState(userObtainedCount)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
@@ -245,12 +246,56 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
           </div>
         )}
 
+        {/* Términos y condiciones (siempre visibles para este cupón) */}
+        <div className="mb-4 pt-3 border-t border-zinc-200">
+          <button
+            type="button"
+            onClick={() => setTermsModalOpen(true)}
+            className="inline-flex items-center gap-2 text-xs text-primary underline underline-offset-2 hover:text-primary/80 transition-colors cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
+            Términos y condiciones de esta oferta
+          </button>
+        </div>
+
+        {/* Modal de términos y condiciones */}
+        {termsModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 cursor-pointer"
+            onClick={() => setTermsModalOpen(false)}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-zinc-200 shrink-0">
+                <h3 className="font-heading text-base text-zinc-900">Términos y condiciones</h3>
+                <button
+                  type="button"
+                  onClick={() => setTermsModalOpen(false)}
+                  className="p-1 rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 transition-colors cursor-pointer"
+                  aria-label="Cerrar"
+                >
+                  <X className="w-5 h-5" strokeWidth={1.5} />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto text-sm text-zinc-600">
+                <p className="whitespace-pre-wrap">
+                  {coupon.partner.terms_and_conditions
+                    ? coupon.partner.terms_and_conditions
+                    : `Aplican las condiciones de uso de ${coupon.partner.name}. Consulta su web para más información.`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Botones */}
         <div className="mt-auto space-y-2">
           <button
             onClick={handleAssignCoupon}
             disabled={isAssigning || !canObtain}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-primary text-white text-sm sm:text-base font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-primary text-white text-sm sm:text-base font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <Ticket className="w-4 h-4" strokeWidth={1.5} />
             {isAssigning ? "Obteniendo..." : 
@@ -264,7 +309,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
               href={coupon.partner.website_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer"
             >
               <ExternalLink className="w-4 h-4" strokeWidth={1.5} />
               Visitar tienda

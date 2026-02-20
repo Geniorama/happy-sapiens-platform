@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { Calendar, Clock, MapPin, User, CheckCircle } from "lucide-react"
 import Link from "next/link"
+import { AddToCalendarButton } from "@/components/dashboard/add-to-calendar-button"
+import { JoinMeetingButton } from "@/components/dashboard/join-meeting-button"
 
 interface Coach {
   id: string
@@ -19,6 +21,9 @@ interface Appointment {
   appointment_date: string
   appointment_time: string
   status: string
+  duration_minutes?: number
+  notes?: string | null
+  meeting_link?: string | null
   coach: {
     id: string
     name: string | null
@@ -66,8 +71,8 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
             {upcomingAppointments.map((appointment) => (
               <Link
                 key={appointment.id}
-                href={`/dashboard/coaches/appointments`}
-                className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-zinc-200 hover:shadow-md transition-shadow"
+                href="/dashboard/coaches/appointments"
+                className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-zinc-200 hover:shadow-md transition-shadow block"
               >
                 <div className="flex items-start gap-3 mb-3">
                   {appointment.coach.image ? (
@@ -77,7 +82,7 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
                       className="w-12 h-12 rounded-full object-cover"
                     />
                   ) : (
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                       <User className="w-6 h-6 text-primary" />
                     </div>
                   )}
@@ -92,7 +97,7 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
                     )}
                   </div>
                 </div>
-                <div className="space-y-2 text-xs sm:text-sm text-zinc-600">
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 mb-4">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" strokeWidth={1.5} />
                     <span>
@@ -113,6 +118,18 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
                       })}
                     </span>
                   </div>
+                </div>
+                <div onClick={(e) => e.stopPropagation()} className="mt-auto space-y-2">
+                  {appointment.meeting_link && (
+                    <JoinMeetingButton
+                      meetingLink={appointment.meeting_link}
+                      appointmentDate={appointment.appointment_date}
+                      appointmentTime={appointment.appointment_time}
+                      durationMinutes={appointment.duration_minutes ?? 60}
+                      size="sm"
+                    />
+                  )}
+                  <AddToCalendarButton appointment={appointment} size="sm" />
                 </div>
               </Link>
             ))}
@@ -138,7 +155,7 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
           <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
             <button
               onClick={() => setSelectedSpecialization(null)}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
                 selectedSpecialization === null
                   ? "bg-primary text-white"
                   : "bg-white border border-zinc-300 text-zinc-700 hover:bg-zinc-50"
@@ -150,7 +167,7 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
               <button
                 key={spec}
                 onClick={() => setSelectedSpecialization(spec)}
-                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
                   selectedSpecialization === spec
                     ? "bg-primary text-white"
                     : "bg-white border border-zinc-300 text-zinc-700 hover:bg-zinc-50"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Copy, Check, ExternalLink, Clock, CheckCircle, XCircle } from "lucide-react"
+import { Copy, Check, ExternalLink, Clock, CheckCircle, XCircle, FileText, X } from "lucide-react"
 import { markCouponAsUsed } from "@/app/dashboard/partners/actions"
 
 interface Coupon {
@@ -21,6 +21,7 @@ interface Coupon {
     discount_description: string | null
     cover_image_url: string | null
     logo_url: string | null
+    terms_and_conditions: string | null
   }
 }
 
@@ -31,6 +32,7 @@ interface UserCouponsListProps {
 export function UserCouponsList({ coupons }: UserCouponsListProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [isMarkingUsed, setIsMarkingUsed] = useState<string | null>(null)
+  const [termsModalCouponId, setTermsModalCouponId] = useState<string | null>(null)
 
   const handleCopy = async (code: string) => {
     await navigator.clipboard.writeText(code)
@@ -101,7 +103,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent" />
                 
                 {/* Badge de estado sobre la imagen */}
-                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusInfo.color} backdrop-blur-sm`}>
+                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color} backdrop-blur-sm`}>
                   <StatusIcon className="w-2.5 h-2.5" strokeWidth={2} />
                   {statusInfo.label}
                 </span>
@@ -118,7 +120,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                         />
                       </div>
                     )}
-                    <h3 className="font-heading text-sm text-white drop-shadow-lg truncate">
+                    <h3 className="font-heading text-base text-white drop-shadow-lg truncate">
                       {couponTitle}
                     </h3>
                   </div>
@@ -141,11 +143,11 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                         />
                       </div>
                     )}
-                    <h3 className="font-heading text-sm text-zinc-900 truncate">
+                    <h3 className="font-heading text-base text-zinc-900 truncate">
                       {couponTitle}
                     </h3>
                   </div>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusInfo.color} flex-shrink-0 ml-2`}>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color} flex-shrink-0 ml-2`}>
                     <StatusIcon className="w-2.5 h-2.5" strokeWidth={2} />
                     {statusInfo.label}
                   </span>
@@ -154,21 +156,21 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
 
               {/* Descripción */}
               {couponDescription && (
-                <p className="text-xs text-zinc-600 mb-3 line-clamp-2">
+                <p className="text-sm text-zinc-600 mb-3 line-clamp-2">
                   {couponDescription}
                 </p>
               )}
 
             {/* Código de cupón */}
             <div className="bg-secondary/20 rounded-lg p-2.5 mb-3">
-              <p className="text-[10px] text-zinc-600 mb-1">Código de cupón</p>
+              <p className="text-xs text-zinc-600 mb-1">Código de cupón</p>
               <div className="flex items-center justify-between gap-2">
-                <code className="text-base font-mono font-bold text-zinc-900 tracking-wider truncate flex-1">
+                <code className="text-lg font-mono font-bold text-zinc-900 tracking-wider truncate flex-1">
                   {coupon.coupon_code}
                 </code>
                 <button
                   onClick={() => handleCopy(coupon.coupon_code)}
-                  className="p-1.5 hover:bg-white rounded-lg transition-colors flex-shrink-0"
+                  className="p-1.5 hover:bg-white rounded-lg transition-colors flex-shrink-0 cursor-pointer"
                   title="Copiar código"
                 >
                   {copiedCode === coupon.coupon_code ? (
@@ -181,7 +183,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
             </div>
 
             {/* Información de fechas */}
-            <div className="space-y-1 mb-3 text-[10px] text-zinc-600">
+            <div className="space-y-1 mb-3 text-xs text-zinc-600">
               <div className="flex justify-between">
                 <span>Asignado:</span>
                 <span>
@@ -218,6 +220,18 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
               )}
             </div>
 
+            {/* Términos y condiciones (siempre visibles para este cupón) */}
+            <div className="mb-3 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setTermsModalCouponId(coupon.id)}
+                className="inline-flex items-center gap-1.5 text-xs text-primary underline underline-offset-2 hover:text-primary/80 transition-colors cursor-pointer"
+              >
+                <FileText className="w-3 h-3" strokeWidth={1.5} />
+                Términos y condiciones
+              </button>
+            </div>
+
             {/* Botones */}
             {isActive && (
               <div className="flex gap-1.5">
@@ -226,7 +240,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                     href={coupon.partner.website_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" strokeWidth={1.5} />
                     Usar ahora
@@ -235,7 +249,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                 <button
                   onClick={() => handleMarkAsUsed(coupon.id)}
                   disabled={isMarkingUsed === coupon.id}
-                  className="px-3 py-1.5 border border-zinc-300 text-zinc-700 text-xs font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  className="px-3 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer"
                 >
                   {isMarkingUsed === coupon.id ? "..." : "Usado"}
                 </button>
@@ -245,6 +259,41 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
           </div>
         )
       })}
+
+      {/* Modal de términos y condiciones */}
+      {termsModalCouponId && (() => {
+        const coupon = coupons.find((c) => c.id === termsModalCouponId)
+        if (!coupon) return null
+        const termsText = coupon.partner.terms_and_conditions
+          ? coupon.partner.terms_and_conditions
+          : `Aplican las condiciones de uso de ${coupon.partner.name}. Consulta su web para más información.`
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 cursor-pointer"
+            onClick={() => setTermsModalCouponId(null)}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-zinc-200 shrink-0">
+                <h3 className="font-heading text-base text-zinc-900">Términos y condiciones</h3>
+                <button
+                  type="button"
+                  onClick={() => setTermsModalCouponId(null)}
+                  className="p-1 rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 transition-colors cursor-pointer"
+                  aria-label="Cerrar"
+                >
+                  <X className="w-5 h-5" strokeWidth={1.5} />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto text-sm text-zinc-600">
+                <p className="whitespace-pre-wrap">{termsText}</p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

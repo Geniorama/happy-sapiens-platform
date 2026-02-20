@@ -24,7 +24,7 @@ export default async function PartnersPage() {
     .from("coupons")
     .select(`
       *,
-      partner:partners(id, name, website_url, discount_description, cover_image_url, logo_url)
+      partner:partners(id, name, website_url, discount_description, cover_image_url, logo_url, terms_and_conditions)
     `)
     .eq("user_id", session.user.id)
     .eq("is_assigned", true)
