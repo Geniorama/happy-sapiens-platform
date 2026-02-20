@@ -63,6 +63,7 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
   const router = useRouter()
   const [selectedDate, setSelectedDate] = useState<string>("")
   const [selectedTime, setSelectedTime] = useState<string>("")
+  const [consultationReason, setConsultationReason] = useState<string>("")
   const [notes, setNotes] = useState<string>("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
@@ -129,9 +130,13 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!selectedDate || !selectedTime) {
       setMessage({ type: "error", text: "Por favor selecciona una fecha y hora" })
+      return
+    }
+    if (!consultationReason.trim()) {
+      setMessage({ type: "error", text: "Por favor indica el motivo de consulta" })
       return
     }
 
@@ -142,6 +147,7 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
       coachId: coach.id,
       appointmentDate: selectedDate,
       appointmentTime: selectedTime,
+      consultation_reason: consultationReason.trim(),
       notes: notes || null,
     })
 
@@ -323,6 +329,21 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
             </div>
           )}
 
+          {/* Motivo de consulta (siempre al agendar) */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-700 mb-2">
+              Motivo de consulta <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={consultationReason}
+              onChange={(e) => setConsultationReason(e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+              placeholder="¿Por qué deseas esta consulta? (obligatorio)"
+              required
+            />
+          </div>
+
           {/* Notas */}
           <div>
             <label className="block text-sm font-medium text-zinc-700 mb-2">
@@ -331,16 +352,16 @@ export function CoachDetail({ coach, availability, existingAppointments, userId,
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={3}
+              rows={2}
               className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-              placeholder="Agrega alguna nota o información adicional para el coach..."
+              placeholder="Información adicional para el coach..."
             />
           </div>
 
           {/* Botón enviar */}
           <button
             type="submit"
-            disabled={isSubmitting || !selectedDate || !selectedTime}
+            disabled={isSubmitting || !selectedDate || !selectedTime || !consultationReason.trim()}
             className="w-full sm:w-auto px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isSubmitting ? "Agendando..." : "Confirmar Cita"}

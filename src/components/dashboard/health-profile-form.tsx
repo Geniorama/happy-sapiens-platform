@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Save, AlertCircle } from "lucide-react"
+import { Save, AlertCircle, Laugh, Smile, Meh, Frown, Angry, BatteryLow, Battery, BatteryMedium, BatteryFull, BatteryCharging } from "lucide-react"
 import { saveHealthProfile } from "@/app/dashboard/coaches/actions"
 
 interface HealthProfileFormProps {
@@ -20,6 +20,23 @@ interface HealthProfileFormProps {
     previous_injuries: string | null
     dietary_restrictions: string | null
     additional_notes: string | null
+    consultation_reason?: string | null
+    occupation?: string | null
+    supplements?: string | null
+    surgeries?: string | null
+    intolerances?: string | null
+    family_history?: string | null
+    waist_circumference?: number | null
+    body_fat_percent?: number | null
+    exercise_type?: string | null
+    exercise_frequency?: string | null
+    sleep_hours?: number | null
+    stress_level?: number | null
+    work_type?: string | null
+    energy_level?: number | null
+    digestion?: string | null
+    mood?: string | null
+    concentration?: string | null
   }
   onComplete?: () => void
 }
@@ -29,13 +46,36 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   const [formData, setFormData] = useState({
-    weight: existingProfile?.weight?.toString() || "",
-    height: existingProfile?.height?.toString() || "",
+    // 1. Datos básicos
     age: existingProfile?.age?.toString() || "",
     gender: existingProfile?.gender || "",
+    occupation: existingProfile?.occupation || "",
+    // Motivo de consulta se diligencia en cada agendamiento, no en el perfil
+    // 2. Antecedentes médicos
     diseases: existingProfile?.diseases || "",
     medications: existingProfile?.medications || "",
+    supplements: existingProfile?.supplements || "",
+    surgeries: existingProfile?.surgeries || "",
     allergies: existingProfile?.allergies || "",
+    intolerances: existingProfile?.intolerances || "",
+    family_history: existingProfile?.family_history || "",
+    // 3. Antropométrica
+    weight: existingProfile?.weight?.toString() || "",
+    height: existingProfile?.height?.toString() || "",
+    waist_circumference: existingProfile?.waist_circumference?.toString() || "",
+    body_fat_percent: existingProfile?.body_fat_percent?.toString() || "",
+    // 5. Estilo de vida
+    exercise_type: existingProfile?.exercise_type || "",
+    exercise_frequency: existingProfile?.exercise_frequency || "",
+    sleep_hours: existingProfile?.sleep_hours?.toString() || "",
+    stress_level: existingProfile?.stress_level?.toString() || "",
+    work_type: existingProfile?.work_type || "",
+    // 6. Evaluación funcional
+    energy_level: existingProfile?.energy_level?.toString() || "",
+    digestion: existingProfile?.digestion || "",
+    mood: existingProfile?.mood || "",
+    concentration: existingProfile?.concentration || "",
+    // Adicional
     objectives: existingProfile?.objectives || "",
     activity_level: existingProfile?.activity_level || "",
     current_exercise_routine: existingProfile?.current_exercise_routine || "",
@@ -49,25 +89,38 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
     setIsSubmitting(true)
     setMessage(null)
 
-    // Validar campos requeridos
-    if (!formData.weight || !formData.height || !formData.age || !formData.gender || !formData.objectives) {
-      setMessage({ 
-        type: "error", 
-        text: "Por favor completa todos los campos requeridos (*)" 
-      })
+    if (!formData.weight || !formData.height || !formData.age || !formData.gender) {
+      setMessage({ type: "error", text: "Por favor completa todos los campos requeridos (*)" })
       setIsSubmitting(false)
       return
     }
 
     const result = await saveHealthProfile({
-      weight: parseFloat(formData.weight),
-      height: parseFloat(formData.height),
       age: parseInt(formData.age),
       gender: formData.gender,
+      consultation_reason: null,
+      occupation: formData.occupation || null,
       diseases: formData.diseases || null,
       medications: formData.medications || null,
+      supplements: formData.supplements || null,
+      surgeries: formData.surgeries || null,
       allergies: formData.allergies || null,
-      objectives: formData.objectives,
+      intolerances: formData.intolerances || null,
+      family_history: formData.family_history || null,
+      weight: parseFloat(formData.weight),
+      height: parseFloat(formData.height),
+      waist_circumference: formData.waist_circumference ? parseFloat(formData.waist_circumference) : null,
+      body_fat_percent: formData.body_fat_percent ? parseFloat(formData.body_fat_percent) : null,
+      exercise_type: formData.exercise_type || null,
+      exercise_frequency: formData.exercise_frequency || null,
+      sleep_hours: formData.sleep_hours ? parseFloat(formData.sleep_hours) : null,
+      stress_level: formData.stress_level ? parseInt(formData.stress_level) : null,
+      work_type: formData.work_type || null,
+      energy_level: formData.energy_level ? parseInt(formData.energy_level) : null,
+      digestion: formData.digestion || null,
+      mood: formData.mood || null,
+      concentration: formData.concentration || null,
+      objectives: formData.objectives || null,
       activity_level: formData.activity_level || null,
       current_exercise_routine: formData.current_exercise_routine || null,
       previous_injuries: formData.previous_injuries || null,
@@ -78,13 +131,31 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
     if (result.error) {
       setMessage({ type: "error", text: result.error })
     } else {
-      setMessage({ type: "success", text: "Perfil de salud guardado correctamente" })
-      if (onComplete) {
-        setTimeout(() => onComplete(), 1500)
-      }
+      setMessage({ type: "success", text: "Información guardada correctamente" })
+      if (onComplete) setTimeout(() => onComplete(), 1500)
     }
-
     setIsSubmitting(false)
+  }
+
+  const inputClass = "w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+  const labelClass = "block text-sm font-medium text-zinc-700 mb-2"
+
+  // Iconos de caras para nivel de estrés (1 = muy bajo, 5 = muy alto)
+  const getStressIcon = (level: number) => {
+    if (level <= 1) return Laugh
+    if (level <= 2) return Smile
+    if (level <= 3) return Meh
+    if (level <= 4) return Frown
+    return Angry
+  }
+
+  // Iconos de batería para nivel de energía (1 = muy bajo, 5 = muy alto)
+  const getEnergyIcon = (level: number) => {
+    if (level <= 1) return Battery
+    if (level <= 2) return BatteryLow
+    if (level <= 3) return BatteryMedium
+    if (level <= 4) return BatteryFull
+    return BatteryCharging
   }
 
   return (
@@ -93,16 +164,16 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
         <div className="flex items-center gap-3 mb-2">
           <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-primary" strokeWidth={1.5} />
           <h2 className="text-xl sm:text-2xl font-heading text-zinc-900">
-            Perfil de Salud
+            Información Nutricional Inicial
           </h2>
         </div>
         <p className="text-sm sm:text-base text-zinc-600">
-          Completa tu perfil de salud para poder agendar citas con nuestros coaches. 
-          Esta información ayudará al coach a prepararse mejor para tu consulta.
+          Completa tu información nutricional para poder agendar citas con nuestros coaches. 
+          Los datos de contacto (nombre, teléfono, email) se toman de tu perfil.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
         {message && (
           <div
             className={`p-3 sm:p-4 rounded-lg border ${
@@ -115,63 +186,29 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
           </div>
         )}
 
-        {/* Datos Físicos */}
+        {/* 1. DATOS BÁSICOS */}
         <div>
-          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">Datos Físicos</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">1. Datos básicos</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Peso (kg) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={formData.weight}
-                onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="70.5"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Talla/Altura (cm) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={formData.height}
-                onChange={(e) => setFormData({ ...formData, height: e.target.value })}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="175"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Edad <span className="text-red-500">*</span>
-              </label>
+              <label className={labelClass}>Edad <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 min="0"
                 max="120"
                 value={formData.age}
                 onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                className={inputClass}
                 placeholder="30"
                 required
               />
             </div>
-            <div className="sm:col-span-3">
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Género <span className="text-red-500">*</span>
-              </label>
+            <div>
+              <label className={labelClass}>Sexo <span className="text-red-500">*</span></label>
               <select
                 value={formData.gender}
                 onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                className={inputClass}
                 required
               >
                 <option value="">Selecciona una opción</option>
@@ -181,156 +218,320 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
                 <option value="prefer-not-say">Prefiero no decir</option>
               </select>
             </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <label className={labelClass}>Ocupación</label>
+              <input
+                type="text"
+                value={formData.occupation}
+                onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Docente, Comercio..."
+              />
+            </div>
           </div>
+          <p className="text-xs text-zinc-500 mt-2">
+            El motivo de consulta se indica cada vez que agendes una cita con un coach.
+          </p>
         </div>
 
-        {/* Información Médica */}
+        {/* 2. ANTECEDENTES MÉDICOS */}
         <div>
-          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">Información Médica</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Enfermedades o Condiciones Médicas
-              </label>
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">2. Antecedentes médicos</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className={labelClass}>Enfermedades crónicas</label>
               <textarea
                 value={formData.diseases}
                 onChange={(e) => setFormData({ ...formData, diseases: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Ej: Diabetes tipo 2, Hipertensión, Asma..."
+                rows={2}
+                className={`${inputClass} resize-none`}
+                placeholder="Ej: Diabetes, Hipertensión..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Medicamentos Actuales
-              </label>
+              <label className={labelClass}>Medicamentos</label>
               <textarea
                 value={formData.medications}
                 onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Lista los medicamentos que estás tomando actualmente..."
+                className={`${inputClass} resize-none`}
+                placeholder="Medicamentos que tomas actualmente"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Alergias
-              </label>
+              <label className={labelClass}>Suplementos</label>
+              <textarea
+                value={formData.supplements}
+                onChange={(e) => setFormData({ ...formData, supplements: e.target.value })}
+                rows={2}
+                className={`${inputClass} resize-none`}
+                placeholder="Vitaminas, proteínas..."
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Cirugías</label>
+              <textarea
+                value={formData.surgeries}
+                onChange={(e) => setFormData({ ...formData, surgeries: e.target.value })}
+                rows={2}
+                className={`${inputClass} resize-none`}
+                placeholder="Cirugías previas relevantes"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Alergias</label>
               <textarea
                 value={formData.allergies}
                 onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Ej: Alergia a la penicilina, alergia al polen..."
+                className={`${inputClass} resize-none`}
+                placeholder="Ej: Penicilina, polen..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Lesiones Previas
-              </label>
+              <label className={labelClass}>Intolerancias</label>
+              <input
+                type="text"
+                value={formData.intolerances}
+                onChange={(e) => setFormData({ ...formData, intolerances: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Lactosa, gluten..."
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className={labelClass}>Antecedentes familiares</label>
               <textarea
-                value={formData.previous_injuries}
-                onChange={(e) => setFormData({ ...formData, previous_injuries: e.target.value })}
+                value={formData.family_history}
+                onChange={(e) => setFormData({ ...formData, family_history: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Describe cualquier lesión previa que pueda ser relevante..."
+                className={`${inputClass} resize-none`}
+                placeholder="Enfermedades o condiciones en la familia"
               />
             </div>
           </div>
         </div>
 
-        {/* Objetivos y Actividad */}
+        {/* 3. EVALUACIÓN ANTROPOMÉTRICA */}
         <div>
-          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">Objetivos y Actividad</h3>
-          <div className="space-y-4">
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">3. Evaluación antropométrica</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Objetivos <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={formData.objectives}
-                onChange={(e) => setFormData({ ...formData, objectives: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Ej: Perder peso, ganar masa muscular, mejorar resistencia, preparación para maratón..."
+              <label className={labelClass}>Peso actual (kg) <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={formData.weight}
+                onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                className={inputClass}
+                placeholder="70"
                 required
               />
-              <p className="text-xs text-zinc-500 mt-1">
-                Describe tus objetivos principales con el coach
-              </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Nivel de Actividad Física
-              </label>
-              <select
-                value={formData.activity_level}
-                onChange={(e) => setFormData({ ...formData, activity_level: e.target.value })}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              >
-                <option value="">Selecciona una opción</option>
-                <option value="sedentary">Sedentario (poco o nada de ejercicio)</option>
-                <option value="light">Ligero (ejercicio ligero 1-3 días/semana)</option>
-                <option value="moderate">Moderado (ejercicio moderado 3-5 días/semana)</option>
-                <option value="active">Activo (ejercicio intenso 6-7 días/semana)</option>
-                <option value="very_active">Muy activo (ejercicio muy intenso, trabajo físico)</option>
-              </select>
+              <label className={labelClass}>Altura / Talla (cm) <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={formData.height}
+                onChange={(e) => setFormData({ ...formData, height: e.target.value })}
+                className={inputClass}
+                placeholder="175"
+                required
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Rutina de Ejercicio Actual
-              </label>
-              <textarea
-                value={formData.current_exercise_routine}
-                onChange={(e) => setFormData({ ...formData, current_exercise_routine: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Describe tu rutina de ejercicio actual, frecuencia, tipo de ejercicios..."
+              <label className={labelClass}>Circunferencia cintura (cm)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={formData.waist_circumference}
+                onChange={(e) => setFormData({ ...formData, waist_circumference: e.target.value })}
+                className={inputClass}
+                placeholder="85"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>% Grasa</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={formData.body_fat_percent}
+                onChange={(e) => setFormData({ ...formData, body_fat_percent: e.target.value })}
+                className={inputClass}
+                placeholder="22"
               />
             </div>
           </div>
         </div>
 
-        {/* Información Adicional */}
+        {/* 5. ESTILO DE VIDA */}
         <div>
-          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">Información Adicional</h3>
-          <div className="space-y-4">
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">5. Estilo de vida</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Restricciones Dietéticas
-              </label>
-              <textarea
-                value={formData.dietary_restrictions}
-                onChange={(e) => setFormData({ ...formData, dietary_restrictions: e.target.value })}
-                rows={2}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Ej: Vegetariano, vegano, sin gluten, sin lactosa..."
+              <label className={labelClass}>Ejercicio (tipo)</label>
+              <input
+                type="text"
+                value={formData.exercise_type}
+                onChange={(e) => setFormData({ ...formData, exercise_type: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Running, gym, natación..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-2">
-                Notas Adicionales
-              </label>
-              <textarea
-                value={formData.additional_notes}
-                onChange={(e) => setFormData({ ...formData, additional_notes: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                placeholder="Cualquier otra información que consideres relevante para el coach..."
+              <label className={labelClass}>Frecuencia semanal</label>
+              <input
+                type="text"
+                value={formData.exercise_frequency}
+                onChange={(e) => setFormData({ ...formData, exercise_frequency: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: 3 veces por semana"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Horas de sueño (promedio diario)</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                max="24"
+                value={formData.sleep_hours}
+                onChange={(e) => setFormData({ ...formData, sleep_hours: e.target.value })}
+                className={inputClass}
+                placeholder="7"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Nivel de estrés (1-5)</label>
+              <p className="text-xs text-zinc-500 mb-2">Selecciona con la cara que mejor te represente: 1 = sin estrés, 5 = muy estresado</p>
+              <div className="flex flex-wrap gap-1 sm:gap-2">
+                {[1, 2, 3, 4, 5].map((level) => {
+                  const Icon = getStressIcon(level)
+                  const isSelected = formData.stress_level === level.toString()
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, stress_level: level.toString() })}
+                      title={`Nivel ${level}`}
+                      className={`p-2 sm:p-2.5 rounded-lg border-2 transition-colors cursor-pointer ${
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-zinc-200 hover:border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <Icon className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={1.5} />
+                    </button>
+                  )
+                })}
+              </div>
+              {formData.stress_level && (
+                <p className="text-xs text-zinc-500 mt-1.5">Seleccionado: nivel {formData.stress_level}</p>
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelClass}>Tipo de trabajo</label>
+              <input
+                type="text"
+                value={formData.work_type}
+                onChange={(e) => setFormData({ ...formData, work_type: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Sedentario, de pie, trabajo físico..."
               />
             </div>
           </div>
         </div>
 
-        {/* Botón enviar */}
+        {/* 6. EVALUACIÓN FUNCIONAL */}
+        <div>
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">6. Evaluación funcional</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Nivel de energía (1-5)</label>
+              <p className="text-xs text-zinc-500 mb-2">Selecciona el nivel que mejor te represente: 1 = sin energía, 5 = mucha energía</p>
+              <div className="flex flex-wrap gap-1 sm:gap-2">
+                {[1, 2, 3, 4, 5].map((level) => {
+                  const Icon = getEnergyIcon(level)
+                  const isSelected = formData.energy_level === level.toString()
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, energy_level: level.toString() })}
+                      title={`Nivel ${level}`}
+                      className={`p-2 sm:p-2.5 rounded-lg border-2 transition-colors cursor-pointer ${
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-zinc-200 hover:border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <Icon className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={1.5} />
+                    </button>
+                  )
+                })}
+              </div>
+              {formData.energy_level && (
+                <p className="text-xs text-zinc-500 mt-1.5">Seleccionado: nivel {formData.energy_level}</p>
+              )}
+            </div>
+            <div>
+              <label className={labelClass}>Digestión</label>
+              <input
+                type="text"
+                value={formData.digestion}
+                onChange={(e) => setFormData({ ...formData, digestion: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Normal, estreñimiento, hinchazón..."
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Estado de ánimo</label>
+              <input
+                type="text"
+                value={formData.mood}
+                onChange={(e) => setFormData({ ...formData, mood: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Estable, ansioso, bajo ánimo..."
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Concentración</label>
+              <input
+                type="text"
+                value={formData.concentration}
+                onChange={(e) => setFormData({ ...formData, concentration: e.target.value })}
+                className={inputClass}
+                placeholder="Ej: Buena, dificultades para concentrarse..."
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Notas adicionales (opcional) */}
+        <div>
+          <h3 className="text-lg font-heading text-zinc-900 mb-3 sm:mb-4">Notas adicionales</h3>
+          <textarea
+            value={formData.additional_notes}
+            onChange={(e) => setFormData({ ...formData, additional_notes: e.target.value })}
+            rows={3}
+            className={`${inputClass} resize-none`}
+            placeholder="Cualquier otra información relevante para el coach..."
+          />
+        </div>
+
         <div className="flex justify-end gap-3 pt-4 border-t border-zinc-200">
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <Save className="w-4 h-4" strokeWidth={1.5} />
-            {isSubmitting ? "Guardando..." : "Guardar Perfil"}
+            {isSubmitting ? "Guardando..." : "Guardar Información"}
           </button>
         </div>
       </form>

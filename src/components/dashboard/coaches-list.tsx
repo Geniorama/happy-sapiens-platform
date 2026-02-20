@@ -23,6 +23,7 @@ interface Appointment {
   status: string
   duration_minutes?: number
   notes?: string | null
+  consultation_reason?: string | null
   meeting_link?: string | null
   coach: {
     id: string
@@ -69,10 +70,9 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {upcomingAppointments.map((appointment) => (
-              <Link
+              <div
                 key={appointment.id}
-                href="/dashboard/coaches/appointments"
-                className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-zinc-200 hover:shadow-md transition-shadow block"
+                className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-zinc-200 hover:shadow-md transition-shadow flex flex-col"
               >
                 <div className="flex items-start gap-3 mb-3">
                   {appointment.coach.image ? (
@@ -118,8 +118,13 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
                       })}
                     </span>
                   </div>
+                  {appointment.consultation_reason && (
+                    <p className="text-xs text-zinc-500 line-clamp-2 mt-1">
+                      {appointment.consultation_reason}
+                    </p>
+                  )}
                 </div>
-                <div onClick={(e) => e.stopPropagation()} className="mt-auto space-y-2">
+                <div className="mt-auto space-y-2">
                   {appointment.meeting_link && (
                     <JoinMeetingButton
                       meetingLink={appointment.meeting_link}
@@ -130,8 +135,15 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
                     />
                   )}
                   <AddToCalendarButton appointment={appointment} size="sm" />
+                  <Link
+                    href="/dashboard/coaches/appointments"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    Ver mis citas
+                  </Link>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
           <div className="mt-4">

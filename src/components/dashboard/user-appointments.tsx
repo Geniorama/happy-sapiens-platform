@@ -14,6 +14,7 @@ interface Appointment {
   duration_minutes: number
   status: string
   notes: string | null
+  consultation_reason?: string | null
   meeting_link?: string | null
   coach: {
     id: string
@@ -127,6 +128,13 @@ export function UserAppointments({ scheduled, completed, cancelled }: UserAppoin
                 </span>
               </div>
             </div>
+
+            {appointment.consultation_reason && (
+              <div className="mb-3 p-3 bg-zinc-50 rounded-lg">
+                <p className="text-xs text-zinc-600 mb-0.5 font-medium">Motivo de consulta</p>
+                <p className="text-sm text-zinc-800">{appointment.consultation_reason}</p>
+              </div>
+            )}
 
             {appointment.notes && (
               <div className="mb-3 p-3 bg-zinc-50 rounded-lg">

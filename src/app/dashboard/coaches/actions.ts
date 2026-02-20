@@ -5,14 +5,37 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 
 interface HealthProfileData {
-  weight: number
-  height: number
+  // 1. Datos básicos
   age: number
   gender: string
+  consultation_reason: string | null
+  occupation: string | null
+  // 2. Antecedentes médicos
   diseases: string | null
   medications: string | null
+  supplements: string | null
+  surgeries: string | null
   allergies: string | null
-  objectives: string
+  intolerances: string | null
+  family_history: string | null
+  // 3. Evaluación antropométrica
+  weight: number
+  height: number
+  waist_circumference: number | null
+  body_fat_percent: number | null
+  // 5. Estilo de vida
+  exercise_type: string | null
+  exercise_frequency: string | null
+  sleep_hours: number | null
+  stress_level: number | null
+  work_type: string | null
+  // 6. Evaluación funcional
+  energy_level: number | null
+  digestion: string | null
+  mood: string | null
+  concentration: string | null
+  // Legacy / adicional
+  objectives: string | null
   activity_level: string | null
   current_exercise_routine: string | null
   previous_injuries: string | null
@@ -24,7 +47,9 @@ interface CreateAppointmentData {
   coachId: string
   appointmentDate: string
   appointmentTime: string
+  consultation_reason: string
   notes: string | null
+  consultation_snapshot?: Record<string, unknown> | null
 }
 
 export async function createAppointment(data: CreateAppointmentData) {
@@ -102,7 +127,7 @@ export async function createAppointment(data: CreateAppointmentData) {
       return { error: "El horario seleccionado no está disponible" }
     }
 
-    // Crear la cita
+    // Crear la cita (consultation_reason obligatorio en cada agendamiento)
     const { error: insertError } = await supabaseAdmin
       .from("appointments")
       .insert({
@@ -112,7 +137,9 @@ export async function createAppointment(data: CreateAppointmentData) {
         appointment_time: data.appointmentTime,
         duration_minutes: 60,
         status: "scheduled",
+        consultation_reason: data.consultation_reason,
         notes: data.notes,
+        consultation_snapshot: data.consultation_snapshot || {},
       })
 
     if (insertError) {
@@ -191,7 +218,7 @@ export async function hasHealthProfile(): Promise<boolean> {
 
     const { data, error } = await supabaseAdmin
       .from("user_health_profiles")
-      .select("id, weight, height, age, gender, objectives")
+      .select("id, weight, height, age, gender")
       .eq("user_id", session.user.id)
       .single()
 
@@ -199,14 +226,8 @@ export async function hasHealthProfile(): Promise<boolean> {
       return false
     }
 
-    // Verificar que todos los campos requeridos estén completos
-    return !!(
-      data.weight &&
-      data.height &&
-      data.age &&
-      data.gender &&
-      data.objectives
-    )
+    // Perfil completo = datos estables (motivo de consulta se pide en cada agendamiento)
+    return !!(data.weight && data.height && data.age && data.gender)
   } catch (error) {
     console.error("Error checking health profile:", error)
     return false
@@ -251,8 +272,8 @@ export async function saveHealthProfile(data: HealthProfileData) {
       return { error: "No autorizado" }
     }
 
-    // Validar campos requeridos
-    if (!data.weight || !data.height || !data.age || !data.gender || !data.objectives) {
+    // Validar campos requeridos (datos estables del perfil)
+    if (!data.weight || !data.height || !data.age || !data.gender) {
       return { error: "Por favor completa todos los campos requeridos" }
     }
 
@@ -262,13 +283,30 @@ export async function saveHealthProfile(data: HealthProfileData) {
       .upsert(
         {
           user_id: session.user.id,
-          weight: data.weight,
-          height: data.height,
           age: data.age,
           gender: data.gender,
+          consultation_reason: data.consultation_reason,
+          occupation: data.occupation,
           diseases: data.diseases,
           medications: data.medications,
+          supplements: data.supplements,
+          surgeries: data.surgeries,
           allergies: data.allergies,
+          intolerances: data.intolerances,
+          family_history: data.family_history,
+          weight: data.weight,
+          height: data.height,
+          waist_circumference: data.waist_circumference,
+          body_fat_percent: data.body_fat_percent,
+          exercise_type: data.exercise_type,
+          exercise_frequency: data.exercise_frequency,
+          sleep_hours: data.sleep_hours,
+          stress_level: data.stress_level,
+          work_type: data.work_type,
+          energy_level: data.energy_level,
+          digestion: data.digestion,
+          mood: data.mood,
+          concentration: data.concentration,
           objectives: data.objectives,
           activity_level: data.activity_level,
           current_exercise_routine: data.current_exercise_routine,
