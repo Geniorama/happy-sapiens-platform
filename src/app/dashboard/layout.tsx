@@ -13,6 +13,10 @@ export default async function Layout({
     redirect("/auth/login")
   }
 
+  if (session.user.role === "coach") {
+    redirect("/coach")
+  }
+
   return (
     <DashboardLayout 
       userName={session.user?.name} 

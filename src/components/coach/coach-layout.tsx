@@ -1,0 +1,169 @@
+"use client"
+
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { ReactNode, useState } from "react"
+import { CalendarDays, User, LogOut, Menu, X, Clock, Star } from "lucide-react"
+import { handleSignOut } from "@/app/dashboard/actions"
+
+function LogoutButton() {
+  return (
+    <form action={handleSignOut}>
+      <button
+        type="submit"
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-600 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+      >
+        <LogOut className="w-4 h-4" />
+        Cerrar Sesión
+      </button>
+    </form>
+  )
+}
+
+interface CoachLayoutProps {
+  children: ReactNode
+  userName?: string | null
+  userEmail?: string | null
+  userImage?: string | null
+}
+
+export function CoachLayout({ children, userName, userEmail, userImage }: CoachLayoutProps) {
+  const pathname = usePathname()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const navigation = [
+    { name: "Mis Citas", href: "/coach/appointments", icon: CalendarDays },
+    { name: "Disponibilidad", href: "/coach/availability", icon: Clock },
+    { name: "Mis Puntos", href: "/coach/points", icon: Star },
+    { name: "Mi Perfil", href: "/coach/profile", icon: User },
+  ]
+
+  return (
+    <div className="min-h-screen bg-zinc-50">
+      {/* Mobile Header */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-4 z-50">
+        <Link href="/coach" className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+            <span className="text-white font-bold text-sm">HS</span>
+          </div>
+          <span className="font-heading text-lg text-zinc-900">Happy Sapiens</span>
+        </Link>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+          aria-label="Toggle menu"
+        >
+          {mobileMenuOpen ? (
+            <X className="w-6 h-6 text-zinc-700" />
+          ) : (
+            <Menu className="w-6 h-6 text-zinc-700" />
+          )}
+        </button>
+      </header>
+
+      {/* Mobile Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 cursor-pointer"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 w-64 bg-white border-r border-zinc-200 flex flex-col z-50
+          transform transition-transform duration-300 ease-in-out
+          lg:translate-x-0
+          ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+        `}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-200">
+          <Link
+            href="/coach"
+            className="flex items-center gap-3"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+              <span className="text-white font-bold text-sm">HS</span>
+            </div>
+            <span className="font-heading text-xl text-zinc-900 hidden sm:inline">
+              Happy Sapiens
+            </span>
+          </Link>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5 text-zinc-700" />
+          </button>
+        </div>
+
+        {/* User Info */}
+        <div className="px-6 py-6 border-b border-zinc-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+              {userImage ? (
+                <img src={userImage} alt={userName || "Coach"} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-primary font-semibold text-sm">
+                  {userName?.charAt(0)?.toUpperCase() || "C"}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-zinc-900 truncate">
+                {userName || "Coach"}
+              </p>
+              <p className="text-xs text-zinc-500 truncate">{userEmail}</p>
+            </div>
+          </div>
+          {/* Badge de rol */}
+          <div className="mt-3 inline-flex items-center gap-1.5 bg-primary/10 rounded-lg px-3 py-1.5">
+            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+            <span className="text-xs font-semibold text-primary">Ritual Coach</span>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-6 space-y-1">
+          {navigation.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/")
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer
+                  ${
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                  }
+                `}
+              >
+                <Icon className="w-4 h-4" strokeWidth={1.5} />
+                {item.name}
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* Logout */}
+        <div className="p-3 border-t border-zinc-200">
+          <LogoutButton />
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="lg:pl-64">
+        <div className="min-h-screen p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">{children}</div>
+      </main>
+    </div>
+  )
+}

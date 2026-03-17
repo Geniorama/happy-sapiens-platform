@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 import { uploadToS3, deleteFromS3, extractKeyFromUrl } from "@/lib/s3"
+import { awardPointsOnce, POINT_ACTIONS, POINTS_BY_ACTION } from "@/lib/points"
 
 export async function updateProfile(formData: FormData) {
   const session = await auth()
@@ -35,7 +36,21 @@ export async function updateProfile(formData: FormData) {
     }
 
     revalidatePath("/dashboard/profile")
-    return { success: true }
+
+    // Puntos por completar el perfil (solo la primera vez que todos los campos están llenos)
+    let pointsEarned: number | undefined
+    if (name && phone && birthDate && gender) {
+      const pts = await awardPointsOnce({
+        userId: session.user.id,
+        actionType: POINT_ACTIONS.COMPLETE_PROFILE,
+        description: "Perfil completado",
+      })
+      if (pts.success && !pts.alreadyEarned) {
+        pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.COMPLETE_PROFILE]
+      }
+    }
+
+    return { success: true, pointsEarned }
   } catch (error) {
     console.error("Error:", error)
     return { error: "Error al actualizar el perfil" }
@@ -105,7 +120,20 @@ export async function uploadAvatar(formData: FormData) {
     }
 
     revalidatePath("/dashboard/profile")
-    return { success: true, url: publicUrl }
+    revalidatePath("/coach/profile")
+
+    // Puntos por subir foto de perfil (solo la primera vez)
+    let pointsEarned: number | undefined
+    const pts = await awardPointsOnce({
+      userId: session.user.id,
+      actionType: POINT_ACTIONS.UPLOAD_AVATAR,
+      description: "Foto de perfil subida",
+    })
+    if (pts.success && !pts.alreadyEarned) {
+      pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.UPLOAD_AVATAR]
+    }
+
+    return { success: true, url: publicUrl, pointsEarned }
   } catch (error) {
     console.error("Error:", error)
     return { error: "Error al subir la imagen" }
@@ -156,6 +184,7 @@ export async function deleteAvatar() {
     }
 
     revalidatePath("/dashboard/profile")
+    revalidatePath("/coach/profile")
     return { success: true }
   } catch (error) {
     console.error("Error:", error)

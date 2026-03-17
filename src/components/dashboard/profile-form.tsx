@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { User, Phone, Calendar, Users } from "lucide-react"
 import { updateProfile } from "@/app/dashboard/profile/actions"
+import { PointsBanner } from "@/components/dashboard/points-banner"
 
 interface ProfileFormProps {
   user: {
@@ -18,11 +19,13 @@ export function ProfileForm({ user }: ProfileFormProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [pointsEarned, setPointsEarned] = useState<number | undefined>()
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
     setMessage(null)
+    setPointsEarned(undefined)
 
     const formData = new FormData(e.currentTarget)
     const result = await updateProfile(formData)
@@ -31,6 +34,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
       setMessage({ type: "error", text: result.error })
     } else {
       setMessage({ type: "success", text: "Perfil actualizado correctamente" })
+      if (result.pointsEarned) setPointsEarned(result.pointsEarned)
       setIsEditing(false)
     }
 
@@ -68,7 +72,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
 
       {message && (
         <div
-          className={`mb-6 p-4 rounded-lg border ${
+          className={`mb-4 p-4 rounded-lg border ${
             message.type === "success"
               ? "bg-green-50 border-green-200 text-green-700"
               : "bg-red-50 border-red-200 text-red-700"
@@ -76,6 +80,10 @@ export function ProfileForm({ user }: ProfileFormProps) {
         >
           {message.text}
         </div>
+      )}
+
+      {pointsEarned && (
+        <PointsBanner points={pointsEarned} className="mb-4" />
       )}
 
       {isEditing ? (

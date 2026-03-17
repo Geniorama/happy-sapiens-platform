@@ -2,8 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ReactNode, useState } from "react"
-import { User, LogOut, Handshake, Menu, X, Users } from "lucide-react"
+import { ReactNode, useState, useEffect } from "react"
+import { User, LogOut, Handshake, Menu, X, Users, Star } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -29,13 +29,20 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, userName, userEmail }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [points, setPoints] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch("/api/points")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.balance != null) setPoints(data.balance) })
+      .catch(() => {})
+  }, [])
 
   const navigation = [
     { name: "Mi Perfil", href: "/dashboard/profile", icon: User },
+    { name: "Mis Puntos", href: "/dashboard/points", icon: Star },
     { name: "Aliados", href: "/dashboard/partners", icon: Handshake },
     { name: "Ritual Coaches", href: "/dashboard/coaches", icon: Users },
-    // Aquí se pueden agregar más módulos en el futuro
-    // { name: "Configuración", href: "/dashboard/settings", icon: Settings },
   ]
 
   return (
@@ -108,6 +115,17 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
               <p className="text-xs text-zinc-500 truncate">{userEmail}</p>
             </div>
           </div>
+          {/* Puntos */}
+          <Link
+            href="/dashboard/points"
+            onClick={() => setMobileMenuOpen(false)}
+            className="mt-3 flex items-center gap-2 bg-amber-50 hover:bg-amber-100 transition-colors rounded-lg px-3 py-2"
+          >
+            <Star className="w-4 h-4 text-amber-500 shrink-0" fill="currentColor" />
+            <span className="text-xs font-semibold text-amber-700">
+              {points === null ? "—" : points.toLocaleString()} puntos
+            </span>
+          </Link>
         </div>
 
         {/* Navigation */}

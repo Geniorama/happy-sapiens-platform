@@ -3,6 +3,7 @@ import { paymentClient } from '@/lib/mercadopago'
 import { supabaseAdmin } from '@/lib/supabase'
 import { calculateSubscriptionEndDate } from '@/lib/mercadopago'
 import { hash } from 'bcryptjs'
+import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 
 export async function POST(req: Request) {
   try {
@@ -91,6 +92,13 @@ export async function POST(req: Request) {
             amount: payment.transaction_amount,
             notes: 'Pago aprobado vía webhook',
           })
+
+          // Puntos por suscripción activa (cada renovación)
+          await awardPoints({
+            userId: existingUser.id,
+            actionType: POINT_ACTIONS.SUBSCRIPTION_ACTIVE,
+            description: 'Suscripción activada',
+          })
         } else {
           // Crear nuevo usuario con suscripción activa
           const hashedPassword = await hash(userPassword, 12)
@@ -138,6 +146,29 @@ export async function POST(req: Request) {
             amount: payment.transaction_amount,
             notes: 'Primera suscripción - Pago aprobado',
           })
+
+          // Puntos por registro y primera suscripción
+          await awardPoints({
+            userId: newUser.id,
+            actionType: POINT_ACTIONS.SIGNUP,
+            description: 'Registro en la plataforma',
+          })
+          await awardPoints({
+            userId: newUser.id,
+            actionType: POINT_ACTIONS.SUBSCRIPTION_ACTIVE,
+            description: 'Primera suscripción activada',
+          })
+
+          // Puntos al referidor si corresponde
+          if (referrerId) {
+            await awardPoints({
+              userId: referrerId,
+              actionType: POINT_ACTIONS.REFERRAL_SUBSCRIBED,
+              description: `Referido ${userName} se suscribió`,
+              referenceType: 'user',
+              referenceId: newUser.id,
+            })
+          }
         }
       }
     }

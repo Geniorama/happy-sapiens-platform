@@ -11,6 +11,7 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string
+      role: string
     } & DefaultSession["user"]
   }
 }
@@ -127,12 +128,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
+        // Fetch role from DB on initial login only
+        try {
+          const { data } = await supabaseAdmin
+            .from("users")
+            .select("role")
+            .eq("id", user.id)
+            .single()
+          token.role = data?.role || "user"
+        } catch {
+          token.role = "user"
+        }
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        session.user.role = (token.role as string) || "user"
       }
       return session
     },

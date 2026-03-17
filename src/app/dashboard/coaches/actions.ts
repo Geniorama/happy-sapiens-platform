@@ -3,6 +3,8 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
+import { awardPoints, awardPointsOnce, spendPoints, POINT_ACTIONS, POINTS_BY_ACTION, type PointActionType } from "@/lib/points"
+import { createCalendarEvent, deleteCalendarEvent } from "@/lib/google-calendar"
 
 interface HealthProfileData {
   // 1. Datos básicos
@@ -47,6 +49,7 @@ interface CreateAppointmentData {
   coachId: string
   appointmentDate: string
   appointmentTime: string
+  durationMinutes?: number
   consultation_reason: string
   notes: string | null
   consultation_snapshot?: Record<string, unknown> | null
@@ -115,12 +118,13 @@ export async function createAppointment(data: CreateAppointmentData) {
     // Verificar que el horario esté dentro del rango de disponibilidad
     const [hour, minute] = data.appointmentTime.split(":").map(Number)
     const appointmentMinutes = hour * 60 + minute
+    const duration = data.durationMinutes ?? 60
     const isAvailable = availability.some(av => {
       const [startHour, startMin] = av.start_time.split(":").map(Number)
       const [endHour, endMin] = av.end_time.split(":").map(Number)
       const startMinutes = startHour * 60 + startMin
       const endMinutes = endHour * 60 + endMin
-      return appointmentMinutes >= startMinutes && appointmentMinutes + 60 <= endMinutes
+      return appointmentMinutes >= startMinutes && appointmentMinutes + duration <= endMinutes
     })
 
     if (!isAvailable) {
@@ -135,7 +139,7 @@ export async function createAppointment(data: CreateAppointmentData) {
         coach_id: data.coachId,
         appointment_date: data.appointmentDate,
         appointment_time: data.appointmentTime,
-        duration_minutes: 60,
+        duration_minutes: data.durationMinutes ?? 60,
         status: "scheduled",
         consultation_reason: data.consultation_reason,
         notes: data.notes,
@@ -149,8 +153,66 @@ export async function createAppointment(data: CreateAppointmentData) {
 
     revalidatePath("/dashboard/coaches")
     revalidatePath("/dashboard/coaches/appointments")
-    
-    return { success: true }
+
+    // Crear evento en Google Calendar del coach (silencioso si no tiene conectado)
+    const { data: newAppt } = await supabaseAdmin
+      .from("appointments")
+      .select("id")
+      .eq("user_id", session.user.id)
+      .eq("coach_id", data.coachId)
+      .eq("appointment_date", data.appointmentDate)
+      .eq("appointment_time", data.appointmentTime)
+      .single()
+
+    if (newAppt) {
+      const { data: coachUser } = await supabaseAdmin
+        .from("users")
+        .select("name")
+        .eq("id", data.coachId)
+        .single()
+
+      const { data: clientUser } = await supabaseAdmin
+        .from("users")
+        .select("name, email")
+        .eq("id", session.user.id)
+        .single()
+
+      const { eventId: googleEventId, meetLink } = await createCalendarEvent({
+        coachId: data.coachId,
+        appointmentId: newAppt.id,
+        title: `Cita con ${clientUser?.name ?? "cliente"}`,
+        date: data.appointmentDate,
+        startTime: data.appointmentTime.slice(0, 5),
+        durationMinutes: data.durationMinutes ?? 60,
+        description: [
+          `Cliente: ${clientUser?.name ?? ""} (${clientUser?.email ?? ""})`,
+          `Motivo: ${data.consultation_reason}`,
+        ].filter(Boolean).join("\n"),
+      })
+
+      if (googleEventId || meetLink) {
+        await supabaseAdmin
+          .from("appointments")
+          .update({
+            ...(googleEventId ? { google_event_id: googleEventId } : {}),
+            ...(meetLink ? { meeting_link: meetLink } : {}),
+          })
+          .eq("id", newAppt.id)
+      }
+    }
+
+    // Puntos por reservar cita (cada vez)
+    let pointsEarned: number | undefined
+    const pts = await awardPoints({
+      userId: session.user.id,
+      actionType: POINT_ACTIONS.BOOK_APPOINTMENT,
+      description: "Cita reservada con coach",
+    })
+    if (pts.success) {
+      pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.BOOK_APPOINTMENT]
+    }
+
+    return { success: true, pointsEarned }
   } catch (error) {
     console.error("Error in createAppointment:", error)
     return { error: "Error interno del servidor" }
@@ -181,17 +243,28 @@ export async function cancelAppointment(appointmentId: string) {
       return { error: "Solo puedes cancelar citas programadas" }
     }
 
-    // Verificar que la cita no sea en el pasado
     const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`)
-    if (appointmentDateTime < new Date()) {
-      return { error: "No puedes cancelar citas pasadas" }
+    const hoursUntilAppointment = (appointmentDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
+    if (hoursUntilAppointment < 24) {
+      return { error: "Las citas solo pueden cancelarse con al menos 24 horas de anticipación" }
     }
 
     // Cancelar la cita
+    const { data: apptFull } = await supabaseAdmin
+      .from("appointments")
+      .select("google_event_id, coach_id")
+      .eq("id", appointmentId)
+      .single()
+
     const { error: updateError } = await supabaseAdmin
       .from("appointments")
       .update({ status: "cancelled" })
       .eq("id", appointmentId)
+
+    // Eliminar evento de Google Calendar del coach (silencioso)
+    if (apptFull?.google_event_id && apptFull.coach_id) {
+      await deleteCalendarEvent(apptFull.coach_id, apptFull.google_event_id).catch(() => {})
+    }
 
     if (updateError) {
       console.error("Error cancelling appointment:", updateError)
@@ -200,8 +273,23 @@ export async function cancelAppointment(appointmentId: string) {
 
     revalidatePath("/dashboard/coaches")
     revalidatePath("/dashboard/coaches/appointments")
-    
-    return { success: true }
+
+    // Descuento de puntos por cancelar (silencioso si no tiene saldo suficiente)
+    let pointsLost: number | undefined
+    const cancelPenalty = Math.abs(POINTS_BY_ACTION[POINT_ACTIONS.CANCEL_APPOINTMENT])
+    if (cancelPenalty > 0) {
+      const spent = await spendPoints({
+        userId: session.user.id,
+        amount: cancelPenalty,
+        actionType: POINT_ACTIONS.CANCEL_APPOINTMENT,
+        description: "Penalización por cancelar cita",
+        referenceType: "appointment",
+        referenceId: appointmentId,
+      }).catch(() => ({ success: false }))
+      if (spent.success) pointsLost = cancelPenalty
+    }
+
+    return { success: true, pointsLost }
   } catch (error) {
     console.error("Error in cancelAppointment:", error)
     return { error: "Error interno del servidor" }
@@ -326,8 +414,19 @@ export async function saveHealthProfile(data: HealthProfileData) {
 
     revalidatePath("/dashboard/profile")
     revalidatePath("/dashboard/coaches")
-    
-    return { success: true }
+
+    // Puntos por completar historia clínica (solo la primera vez)
+    let pointsEarned: number | undefined
+    const pts = await awardPointsOnce({
+      userId: session.user.id,
+      actionType: POINT_ACTIONS.COMPLETE_HEALTH_PROFILE,
+      description: "Historia clínica completada",
+    })
+    if (pts.success && !pts.alreadyEarned) {
+      pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.COMPLETE_HEALTH_PROFILE]
+    }
+
+    return { success: true, pointsEarned }
   } catch (error) {
     console.error("Error in saveHealthProfile:", error)
     return { error: "Error interno del servidor" }

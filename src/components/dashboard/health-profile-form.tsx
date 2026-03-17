@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Save, AlertCircle, Laugh, Smile, Meh, Frown, Angry, BatteryLow, Battery, BatteryMedium, BatteryFull, BatteryCharging } from "lucide-react"
 import { saveHealthProfile } from "@/app/dashboard/coaches/actions"
+import { PointsBanner } from "@/components/dashboard/points-banner"
 
 interface HealthProfileFormProps {
   userId: string
@@ -44,6 +45,7 @@ interface HealthProfileFormProps {
 export function HealthProfileForm({ userId, existingProfile, onComplete }: HealthProfileFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [pointsEarned, setPointsEarned] = useState<number | undefined>()
 
   const [formData, setFormData] = useState({
     // 1. Datos básicos
@@ -132,6 +134,7 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
       setMessage({ type: "error", text: result.error })
     } else {
       setMessage({ type: "success", text: "Información guardada correctamente" })
+      if (result.pointsEarned) setPointsEarned(result.pointsEarned)
       if (onComplete) setTimeout(() => onComplete(), 1500)
     }
     setIsSubmitting(false)
@@ -185,6 +188,8 @@ export function HealthProfileForm({ userId, existingProfile, onComplete }: Healt
             {message.text}
           </div>
         )}
+
+        {pointsEarned && <PointsBanner points={pointsEarned} />}
 
         {/* 1. DATOS BÁSICOS */}
         <div>

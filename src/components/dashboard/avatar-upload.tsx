@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import { Camera, Upload, X, Loader2 } from "lucide-react"
 import { uploadAvatar, deleteAvatar } from "@/app/dashboard/profile/actions"
+import { PointsBanner } from "@/components/dashboard/points-banner"
 
 interface AvatarUploadProps {
   currentImage?: string | null
@@ -14,6 +15,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
   const [isUploading, setIsUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(currentImage || null)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [pointsEarned, setPointsEarned] = useState<number | undefined>()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,9 +56,20 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
         setPreview(currentImage || null)
       } else {
         setMessage({ type: "success", text: "Imagen actualizada correctamente" })
+        if (result.pointsEarned) setPointsEarned(result.pointsEarned)
       }
     } catch (error) {
-      setMessage({ type: "error", text: "Error al subir la imagen" })
+      const is413 = error instanceof Error && (
+        error.message.includes("Body exceeded") ||
+        error.message.includes("413") ||
+        (error as { digest?: string }).digest?.includes("413")
+      )
+      setMessage({
+        type: "error",
+        text: is413
+          ? "La imagen es demasiado grande. El tamaño máximo permitido es 2 MB."
+          : "Error al subir la imagen. Intenta de nuevo.",
+      })
       setPreview(currentImage || null)
     } finally {
       setIsUploading(false)
@@ -165,6 +178,8 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
           {message.text}
         </div>
       )}
+
+      {pointsEarned && <PointsBanner points={pointsEarned} />}
     </div>
   )
 }
