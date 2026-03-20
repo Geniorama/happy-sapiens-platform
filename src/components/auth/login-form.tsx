@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { signIn } from "next-auth/react"
+import { signIn, getSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 
@@ -31,7 +31,16 @@ export function LoginForm() {
         return
       }
 
-      router.push("/dashboard")
+      const session = await getSession()
+      const role = session?.user?.role
+
+      if (role === "admin") {
+        router.push("/admin")
+      } else if (role === "coach") {
+        router.push("/coach")
+      } else {
+        router.push("/dashboard")
+      }
       router.refresh()
     } catch {
       setError("Ocurrió un error al iniciar sesión")

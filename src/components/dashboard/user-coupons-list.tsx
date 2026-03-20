@@ -14,6 +14,7 @@ interface Coupon {
   assigned_at: string
   used_at: string | null
   expires_at: string | null
+  terms_and_conditions: string | null
   partner: {
     id: string
     name: string
@@ -264,9 +265,6 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
       {termsModalCouponId && (() => {
         const coupon = coupons.find((c) => c.id === termsModalCouponId)
         if (!coupon) return null
-        const termsText = coupon.partner.terms_and_conditions
-          ? coupon.partner.terms_and_conditions
-          : `Aplican las condiciones de uso de ${coupon.partner.name}. Consulta su web para más información.`
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 cursor-pointer"
@@ -287,8 +285,24 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                   <X className="w-5 h-5" strokeWidth={1.5} />
                 </button>
               </div>
-              <div className="p-4 overflow-y-auto text-sm text-zinc-600">
-                <p className="whitespace-pre-wrap">{termsText}</p>
+              <div className="p-4 overflow-y-auto text-sm text-zinc-600 space-y-3">
+                {coupon.terms_and_conditions ? (
+                  <>
+                    <p className="whitespace-pre-wrap">{coupon.terms_and_conditions}</p>
+                    {coupon.partner.terms_and_conditions && (
+                      <>
+                        <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide pt-2 border-t border-zinc-100">
+                          Condiciones generales de {coupon.partner.name}
+                        </p>
+                        <p className="whitespace-pre-wrap text-zinc-500">{coupon.partner.terms_and_conditions}</p>
+                      </>
+                    )}
+                  </>
+                ) : coupon.partner.terms_and_conditions ? (
+                  <p className="whitespace-pre-wrap">{coupon.partner.terms_and_conditions}</p>
+                ) : (
+                  <p>{`Aplican las condiciones de uso de ${coupon.partner.name}. Consulta su web para más información.`}</p>
+                )}
               </div>
             </div>
           </div>

@@ -17,6 +17,10 @@ export default async function Layout({
     redirect("/coach")
   }
 
+  if (session.user.role === "admin") {
+    redirect("/admin")
+  }
+
   return (
     <DashboardLayout 
       userName={session.user?.name} 

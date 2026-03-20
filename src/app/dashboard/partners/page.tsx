@@ -40,6 +40,7 @@ export default async function PartnersPage() {
       cover_image_url,
       expires_at,
       max_per_user,
+      terms_and_conditions,
       partner:partners!inner(
         id,
         name,
