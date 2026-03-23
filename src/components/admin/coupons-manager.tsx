@@ -1,15 +1,24 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Plus, X, Tag, Trash2, ChevronDown, ChevronRight, Pencil, Check } from "lucide-react"
+import { Plus, X, Tag, Trash2, ChevronDown, ChevronRight, Pencil, Check, CheckCircle2, Clock } from "lucide-react"
 import {
-  createCouponBatch, deleteCouponCampaign, deleteAllCampaignCoupons, bulkDeleteCampaigns, updateCouponCampaign,
+  createCouponBatch, deleteCouponCampaign, deleteAllCampaignCoupons, bulkDeleteCampaigns, updateCouponCampaign, markCouponUsed,
 } from "@/app/admin/coupons/actions"
 
 interface Partner {
   id: string
   name: string
   logo_url: string | null
+}
+
+interface AssignedCoupon {
+  id: string
+  coupon_code: string
+  user_id: string
+  user_email: string
+  assigned_at: string | null
+  used_at: string | null
 }
 
 interface Campaign {
@@ -21,10 +30,13 @@ interface Campaign {
   cover_image_url: string | null
   terms_and_conditions: string | null
   max_per_user: number | null
+  discount_percentage: number | null
+  discount_description: string | null
   total: number
   available: number
   assigned: number
   used: number
+  assignedCoupons: AssignedCoupon[]
 }
 
 function campaignKey(c: Campaign) {
@@ -52,6 +64,8 @@ function CreateCouponForm({
   const [maxPerUser, setMaxPerUser] = useState("")
   const [coverImageUrl, setCoverImageUrl] = useState("")
   const [termsAndConditions, setTermsAndConditions] = useState("")
+  const [discountPercentage, setDiscountPercentage] = useState("")
+  const [discountDescription, setDiscountDescription] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -72,6 +86,8 @@ function CreateCouponForm({
         max_per_user: maxPerUser ? Number(maxPerUser) : null,
         cover_image_url: coverImageUrl || undefined,
         terms_and_conditions: termsAndConditions || undefined,
+        discount_percentage: discountPercentage ? Number(discountPercentage) : null,
+        discount_description: discountDescription || undefined,
       })
 
       if (result.error) { setError(result.error) } else { onSuccess() }
@@ -116,6 +132,18 @@ function CreateCouponForm({
           <label className="block text-xs font-medium text-zinc-700 mb-1">Máx. por usuario</label>
           <input type="number" min={1} value={maxPerUser} onChange={(e) => setMaxPerUser(e.target.value)}
             placeholder="Sin límite"
+            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-700 mb-1">% Descuento del cupón</label>
+          <input type="number" min={0} max={100} value={discountPercentage} onChange={(e) => setDiscountPercentage(e.target.value)}
+            placeholder="Ej: 20 (opcional)"
+            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-700 mb-1">Descripción del descuento</label>
+          <input type="text" value={discountDescription} onChange={(e) => setDiscountDescription(e.target.value)}
+            placeholder="Ej: 20% OFF en toda la tienda"
             className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
         </div>
         <div className="sm:col-span-2">
@@ -173,9 +201,12 @@ export function CouponsManager({
   const [editForm, setEditForm] = useState<{
     title: string; description: string; expires_at: string
     cover_image_url: string; terms_and_conditions: string; max_per_user: string
+    discount_percentage: string; discount_description: string
   } | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
   const [deletingAllKey, setDeletingAllKey] = useState<string | null>(null)
+  const [togglingCouponId, setTogglingCouponId] = useState<string | null>(null)
+  const [localUsedAt, setLocalUsedAt] = useState<Record<string, string | null>>({})
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -217,6 +248,8 @@ export function CouponsManager({
       cover_image_url: c.cover_image_url ?? "",
       terms_and_conditions: c.terms_and_conditions ?? "",
       max_per_user: c.max_per_user != null ? String(c.max_per_user) : "",
+      discount_percentage: c.discount_percentage != null ? String(c.discount_percentage) : "",
+      discount_description: c.discount_description ?? "",
     })
   }
 
@@ -233,6 +266,8 @@ export function CouponsManager({
         cover_image_url: editForm.cover_image_url || null,
         terms_and_conditions: editForm.terms_and_conditions || null,
         max_per_user: editForm.max_per_user ? Number(editForm.max_per_user) : null,
+        discount_percentage: editForm.discount_percentage ? Number(editForm.discount_percentage) : null,
+        discount_description: editForm.discount_description || null,
       })
       if (result.error) { setError(result.error) } else { cancelEdit() }
     })
@@ -257,6 +292,20 @@ export function CouponsManager({
       const result = await deleteAllCampaignCoupons(c.partner_id, c.title, c.description)
       if (result.error) setError(result.error)
       setDeletingAllKey(null)
+    })
+  }
+
+  const handleToggleUsed = (couponId: string, currentUsedAt: string | null) => {
+    const nowUsed = currentUsedAt === null
+    setTogglingCouponId(couponId)
+    startTransition(async () => {
+      const result = await markCouponUsed(couponId, nowUsed)
+      if (result.error) {
+        setError(result.error)
+      } else {
+        setLocalUsedAt((prev) => ({ ...prev, [couponId]: nowUsed ? new Date().toISOString() : null }))
+      }
+      setTogglingCouponId(null)
     })
   }
 
@@ -490,6 +539,20 @@ export function CouponsManager({
                                   placeholder="Sin límite"
                                   className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white" />
                               </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wide mb-1">% Descuento</label>
+                                <input type="number" min={0} max={100} value={editForm.discount_percentage}
+                                  onChange={(e) => setEditForm({ ...editForm, discount_percentage: e.target.value })}
+                                  placeholder="Opcional"
+                                  className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wide mb-1">Desc. descuento</label>
+                                <input type="text" value={editForm.discount_description}
+                                  onChange={(e) => setEditForm({ ...editForm, discount_description: e.target.value })}
+                                  placeholder="Ej: 20% OFF en toda la tienda"
+                                  className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white" />
+                              </div>
                               <div className="sm:col-span-2">
                                 <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wide mb-1">URL imagen portada</label>
                                 <input type="url" value={editForm.cover_image_url}
@@ -542,6 +605,18 @@ export function CouponsManager({
                                 <p className="text-zinc-400 font-medium uppercase tracking-wide text-[10px] mb-0.5">Imagen portada</p>
                                 <p>{c.cover_image_url ? "Sí" : "No"}</p>
                               </div>
+                              {c.discount_percentage != null && (
+                                <div>
+                                  <p className="text-zinc-400 font-medium uppercase tracking-wide text-[10px] mb-0.5">Descuento cupón</p>
+                                  <p className="text-amber-700 font-semibold">{c.discount_percentage}% OFF</p>
+                                </div>
+                              )}
+                              {c.discount_description && (
+                                <div className="sm:col-span-2">
+                                  <p className="text-zinc-400 font-medium uppercase tracking-wide text-[10px] mb-0.5">Desc. descuento</p>
+                                  <p>{c.discount_description}</p>
+                                </div>
+                              )}
                             </div>
 
                             {c.terms_and_conditions && (
@@ -552,6 +627,52 @@ export function CouponsManager({
                                 </p>
                               </div>
                             )}
+
+                            {/* Cupones asignados */}
+                            <div className="pt-3 border-t border-zinc-200">
+                              <p className="text-zinc-400 font-medium uppercase tracking-wide text-[10px] mb-2">
+                                Cupones asignados ({c.assignedCoupons.length})
+                              </p>
+                              {c.assignedCoupons.length === 0 ? (
+                                <p className="text-xs text-zinc-400 italic">Ningún cupón ha sido obtenido aún</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {c.assignedCoupons.map((ac) => {
+                                    const effectiveUsedAt = ac.id in localUsedAt ? localUsedAt[ac.id] : ac.used_at
+                                    const isUsed = effectiveUsedAt !== null
+                                    const isToggling = togglingCouponId === ac.id
+                                    return (
+                                      <div key={ac.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${isUsed ? "bg-zinc-50 border-zinc-200" : "bg-white border-zinc-200"}`}>
+                                        <code className="font-mono font-semibold text-zinc-900 flex-shrink-0">{ac.coupon_code}</code>
+                                        <span className="text-zinc-500 truncate flex-1 min-w-0">{ac.user_email}</span>
+                                        {ac.assigned_at && (
+                                          <span className="text-zinc-400 flex-shrink-0 hidden sm:inline">
+                                            {new Date(ac.assigned_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                                          </span>
+                                        )}
+                                        <button
+                                          onClick={() => handleToggleUsed(ac.id, effectiveUsedAt)}
+                                          disabled={isToggling || isPending}
+                                          title={isUsed ? "Marcar como no usado" : "Marcar como usado"}
+                                          className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                            isUsed
+                                              ? "border-zinc-300 text-zinc-500 hover:border-red-300 hover:text-red-500"
+                                              : "border-zinc-300 text-zinc-400 hover:border-green-400 hover:text-green-600"
+                                          }`}
+                                        >
+                                          {isToggling
+                                            ? <span className="text-[10px]">...</span>
+                                            : isUsed
+                                              ? <><CheckCircle2 className="w-3 h-3" strokeWidth={2} /><span className="hidden sm:inline">Usado</span></>
+                                              : <><Clock className="w-3 h-3" strokeWidth={1.5} /><span className="hidden sm:inline">Activo</span></>
+                                          }
+                                        </button>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </>
                         )}
                       </div>

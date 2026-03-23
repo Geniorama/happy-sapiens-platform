@@ -12,6 +12,8 @@ interface Coupon {
   expires_at: string | null
   max_per_user: number | null
   terms_and_conditions: string | null
+  discount_percentage: number | null
+  discount_description: string | null
   partner: {
     id: string
     name: string
@@ -88,6 +90,8 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
   const coverImage = coupon.cover_image_url || coupon.partner.cover_image_url
   const couponTitle = coupon.title || coupon.partner.name
   const couponDescription = coupon.description || coupon.partner.discount_description
+  const discountPercentage = coupon.discount_percentage ?? coupon.partner.discount_percentage
+  const discountDescriptionText = coupon.discount_description || coupon.partner.discount_description
   const isExpiringSoon = coupon.expires_at && new Date(coupon.expires_at) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   return (
@@ -190,11 +194,16 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
         )}
 
         {/* Descuento */}
-        {coupon.partner.discount_percentage && (
+        {(discountPercentage || discountDescriptionText) && (
           <div className="bg-secondary/30 rounded-lg p-3 mb-4">
-            <div className="text-xl sm:text-2xl font-heading text-primary">
-              {coupon.partner.discount_percentage}% OFF
-            </div>
+            {discountPercentage && (
+              <div className="text-xl sm:text-2xl font-heading text-primary">
+                {discountPercentage}% OFF
+              </div>
+            )}
+            {discountDescriptionText && (
+              <p className={`text-xs text-zinc-600 ${discountPercentage ? "mt-1" : ""}`}>{discountDescriptionText}</p>
+            )}
           </div>
         )}
 

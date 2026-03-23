@@ -61,7 +61,7 @@ export async function createPartner(data: PartnerFormData) {
       terms_and_conditions: data.terms_and_conditions?.trim() || null,
       is_active: true,
     })
-    .select("id, name, category, website_url, logo_url, cover_image_url, terms_and_conditions, is_active")
+    .select("id, name, category, website_url, discount_percentage, discount_description, logo_url, cover_image_url, terms_and_conditions, is_active")
     .single()
 
   if (error) {

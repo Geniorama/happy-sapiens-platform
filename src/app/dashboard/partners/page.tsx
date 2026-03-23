@@ -24,7 +24,7 @@ export default async function PartnersPage() {
     .from("coupons")
     .select(`
       *,
-      partner:partners(id, name, website_url, discount_description, cover_image_url, logo_url, terms_and_conditions)
+      partner:partners(id, name, website_url, discount_percentage, discount_description, cover_image_url, logo_url, terms_and_conditions)
     `)
     .eq("user_id", session.user.id)
     .eq("is_assigned", true)
@@ -41,6 +41,8 @@ export default async function PartnersPage() {
       expires_at,
       max_per_user,
       terms_and_conditions,
+      discount_percentage,
+      discount_description,
       partner:partners!inner(
         id,
         name,

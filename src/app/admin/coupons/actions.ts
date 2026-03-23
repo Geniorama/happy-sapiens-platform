@@ -20,6 +20,8 @@ export interface CouponBatchData {
   max_per_user?: number | null
   cover_image_url?: string
   terms_and_conditions?: string
+  discount_percentage?: number | null
+  discount_description?: string
 }
 
 export async function createCouponBatch(data: CouponBatchData) {
@@ -42,6 +44,8 @@ export async function createCouponBatch(data: CouponBatchData) {
     max_per_user: data.max_per_user || null,
     cover_image_url: data.cover_image_url?.trim() || null,
     terms_and_conditions: data.terms_and_conditions?.trim() || null,
+    discount_percentage: data.discount_percentage ?? null,
+    discount_description: data.discount_description?.trim() || null,
   }))
 
   const { error } = await supabaseAdmin.from("coupons").insert(rows)
@@ -63,6 +67,8 @@ export interface CouponCampaignUpdateData {
   cover_image_url?: string | null
   terms_and_conditions?: string | null
   max_per_user?: number | null
+  discount_percentage?: number | null
+  discount_description?: string | null
 }
 
 export async function updateCouponCampaign(
@@ -81,6 +87,8 @@ export async function updateCouponCampaign(
     cover_image_url: data.cover_image_url?.trim() || null,
     terms_and_conditions: data.terms_and_conditions?.trim() || null,
     max_per_user: data.max_per_user ?? null,
+    discount_percentage: data.discount_percentage ?? null,
+    discount_description: data.discount_description?.trim() || null,
   }
 
   let query = supabaseAdmin
@@ -99,6 +107,25 @@ export async function updateCouponCampaign(
   if (error) {
     console.error("Error actualizando campaña:", error)
     return { error: "Error al actualizar la campaña" }
+  }
+
+  revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
+  return { success: true }
+}
+
+export async function markCouponUsed(id: string, used: boolean) {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+
+  const { error } = await supabaseAdmin
+    .from("coupons")
+    .update({ used_at: used ? new Date().toISOString() : null })
+    .eq("id", id)
+
+  if (error) {
+    console.error("Error marcando cupón:", error)
+    return { error: "Error al actualizar el cupón" }
   }
 
   revalidatePath("/admin/coupons")

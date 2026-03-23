@@ -24,6 +24,8 @@ interface Campaign {
   expires_at: string | null
   max_per_user: number | null
   terms_and_conditions: string | null
+  discount_percentage: number | null
+  discount_description: string | null
   partner: Partner
   available_count: number
   user_obtained_count: number

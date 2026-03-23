@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
         expires_at,
         max_per_user,
         terms_and_conditions,
+        discount_percentage,
+        discount_description,
         partner:partners!inner(
           id,
           name,

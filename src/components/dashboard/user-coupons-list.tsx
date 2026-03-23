@@ -15,10 +15,13 @@ interface Coupon {
   used_at: string | null
   expires_at: string | null
   terms_and_conditions: string | null
+  discount_percentage: number | null
+  discount_description: string | null
   partner: {
     id: string
     name: string
     website_url: string | null
+    discount_percentage: number | null
     discount_description: string | null
     cover_image_url: string | null
     logo_url: string | null
@@ -86,6 +89,8 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
         const coverImage = coupon.cover_image_url || coupon.partner.cover_image_url
         const couponTitle = coupon.title || coupon.partner.name
         const couponDescription = coupon.description || coupon.partner.discount_description
+        const discountPercentage = coupon.discount_percentage ?? coupon.partner.discount_percentage
+        const discountDescriptionText = coupon.discount_description || coupon.partner.discount_description
 
         return (
           <div
@@ -161,6 +166,20 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                   {couponDescription}
                 </p>
               )}
+
+            {/* Descuento */}
+            {(discountPercentage || discountDescriptionText) && (
+              <div className="bg-secondary/30 rounded-lg p-2.5 mb-3">
+                {discountPercentage && (
+                  <div className="text-lg font-heading text-primary">
+                    {discountPercentage}% OFF
+                  </div>
+                )}
+                {discountDescriptionText && (
+                  <p className={`text-xs text-zinc-600 ${discountPercentage ? "mt-0.5" : ""}`}>{discountDescriptionText}</p>
+                )}
+              </div>
+            )}
 
             {/* Código de cupón */}
             <div className="bg-secondary/20 rounded-lg p-2.5 mb-3">
