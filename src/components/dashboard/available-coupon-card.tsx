@@ -41,6 +41,8 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   
   const hasReachedLimit = maxPerUser !== null && localUserCount >= maxPerUser
+  const remainingQuota = maxPerUser !== null ? Math.max(0, maxPerUser - localUserCount) : Infinity
+  const displayCount = maxPerUser !== null ? Math.min(localCount, remainingQuota) : localCount
   const canObtain = localCount > 0 && !hasReachedLimit
 
   const handleAssignCoupon = async () => {
@@ -120,12 +122,13 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
             
             {/* Contador de disponibles */}
             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm ${
-              localCount > 10 ? 'bg-green-500 text-white' : 
-              localCount > 5 ? 'bg-yellow-500 text-white' : 
-              'bg-red-500 text-white'
+              displayCount > 10 ? 'bg-green-500 text-white' :
+              displayCount > 5  ? 'bg-yellow-500 text-white' :
+              displayCount > 0  ? 'bg-red-500 text-white' :
+              'bg-zinc-500 text-white'
             }`}>
               <Package className="w-3 h-3" strokeWidth={2} />
-              {localCount}
+              {displayCount === Infinity ? localCount : displayCount}
             </span>
           </div>
 
