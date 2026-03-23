@@ -35,7 +35,8 @@ export interface PartnerFormData {
   name: string
   category: string
   website_url?: string
-
+  discount_percentage?: number | null
+  discount_description?: string
   logo_url?: string
   cover_image_url?: string
   terms_and_conditions?: string
@@ -53,6 +54,8 @@ export async function createPartner(data: PartnerFormData) {
       name: data.name.trim(),
       category: data.category?.trim() || null,
       website_url: data.website_url?.trim() || null,
+      discount_percentage: data.discount_percentage ?? null,
+      discount_description: data.discount_description?.trim() || null,
       logo_url: data.logo_url?.trim() || null,
       cover_image_url: data.cover_image_url?.trim() || null,
       terms_and_conditions: data.terms_and_conditions?.trim() || null,
@@ -83,6 +86,8 @@ export async function updatePartner(id: string, data: PartnerFormData) {
       name: data.name.trim(),
       category: data.category?.trim() || null,
       website_url: data.website_url?.trim() || null,
+      discount_percentage: data.discount_percentage ?? null,
+      discount_description: data.discount_description?.trim() || null,
       logo_url: data.logo_url?.trim() || null,
       cover_image_url: data.cover_image_url?.trim() || null,
       terms_and_conditions: data.terms_and_conditions?.trim() || null,

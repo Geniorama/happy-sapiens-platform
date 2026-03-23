@@ -5,7 +5,7 @@ export default async function AdminPartnersPage() {
   const [{ data: partners }, { data: categories }] = await Promise.all([
     supabaseAdmin
       .from("partners")
-      .select("id, name, category, website_url, logo_url, cover_image_url, terms_and_conditions, is_active")
+      .select("id, name, category, website_url, discount_percentage, discount_description, logo_url, cover_image_url, terms_and_conditions, is_active")
       .order("name"),
     supabaseAdmin
       .from("partner_categories")

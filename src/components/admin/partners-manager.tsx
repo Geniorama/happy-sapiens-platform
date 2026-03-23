@@ -21,6 +21,8 @@ interface Partner {
   name: string
   category: string | null
   website_url: string | null
+  discount_percentage: number | null
+  discount_description: string | null
   logo_url: string | null
   cover_image_url: string | null
   terms_and_conditions: string | null
@@ -31,6 +33,8 @@ const EMPTY_FORM: PartnerFormData = {
   name: "",
   category: "",
   website_url: "",
+  discount_percentage: null,
+  discount_description: "",
   logo_url: "",
   cover_image_url: "",
   terms_and_conditions: "",
@@ -90,6 +94,28 @@ function PartnerForm({
             value={form.website_url || ""}
             onChange={(e) => set("website_url", e.target.value)}
             placeholder="https://..."
+            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-700 mb-1">% de descuento</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={form.discount_percentage ?? ""}
+            onChange={(e) => set("discount_percentage", e.target.value === "" ? null : Number(e.target.value) as any)}
+            placeholder="Ej: 15"
+            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-zinc-700 mb-1">Descripción del descuento</label>
+          <input
+            type="text"
+            value={form.discount_description || ""}
+            onChange={(e) => set("discount_description", e.target.value)}
+            placeholder="Ej: Descuento en toda la tienda online"
             className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
         </div>
@@ -421,6 +447,8 @@ export function PartnersManager({
                               name: partner.name,
                               category: partner.category || "",
                               website_url: partner.website_url || "",
+                              discount_percentage: partner.discount_percentage ?? null,
+                              discount_description: partner.discount_description || "",
                               logo_url: partner.logo_url || "",
                               cover_image_url: partner.cover_image_url || "",
                               terms_and_conditions: partner.terms_and_conditions || "",
