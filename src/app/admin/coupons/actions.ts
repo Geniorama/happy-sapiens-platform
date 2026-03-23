@@ -37,7 +37,7 @@ export async function createCouponBatch(data: CouponBatchData) {
     title: data.title?.trim() || null,
     description: data.description?.trim() || null,
     expires_at: data.expires_at || null,
-    code,
+    coupon_code: code,
     is_assigned: false,
     max_per_user: data.max_per_user || null,
     cover_image_url: data.cover_image_url?.trim() || null,

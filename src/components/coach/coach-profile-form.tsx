@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { Loader2, Save } from "lucide-react"
 import { updateCoachProfile } from "@/app/coach/actions"
+import { PhoneInput } from "@/components/ui/phone-input"
 
 interface CoachProfileFormProps {
   profile: {
@@ -71,13 +72,7 @@ export function CoachProfileForm({ profile }: CoachProfileFormProps) {
 
           <div>
             <label className="block text-xs font-medium text-zinc-600 mb-1.5">Teléfono</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+54 9 11 1234-5678"
-              className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-            />
+            <PhoneInput value={phone} onChange={setPhone} variant="primary" />
           </div>
         </div>
 

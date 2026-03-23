@@ -11,6 +11,7 @@ import {
   setSubscription, resetPassword, deleteUser,
   bulkDeleteUsers, bulkSetSubscription,
 } from "@/app/admin/users/actions"
+import { PhoneInput } from "@/components/ui/phone-input"
 
 interface User {
   id: string
@@ -68,11 +69,16 @@ function ActionBtn({
 
 // ─── Create Form ──────────────────────────────────────────────────────────────
 
-function CreateUserForm({ onClose }: { onClose: () => void }) {
+function CreateUserForm({ onClose, onCreated }: { onClose: () => void; onCreated: (user: User) => void }) {
+  const today = new Date().toISOString().split("T")[0]
+  const defaultEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+
   const [form, setForm] = useState({
     name: "", email: "", password: "",
     role: "user" as "user" | "coach" | "admin",
     subscription_status: "active" as "active" | "inactive",
+    subscription_start_date: today,
+    subscription_end_date: defaultEnd,
   })
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -84,7 +90,7 @@ function CreateUserForm({ onClose }: { onClose: () => void }) {
     startTransition(async () => {
       const result = await createUser(form)
       if (result.error) setError(result.error)
-      else onClose()
+      else { onCreated(result.user as User); onClose() }
     })
   }
 
@@ -135,6 +141,22 @@ function CreateUserForm({ onClose }: { onClose: () => void }) {
             <option value="inactive">Inactiva</option>
           </select>
         </div>
+        {form.subscription_status === "active" && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 mb-1">Fecha de inicio *</label>
+              <input type="date" value={form.subscription_start_date}
+                onChange={e => set("subscription_start_date", e.target.value)}
+                className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 mb-1">Fecha de vencimiento *</label>
+              <input type="date" value={form.subscription_end_date}
+                onChange={e => set("subscription_end_date", e.target.value)}
+                className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex gap-2 justify-end">
@@ -256,10 +278,12 @@ function UserDetailPanel({
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-700 mb-1">Teléfono</label>
-                <input type="tel" value={dataForm.phone}
-                  onChange={e => setDataForm(p => ({ ...p, phone: e.target.value }))}
-                  placeholder="+54 9 11..."
-                  className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                <PhoneInput
+                  value={dataForm.phone}
+                  onChange={v => setDataForm(p => ({ ...p, phone: v }))}
+                  variant="amber"
+                  size="sm"
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-700 mb-1">Fecha de nacimiento</label>
@@ -532,7 +556,12 @@ export function UsersManager({ users: initial }: { users: User[] }) {
         </button>
       </div>
 
-      {showCreate && <CreateUserForm onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateUserForm
+          onClose={() => setShowCreate(false)}
+          onCreated={(user) => setUsers(prev => [user, ...prev])}
+        />
+      )}
 
       {/* Bulk bar */}
       {selected.size > 0 && (

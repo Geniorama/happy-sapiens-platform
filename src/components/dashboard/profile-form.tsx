@@ -4,6 +4,7 @@ import { useState } from "react"
 import { User, Phone, Calendar, Users } from "lucide-react"
 import { updateProfile } from "@/app/dashboard/profile/actions"
 import { PointsBanner } from "@/components/dashboard/points-banner"
+import { PhoneInput } from "@/components/ui/phone-input"
 
 interface ProfileFormProps {
   user: {
@@ -16,6 +17,7 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm({ user }: ProfileFormProps) {
+  const [phone, setPhone] = useState(user.phone || "")
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
@@ -107,13 +109,8 @@ export function ProfileForm({ user }: ProfileFormProps) {
               <Phone className="w-4 h-4" strokeWidth={1.5} />
               Teléfono / WhatsApp
             </label>
-            <input
-              type="tel"
-              name="phone"
-              defaultValue={user.phone || ""}
-              className="w-full px-4 py-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              placeholder="+54 9 11 1234 5678"
-            />
+            <PhoneInput value={phone} onChange={setPhone} variant="primary" size="lg" />
+            <input type="hidden" name="phone" value={phone} />
           </div>
 
           <div>

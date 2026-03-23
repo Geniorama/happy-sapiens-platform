@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { Save, Loader2, KeyRound, Check } from "lucide-react"
 import { updateAdminProfile, updateAdminPassword } from "@/app/admin/profile/actions"
+import { PhoneInput } from "@/components/ui/phone-input"
 
 interface AdminProfileFormProps {
   profile: {
@@ -82,13 +83,7 @@ export function AdminProfileForm({ profile }: AdminProfileFormProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-600 mb-1.5">Teléfono</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+57 300 000 0000"
-              className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-500 transition-colors"
-            />
+            <PhoneInput value={phone} onChange={setPhone} variant="amber" />
           </div>
         </div>
 

@@ -32,3 +32,57 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 400;
   text-transform: uppercase;
 }
+
+/* ── Phone input (react-phone-number-input) ──────────────────────────────── */
+/* La librería maneja bandera y selector; aquí solo sobreescribimos
+   el contenedor, los colores de focus y el padding del input. */
+
+.phone-input {
+  width: 100%;
+  border: 1px solid rgb(212 212 216) !important; /* zinc-300, igual al resto de inputs */
+  border-radius: 0.5rem !important;
+  background: #fff;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.phone-input:focus-within {
+  outline: none;
+}
+
+/* Variante amber (admin) */
+.phone-input--amber:focus-within {
+  box-shadow: 0 0 0 2px rgb(245 158 11 / 0.5) !important;
+  border-color: #f59e0b !important;
+}
+
+/* Variante primary (dashboard / coach) */
+.phone-input--primary:focus-within {
+  box-shadow: 0 0 0 2px rgb(175 181 153 / 0.4) !important;
+  border-color: #afb599 !important;
+}
+
+/* Separador visual entre selector de país e input */
+.phone-input .PhoneInputCountry {
+  padding-left: 0.625rem;
+  border-right: 1px solid rgb(228 228 231); /* zinc-200 */
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+/* El input no tiene borde propio */
+.phone-input .PhoneInputInput {
+  border: none !important;
+  outline: none !important;
+  background: transparent;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: #09090b;
+}
+.phone-input .PhoneInputInput::placeholder {
+  color: rgb(161 161 170);
+}
+
+/* Tamaños — padding del input para que la altura sea idéntica a los otros inputs */
+.phone-input--sm .PhoneInputInput  { padding: 0.5rem 0.75rem 0.5rem 0.5rem; }   /* py-2   */
+.phone-input--md .PhoneInputInput  { padding: 0.625rem 0.75rem 0.625rem 0.5rem; } /* py-2.5 */
+.phone-input--lg .PhoneInputInput  { padding: 0.75rem 1rem 0.75rem 0.5rem; }     /* py-3   */
