@@ -52,6 +52,7 @@ export async function createCouponBatch(data: CouponBatchData) {
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true, count: rows.length }
 }
 
@@ -101,6 +102,7 @@ export async function updateCouponCampaign(
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -127,6 +129,7 @@ export async function deleteCoupon(id: string) {
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -150,6 +153,7 @@ export async function deleteAllCampaignCoupons(partnerId: string, title: string 
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -178,6 +182,7 @@ export async function bulkDeleteCampaigns(
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -202,5 +207,6 @@ export async function deleteCouponCampaign(partnerId: string, title: string | nu
   }
 
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }

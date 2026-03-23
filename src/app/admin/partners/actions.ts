@@ -67,6 +67,7 @@ export async function createPartner(data: PartnerFormData) {
   }
 
   revalidatePath("/admin/partners")
+  revalidatePath("/dashboard/partners")
   return { success: true, partner: created }
 }
 
@@ -94,6 +95,7 @@ export async function updatePartner(id: string, data: PartnerFormData) {
   }
 
   revalidatePath("/admin/partners")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -121,6 +123,7 @@ export async function deletePartner(id: string) {
 
   revalidatePath("/admin/partners")
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -177,6 +180,7 @@ export async function deleteCategory(id: string) {
   }
 
   revalidatePath("/admin/partners")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -195,6 +199,7 @@ export async function bulkTogglePartnersActive(ids: string[], isActive: boolean)
   }
 
   revalidatePath("/admin/partners")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -221,6 +226,7 @@ export async function bulkDeletePartners(ids: string[]) {
 
   revalidatePath("/admin/partners")
   revalidatePath("/admin/coupons")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
 
@@ -239,5 +245,6 @@ export async function togglePartnerActive(id: string, isActive: boolean) {
   }
 
   revalidatePath("/admin/partners")
+  revalidatePath("/dashboard/partners")
   return { success: true }
 }
