@@ -55,6 +55,8 @@ export function SubscriptionForm() {
   const [billing, setBilling] = useState<AddressFields>(emptyAddress)
   const [shipping, setShipping] = useState({ fullName: "", ...emptyAddress })
   const [sameAsBilling, setSameAsBilling] = useState(true)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedDataPolicy, setAcceptedDataPolicy] = useState(false)
 
   useEffect(() => {
     const productId = searchParams.get("product")
@@ -400,9 +402,55 @@ export function SubscriptionForm() {
             </div>
           </div>
 
+          {/* Aceptación legal */}
+          <div className="space-y-3 pt-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                required
+                className="mt-0.5 w-4 h-4 flex-shrink-0 accent-primary rounded"
+              />
+              <span className="text-sm text-zinc-700">
+                He leído y acepto los{" "}
+                <a
+                  href="/terminos-condiciones"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline hover:text-primary/80"
+                >
+                  términos y condiciones
+                </a>{" "}
+                del servicio.
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acceptedDataPolicy}
+                onChange={(e) => setAcceptedDataPolicy(e.target.checked)}
+                required
+                className="mt-0.5 w-4 h-4 flex-shrink-0 accent-primary rounded"
+              />
+              <span className="text-sm text-zinc-700">
+                He leído y acepto la{" "}
+                <a
+                  href="/politica-tratamiento-datos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline hover:text-primary/80"
+                >
+                  política de tratamiento de datos
+                </a>.
+              </span>
+            </label>
+          </div>
+
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !acceptedTerms || !acceptedDataPolicy}
             className="w-full cursor-pointer py-3 px-4 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading
