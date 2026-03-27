@@ -65,6 +65,20 @@ async function handlePreApproval(preApprovalId: string) {
     .single()
 
   if (status === 'authorized') {
+    // Leer datos de facturación/envío del checkout pendiente
+    const { data: pendingCheckout } = await supabaseAdmin
+      .from('pending_checkout')
+      .select('billing, shipping, referral_code')
+      .eq('email', email)
+      .single()
+
+    const billingData = pendingCheckout?.billing as Record<string, string> | null
+    const shippingData = pendingCheckout?.shipping as Record<string, string> | null
+    // Si el referralCode viene del pending_checkout, tiene prioridad
+    if (!referralCode && pendingCheckout?.referral_code) {
+      referralCode = pendingCheckout.referral_code
+    }
+
     if (existingUser) {
       await supabaseAdmin
         .from('users')
@@ -73,6 +87,22 @@ async function handlePreApproval(preApprovalId: string) {
           subscription_synced_at: new Date().toISOString(),
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
+          ...(billingData && {
+            billing_document_type: billingData.documentType,
+            billing_document_number: billingData.documentNumber,
+            billing_phone: billingData.phone,
+            billing_address: billingData.address,
+            billing_city: billingData.city,
+            billing_department: billingData.department,
+          }),
+          ...(shippingData && {
+            shipping_full_name: shippingData.fullName,
+            shipping_phone: shippingData.phone,
+            shipping_address: shippingData.address,
+            shipping_city: shippingData.city,
+            shipping_department: shippingData.department,
+            shipping_same_as_billing: !pendingCheckout?.shipping || shippingData.fullName === name,
+          }),
         })
         .eq('id', existingUser.id)
 
@@ -104,6 +134,22 @@ async function handlePreApproval(preApprovalId: string) {
           referred_by: referrerId,
           reset_token: resetToken,
           reset_token_expires: resetTokenExpires.toISOString(),
+          ...(billingData && {
+            billing_document_type: billingData.documentType,
+            billing_document_number: billingData.documentNumber,
+            billing_phone: billingData.phone,
+            billing_address: billingData.address,
+            billing_city: billingData.city,
+            billing_department: billingData.department,
+          }),
+          ...(shippingData && {
+            shipping_full_name: shippingData.fullName,
+            shipping_phone: shippingData.phone,
+            shipping_address: shippingData.address,
+            shipping_city: shippingData.city,
+            shipping_department: shippingData.department,
+            shipping_same_as_billing: !pendingCheckout?.shipping || shippingData.fullName === name,
+          }),
         })
         .select('id')
         .single()
@@ -138,6 +184,9 @@ async function handlePreApproval(preApprovalId: string) {
 
       await sendWelcomeEmail(email, name, resetToken)
     }
+
+    // Limpiar el checkout pendiente
+    await supabaseAdmin.from('pending_checkout').delete().eq('email', email)
   } else if (status === 'cancelled' || status === 'paused') {
     if (existingUser) {
       await supabaseAdmin

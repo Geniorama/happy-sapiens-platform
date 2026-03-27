@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { preApprovalClient, SUBSCRIPTION_PLANS } from '@/lib/mercadopago'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   try {
-    const { userEmail, userName, productId, referralCode } = await req.json()
+    const { userEmail, userName, productId, referralCode, billing, shipping } = await req.json()
 
     if (!userEmail || !userName || !productId) {
       return NextResponse.json(
@@ -44,6 +45,18 @@ export async function POST(req: Request) {
         },
       },
     })
+
+    // Guardar datos de facturación/envío en pending_checkout para el webhook
+    await supabaseAdmin
+      .from('pending_checkout')
+      .upsert({
+        email: userEmail,
+        name: userName,
+        product_id: plan.id,
+        referral_code: referralCode || null,
+        billing: billing || null,
+        shipping: shipping || null,
+      }, { onConflict: 'email' })
 
     return NextResponse.json({ initPoint: preApproval.init_point })
   } catch (error: unknown) {
