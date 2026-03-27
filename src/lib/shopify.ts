@@ -80,8 +80,27 @@ export async function createShopifyOrder(params: {
   name: string
   variantId: string
   note?: string
+  shipping?: {
+    fullName: string
+    phone: string
+    address: string
+    city: string
+    department: string
+  }
 }) {
   const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json`
+
+  const shippingAddress = params.shipping
+    ? {
+        name: params.shipping.fullName,
+        address1: params.shipping.address,
+        city: params.shipping.city,
+        province: params.shipping.department,
+        country: 'Colombia',
+        country_code: 'CO',
+        phone: params.shipping.phone,
+      }
+    : undefined
 
   const response = await fetch(restUrl, {
     method: 'POST',
@@ -99,6 +118,7 @@ export async function createShopifyOrder(params: {
         customer: { email: params.email },
         note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
         tags: 'subscription,auto',
+        ...(shippingAddress && { shipping_address: shippingAddress }),
       },
     }),
     cache: 'no-store',

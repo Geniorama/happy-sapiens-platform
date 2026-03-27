@@ -216,7 +216,7 @@ async function handlePayment(paymentId: string) {
 
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, name, subscription_variant_id')
+      .select('id, name, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
       .eq('email', email)
       .single()
 
@@ -227,11 +227,22 @@ async function handlePayment(paymentId: string) {
         .eq('id', user.id)
 
       if (user.subscription_variant_id) {
+        const shippingAddress = user.shipping_address
+          ? {
+              fullName: user.shipping_full_name || user.name || email,
+              phone: user.shipping_phone || '',
+              address: user.shipping_address,
+              city: user.shipping_city || '',
+              department: user.shipping_department || '',
+            }
+          : undefined
+
         try {
           const order = await createShopifyOrder({
             email,
             name: user.name || email,
             variantId: user.subscription_variant_id,
+            shipping: shippingAddress,
           })
           console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
         } catch (err) {
