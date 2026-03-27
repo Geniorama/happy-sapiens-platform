@@ -1,4 +1,4 @@
-import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
+import { MercadoPagoConfig, Preference, Payment, PreApproval } from 'mercadopago'
 
 // Cliente de Mercado Pago
 const client = new MercadoPagoConfig({
@@ -10,6 +10,7 @@ const client = new MercadoPagoConfig({
 
 export const preferenceClient = new Preference(client)
 export const paymentClient = new Payment(client)
+export const preApprovalClient = new PreApproval(client)
 
 // Configuración del plan de suscripción
 export const SUBSCRIPTION_PLAN = {

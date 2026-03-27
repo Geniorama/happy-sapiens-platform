@@ -33,34 +33,15 @@ export function SubscriptionForm() {
     const formData = new FormData(e.currentTarget)
     const name = formData.get("name") as string
     const email = formData.get("email") as string
-    const password = formData.get("password") as string
-    const confirmPassword = formData.get("confirmPassword") as string
     const refCode = formData.get("referralCode") as string
 
-    // Validaciones
-    if (password !== confirmPassword) {
-      setError("Las contraseñas no coinciden")
-      setIsLoading(false)
-      return
-    }
-
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres")
-      setIsLoading(false)
-      return
-    }
-
     try {
-      // Crear preferencia de pago
-      const response = await fetch("/api/mercadopago/create-preference", {
+      const response = await fetch("/api/mercadopago/create-subscription", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userName: name,
           userEmail: email,
-          userPassword: password,
           referralCode: refCode || null,
         }),
       })
@@ -68,21 +49,13 @@ export function SubscriptionForm() {
       const data = await response.json()
 
       if (!response.ok) {
-        setError(data.error || "Error al procesar el pago")
+        setError(data.error || "Error al procesar la suscripción")
         return
       }
 
-      // Guardar datos temporalmente en sessionStorage para recuperar después del pago
-      sessionStorage.setItem('pendingUser', JSON.stringify({
-        name,
-        email,
-        password,
-      }))
-
-      // Redirigir a Mercado Pago
       window.location.href = data.initPoint
-    } catch (err) {
-      setError("Ocurrió un error al procesar el pago")
+    } catch {
+      setError("Ocurrió un error al procesar la suscripción")
     } finally {
       setIsLoading(false)
     }
@@ -121,7 +94,7 @@ export function SubscriptionForm() {
       {/* Formulario de registro */}
       <div className="bg-white border border-zinc-300 rounded-lg p-6">
         <h2 className="text-2xl font-bold text-center mb-2">
-          Crear Cuenta
+          Suscribirse
         </h2>
         <p className="text-center text-zinc-600 mb-6">
           Completa tus datos para continuar al pago
@@ -163,39 +136,6 @@ export function SubscriptionForm() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium mb-2">
-              Contraseña
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              minLength={6}
-              className="w-full px-4 py-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="confirmPassword"
-              className="block text-sm font-medium mb-2"
-            >
-              Confirmar contraseña
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              required
-              minLength={6}
-              className="w-full px-4 py-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div>
             <label
               htmlFor="referralCode"
               className="block text-sm font-medium mb-2"
@@ -224,11 +164,11 @@ export function SubscriptionForm() {
             disabled={isLoading}
             className="w-full cursor-pointer py-3 px-4 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isLoading ? "Procesando..." : `Continuar al Pago - $${SUBSCRIPTION_PLAN.price.toFixed(2)}`}
+            {isLoading ? "Procesando..." : `Suscribirme - $${SUBSCRIPTION_PLAN.price.toFixed(2)}/${SUBSCRIPTION_PLAN.currency} mes`}
           </button>
 
           <p className="text-xs text-center text-zinc-500">
-            Serás redirigido a Mercado Pago para completar el pago de forma segura
+            Serás redirigido a Mercado Pago para autorizar el cobro mensual automático
           </p>
         </form>
       </div>
