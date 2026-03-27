@@ -159,7 +159,9 @@ async function handlePayment(paymentId: string) {
   if (payment.status !== 'approved') return
 
   // Pago de suscripción recurrente (cobro mensual automático)
-  if (payment.subscription_id) {
+  // subscription_id existe en runtime pero no está en los tipos del SDK
+  const paymentAny = payment as unknown as Record<string, unknown>
+  if (paymentAny.subscription_id) {
     const email = payment.payer?.email
     if (!email) return
 
