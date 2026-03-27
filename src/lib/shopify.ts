@@ -57,12 +57,14 @@ export async function getShopifyCustomerById(numericId: number) {
   const gid = `gid://shopify/Customer/${numericId}`
 
   const data = await shopifyQuery<{
-    customer: { id: string; email: string; tags: string[] } | null
+    customer: { id: string; email: string; firstName: string; lastName: string; tags: string[] } | null
   }>(
     `query getCustomerById($id: ID!) {
       customer(id: $id) {
         id
         email
+        firstName
+        lastName
         tags
       }
     }`,
