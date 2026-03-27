@@ -1,12 +1,13 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
-import { Calendar, Mail, Hash, Check, Sparkles } from "lucide-react"
+import { Calendar, Mail, Hash, Check, Sparkles, Package, CreditCard, RefreshCw } from "lucide-react"
 import { ProfileForm } from "@/components/dashboard/profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 import { ReferralCode } from "@/components/dashboard/referral-code"
 import { HealthProfileForm } from "@/components/dashboard/health-profile-form"
 import { getHealthProfile } from "@/app/dashboard/coaches/actions"
+import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
 
 export default async function ProfilePage() {
   const session = await auth()
@@ -41,6 +42,7 @@ export default async function ProfilePage() {
 
   const subscriptionStatus = user?.subscription_status || "inactive"
   const statusInfo = subscriptionStatusLabels[subscriptionStatus] || subscriptionStatusLabels.inactive
+  const subscriptionPlan = user?.subscription_product ? SUBSCRIPTION_PLANS[user.subscription_product] : null
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -127,90 +129,140 @@ export default async function ProfilePage() {
 
         {/* Información de Suscripción */}
         <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
-          <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900 mb-4 sm:mb-6">Suscripción</h2>
-          
-          <div className="space-y-4">
-            {/* Estado de suscripción */}
-            <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg">
-              <div>
-                <p className="text-sm text-zinc-600 mb-1">Estado actual</p>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
-                    {statusInfo.label}
-                  </span>
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900">Suscripción</h2>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
+              {statusInfo.label}
+            </span>
+          </div>
+
+          {(subscriptionStatus === "active" || subscriptionStatus === "past_due") && (
+            <div className="space-y-4">
+              {/* Producto */}
+              {subscriptionPlan && (
+                <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                  <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                    <Package className="w-4 h-4 text-primary" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-zinc-500 mb-0.5">Producto</p>
+                    <p className="font-medium text-zinc-900">{subscriptionPlan.title}</p>
+                  </div>
                 </div>
-              </div>
-              {subscriptionStatus === "inactive" && (
-                <a
-                  href="/subscribe"
-                  className="px-6 py-2.5 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors"
-                >
-                  Suscribirse
-                </a>
               )}
-            </div>
 
-            {/* Detalles de suscripción si está activa */}
-            {subscriptionStatus === "active" && user?.subscription_start_date && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <p className="text-sm text-green-700 mb-1">Fecha de inicio</p>
-                  <p className="text-green-900 font-medium">
-                    {new Date(user.subscription_start_date).toLocaleDateString("es-ES", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Precio mensual */}
+                {subscriptionPlan && (
+                  <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                    <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                      <CreditCard className="w-4 h-4 text-primary" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-0.5">Valor mensual</p>
+                      <p className="font-medium text-zinc-900">
+                        {subscriptionPlan.price.toLocaleString("es-CO", {
+                          style: "currency",
+                          currency: "COP",
+                          maximumFractionDigits: 0,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
+                {/* Fecha de inicio */}
+                {user?.subscription_start_date && (
+                  <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                    <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                      <Calendar className="w-4 h-4 text-primary" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-0.5">Inicio</p>
+                      <p className="font-medium text-zinc-900">
+                        {new Date(user.subscription_start_date).toLocaleDateString("es-CO", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Próximo cobro */}
                 {user?.subscription_end_date && (
-                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <p className="text-sm text-green-700 mb-1">Próxima renovación</p>
-                    <p className="text-green-900 font-medium">
-                      {new Date(user.subscription_end_date).toLocaleDateString("es-ES", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
+                  <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                    <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                      <RefreshCw className="w-4 h-4 text-primary" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-0.5">Próximo cobro</p>
+                      <p className="font-medium text-zinc-900">
+                        {new Date(user.subscription_end_date).toLocaleDateString("es-CO", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
-            )}
+            </div>
+          )}
 
-            {subscriptionStatus === "inactive" && (
-              <div className="p-6 bg-secondary/30 rounded-lg border border-secondary">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-primary" strokeWidth={1.5} />
-                  </div>
-                  <div>
-                    <h3 className="font-heading text-lg text-zinc-900 mb-1">
-                      Desbloquea todo el potencial
-                    </h3>
-                    <p className="text-sm text-zinc-600 mb-4">
-                      Suscríbete para acceder a todas las funcionalidades de la plataforma.
-                    </p>
-                    <ul className="space-y-2 text-sm text-zinc-600 mb-4">
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary" strokeWidth={2} />
-                        Acceso completo a todos los módulos
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary" strokeWidth={2} />
-                        Sin límites ni restricciones
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary" strokeWidth={2} />
-                        Cancela cuando quieras
-                      </li>
-                    </ul>
-                  </div>
+          {subscriptionStatus === "cancelled" && (
+            <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <p className="text-sm text-orange-700">
+                Tu suscripción fue cancelada. Si deseas volver, puedes suscribirte nuevamente.
+              </p>
+              <a
+                href="/subscribe"
+                className="inline-block mt-3 px-5 py-2 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                Suscribirse de nuevo
+              </a>
+            </div>
+          )}
+
+          {subscriptionStatus === "inactive" && (
+            <div className="p-6 bg-secondary/30 rounded-lg border border-secondary">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <h3 className="font-heading text-lg text-zinc-900 mb-1">
+                    Desbloquea todo el potencial
+                  </h3>
+                  <p className="text-sm text-zinc-600 mb-4">
+                    Suscríbete para acceder a todas las funcionalidades de la plataforma.
+                  </p>
+                  <ul className="space-y-2 text-sm text-zinc-600 mb-4">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" strokeWidth={2} />
+                      Acceso completo a todos los módulos
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" strokeWidth={2} />
+                      Sin límites ni restricciones
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" strokeWidth={2} />
+                      Cancela cuando quieras
+                    </li>
+                  </ul>
+                  <a
+                    href="/subscribe"
+                    className="inline-block px-6 py-2.5 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    Suscribirse
+                  </a>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
