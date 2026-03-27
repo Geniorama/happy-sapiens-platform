@@ -415,7 +415,7 @@ export function SubscriptionForm() {
               <span className="text-sm text-zinc-700">
                 He leído y acepto los{" "}
                 <a
-                  href="/terminos-condiciones"
+                  href="/terminos-servicio"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary underline hover:text-primary/80"
