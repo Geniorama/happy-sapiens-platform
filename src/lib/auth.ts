@@ -12,6 +12,7 @@ declare module "next-auth" {
     user: {
       id: string
       role: string
+      subscriptionStatus: string | null
     } & DefaultSession["user"]
   }
 }
@@ -132,10 +133,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         try {
           const { data } = await supabaseAdmin
             .from("users")
-            .select("role")
+            .select("role, subscription_status")
             .eq("id", user.id)
             .single()
           token.role = data?.role || "user"
+          token.subscriptionStatus = data?.subscription_status ?? null
         } catch {
           token.role = "user"
         }
@@ -146,6 +148,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = (token.role as string) || "user"
+        session.user.subscriptionStatus = (token.subscriptionStatus as string) ?? null
       }
       return session
     },
