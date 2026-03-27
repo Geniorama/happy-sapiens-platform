@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server'
-import { preApprovalClient, SUBSCRIPTION_PLAN } from '@/lib/mercadopago'
+import { preApprovalClient, SUBSCRIPTION_PLANS } from '@/lib/mercadopago'
 
 export async function POST(req: Request) {
   try {
-    const { userEmail, userName, referralCode } = await req.json()
+    const { userEmail, userName, productId, referralCode } = await req.json()
 
-    if (!userEmail || !userName) {
+    if (!userEmail || !userName || !productId) {
       return NextResponse.json(
-        { error: 'Nombre y email son requeridos' },
+        { error: 'Nombre, email y producto son requeridos' },
         { status: 400 }
       )
+    }
+
+    const plan = SUBSCRIPTION_PLANS[productId]
+    if (!plan) {
+      return NextResponse.json({ error: 'Producto no válido' }, { status: 400 })
     }
 
     const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL
@@ -24,16 +29,18 @@ export async function POST(req: Request) {
       body: {
         payer_email: userEmail,
         back_url: `${baseUrl}/subscribe/success`,
-        reason: SUBSCRIPTION_PLAN.title,
+        reason: `${plan.title} - Happy Sapiens`,
         external_reference: JSON.stringify({
           name: userName,
+          productId: plan.id,
+          shopifyVariantId: plan.shopifyVariantId,
           referralCode: referralCode || null,
         }),
         auto_recurring: {
           frequency: 1,
           frequency_type: 'months',
-          transaction_amount: SUBSCRIPTION_PLAN.price,
-          currency_id: SUBSCRIPTION_PLAN.currency,
+          transaction_amount: plan.price,
+          currency_id: plan.currency,
         },
       },
     })

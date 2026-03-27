@@ -3,6 +3,7 @@ import { paymentClient, preApprovalClient } from '@/lib/mercadopago'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
+import { createShopifyOrder } from '@/lib/shopify'
 import { randomBytes } from 'crypto'
 import { hash } from 'bcryptjs'
 
@@ -40,12 +41,16 @@ async function handlePreApproval(preApprovalId: string) {
 
   let name = email
   let referralCode: string | null = null
+  let productId: string | null = null
+  let shopifyVariantId: string | null = null
 
   if (preApproval.external_reference) {
     try {
       const parsed = JSON.parse(preApproval.external_reference)
       name = parsed.name || email
       referralCode = parsed.referralCode || null
+      productId = parsed.productId || null
+      shopifyVariantId = parsed.shopifyVariantId || null
     } catch {
       // external_reference no es JSON, ignorar
     }
@@ -66,12 +71,13 @@ async function handlePreApproval(preApprovalId: string) {
         .update({
           subscription_status: 'active',
           subscription_synced_at: new Date().toISOString(),
+          subscription_product: productId,
+          subscription_variant_id: shopifyVariantId,
         })
         .eq('id', existingUser.id)
 
       console.log(`Suscripción reactivada: ${email}`)
     } else {
-      // Crear usuario nuevo
       let referrerId: string | null = null
       if (referralCode) {
         const { data: referrer } = await supabaseAdmin
@@ -93,6 +99,8 @@ async function handlePreApproval(preApprovalId: string) {
           role: 'user',
           subscription_status: 'active',
           subscription_synced_at: new Date().toISOString(),
+          subscription_product: productId,
+          subscription_variant_id: shopifyVariantId,
           referred_by: referrerId,
           reset_token: resetToken,
           reset_token_expires: resetTokenExpires.toISOString(),
@@ -105,7 +113,7 @@ async function handlePreApproval(preApprovalId: string) {
         return
       }
 
-      console.log(`Usuario creado: ${email}`)
+      console.log(`Usuario creado: ${email} — producto: ${productId}`)
 
       await awardPoints({
         userId: newUser.id,
@@ -155,10 +163,31 @@ async function handlePayment(paymentId: string) {
     const email = payment.payer?.email
     if (!email) return
 
-    await supabaseAdmin
+    const { data: user } = await supabaseAdmin
       .from('users')
-      .update({ subscription_synced_at: new Date().toISOString() })
+      .select('id, name, subscription_variant_id')
       .eq('email', email)
+      .single()
+
+    if (user) {
+      await supabaseAdmin
+        .from('users')
+        .update({ subscription_synced_at: new Date().toISOString() })
+        .eq('id', user.id)
+
+      if (user.subscription_variant_id) {
+        try {
+          const order = await createShopifyOrder({
+            email,
+            name: user.name || email,
+            variantId: user.subscription_variant_id,
+          })
+          console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
+        } catch (err) {
+          console.error('Error creando orden en Shopify:', err)
+        }
+      }
+    }
 
     console.log(`Cobro recurrente procesado: ${email}`)
     return

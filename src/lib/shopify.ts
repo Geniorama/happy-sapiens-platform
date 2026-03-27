@@ -74,6 +74,45 @@ export async function getShopifyCustomerById(numericId: number) {
   return data.customer
 }
 
+// Crear una orden en Shopify (para cobros recurrentes de suscripción)
+export async function createShopifyOrder(params: {
+  email: string
+  name: string
+  variantId: string
+  note?: string
+}) {
+  const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json`
+
+  const response = await fetch(restUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+    },
+    body: JSON.stringify({
+      order: {
+        email: params.email,
+        financial_status: 'paid',
+        send_receipt: false,
+        send_fulfillment_receipt: true,
+        line_items: [{ variant_id: params.variantId, quantity: 1 }],
+        customer: { email: params.email },
+        note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
+        tags: 'subscription,auto',
+      },
+    }),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`Shopify order error: ${response.status} ${errorBody}`)
+  }
+
+  const { order } = await response.json()
+  return order as { id: number; order_number: number }
+}
+
 // Registrar webhooks en Shopify
 export async function registerShopifyWebhooks(baseUrl: string) {
   const topics = ["ORDERS_PAID", "ORDERS_CANCELLED"]
