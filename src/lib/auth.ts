@@ -126,24 +126,48 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     StravaProvider as any,
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ account }) {
+      // Credentials: la validación ya ocurre en authorize()
+      if (account?.provider === "credentials") return true
+
+      // OAuth: el usuario debe tener una suscripción existente en Supabase.
+      // No se permite crear cuentas nuevas vía OAuth sin pasar por el checkout.
+      // La verificación real del email se hace en el jwt callback (que tiene acceso al user).
+      return true
+    },
+
+    async jwt({ token, user, account }) {
       if (user) {
-        token.id = user.id
-        // Fetch role from DB on initial login only
-        try {
-          const { data } = await supabaseAdmin
-            .from("users")
-            .select("role, subscription_status")
-            .eq("id", user.id)
-            .single()
-          token.role = data?.role || "user"
-          token.subscriptionStatus = data?.subscription_status ?? null
-        } catch {
-          token.role = "user"
+        // Para credentials, user.id ya es el ID de Supabase (retornado por authorize).
+        // Para OAuth, user.id es el ID del proveedor → buscamos por email.
+        const isOAuth = account?.provider !== "credentials"
+        const lookupField = isOAuth ? "email" : "id"
+        const lookupValue = isOAuth ? user.email : user.id
+
+        if (lookupValue) {
+          try {
+            const { data } = await supabaseAdmin
+              .from("users")
+              .select("id, role, subscription_status")
+              .eq(lookupField, lookupValue)
+              .single()
+
+            if (data) {
+              token.id = data.id
+              token.role = data.role || "user"
+              token.subscriptionStatus = data.subscription_status ?? null
+            } else if (isOAuth) {
+              // Email OAuth no tiene cuenta → marcar para bloquear en la sesión
+              token.noAccount = true
+            }
+          } catch {
+            token.role = "user"
+          }
         }
       }
       return token
     },
+
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string

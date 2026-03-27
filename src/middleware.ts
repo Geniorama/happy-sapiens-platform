@@ -12,6 +12,12 @@ export default auth((req) => {
 
   const role = session.user?.role
   const subscriptionStatus = session.user?.subscriptionStatus
+  const userId = session.user?.id
+
+  // Usuario OAuth sin cuenta en Supabase → redirigir a suscripción
+  if (!userId) {
+    return NextResponse.redirect(new URL("/subscribe?oauth=1", req.url))
+  }
 
   // Admins y coaches no necesitan verificación de suscripción
   if (role === "admin" || role === "coach") {

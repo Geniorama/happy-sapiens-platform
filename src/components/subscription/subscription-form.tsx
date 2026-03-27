@@ -50,6 +50,7 @@ export function SubscriptionForm() {
   const [error, setError] = useState<string | null>(null)
   const [referralCode, setReferralCode] = useState("")
   const [plan, setPlan] = useState<SubscriptionPlan | null>(null)
+  const [oauthNotice, setOauthNotice] = useState(false)
 
   const [billing, setBilling] = useState<AddressFields>(emptyAddress)
   const [shipping, setShipping] = useState({ fullName: "", ...emptyAddress })
@@ -63,6 +64,9 @@ export function SubscriptionForm() {
     }
     if (refCode) {
       setReferralCode(refCode.toUpperCase())
+    }
+    if (searchParams.get("oauth") === "1") {
+      setOauthNotice(true)
     }
   }, [searchParams])
 
@@ -122,6 +126,11 @@ export function SubscriptionForm() {
   if (!plan) {
     return (
       <div className="w-full max-w-md text-center space-y-4">
+        {oauthNotice && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 text-left">
+            Para iniciar sesión con Google, Facebook o Strava primero necesitas una suscripción activa. Elige tu producto:
+          </div>
+        )}
         <p className="text-zinc-600">Selecciona un producto para suscribirte:</p>
         <div className="space-y-3">
           {Object.values(SUBSCRIPTION_PLANS).map((p) => (
