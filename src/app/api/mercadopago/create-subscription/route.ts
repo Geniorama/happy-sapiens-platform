@@ -30,6 +30,7 @@ export async function POST(req: Request) {
       body: {
         payer_email: userEmail,
         back_url: `${baseUrl}/subscribe/success`,
+        notification_url: `${baseUrl}/api/mercadopago/webhook`,
         reason: `${plan.title} - Happy Sapiens`,
         external_reference: JSON.stringify({
           name: userName,
