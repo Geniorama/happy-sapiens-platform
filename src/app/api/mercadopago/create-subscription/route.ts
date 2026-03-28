@@ -61,7 +61,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ initPoint: preApproval.init_point })
   } catch (error: unknown) {
     console.error('Error creando suscripción:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear la suscripción'
+    const errorMessage = error instanceof Error
+      ? error.message
+      : JSON.stringify(error)
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
