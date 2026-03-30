@@ -26,26 +26,27 @@ export async function POST(req: Request) {
       )
     }
 
-    const preApproval = await preApprovalClient.create({
-      body: {
-        payer_email: userEmail,
-        back_url: `${baseUrl}/subscribe/success`,
-        notification_url: `${baseUrl}/api/mercadopago/webhook`,
-        reason: `${plan.title} - Happy Sapiens`,
-        external_reference: JSON.stringify({
-          name: userName,
-          productId: plan.id,
-          shopifyVariantId: plan.shopifyVariantId,
-          referralCode: referralCode || null,
-        }),
-        auto_recurring: {
-          frequency: 1,
-          frequency_type: 'months',
-          transaction_amount: plan.price,
-          currency_id: plan.currency,
-        },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const preApprovalBody: any = {
+      payer_email: userEmail,
+      back_url: `${baseUrl}/subscribe/success`,
+      notification_url: `${baseUrl}/api/mercadopago/webhook`,
+      reason: `${plan.title} - Happy Sapiens`,
+      external_reference: JSON.stringify({
+        name: userName,
+        productId: plan.id,
+        shopifyVariantId: plan.shopifyVariantId,
+        referralCode: referralCode || null,
+      }),
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: plan.price,
+        currency_id: plan.currency,
       },
-    })
+    }
+
+    const preApproval = await preApprovalClient.create({ body: preApprovalBody })
 
     // Guardar datos de facturación/envío en pending_checkout para el webhook
     await supabaseAdmin
