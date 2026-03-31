@@ -436,7 +436,7 @@ export async function POST(req: Request) {
 
     await log('webhook.received', 'system', { type: body.type, data_id: dataId, body })
 
-    if (body.type === 'preapproval') {
+    if (body.type === 'preapproval' || body.type === 'subscription_preapproval') {
       await handlePreApproval(dataId)
     } else if (body.type === 'subscription_authorized_payment' || body.type === 'payment') {
       await handlePayment(dataId)

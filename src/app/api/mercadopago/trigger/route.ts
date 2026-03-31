@@ -267,6 +267,32 @@ export async function POST(req: Request) {
       await supabaseAdmin.from('pending_checkout').delete().eq('email', email)
       logs.push('pending_checkout eliminado')
 
+      if (shopifyVariantId) {
+        const shippingAddress = shippingData ? {
+          fullName: shippingData.fullName || name,
+          phone: shippingData.phone || '',
+          address: shippingData.address,
+          city: shippingData.city || '',
+          department: shippingData.department || '',
+        } : undefined
+
+        try {
+          const order = await createShopifyOrder({
+            email,
+            name,
+            variantId: shopifyVariantId,
+            price: subscriptionPrice,
+            note: 'Primera entrega — suscripción activada vía MercadoPago',
+            shipping: shippingAddress,
+          })
+          logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
+        } catch (err) {
+          logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      } else {
+        logs.push('shopifyVariantId es null — no se crea orden Shopify')
+      }
+
     } else if (type === 'subscription_authorized_payment') {
       logs.push(`Obteniendo pago ${id}...`)
       const payment = await paymentClient.get({ id })
