@@ -18,7 +18,7 @@ export async function GET() {
   })
 
   const redirectUri = `${baseUrl}/api/shopify/callback`
-  const scopes = "read_customers,read_orders"
+  const scopes = "read_customers,read_orders,write_orders"
 
   const authUrl =
     `https://${shopDomain}/admin/oauth/authorize` +
