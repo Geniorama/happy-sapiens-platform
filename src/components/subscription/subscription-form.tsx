@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { Check } from "lucide-react"
 import { SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/mercadopago"
+import { COLOMBIA_DEPARTMENTS, COLOMBIA_LOCATIONS } from "@/lib/colombia-locations"
 
 const DOCUMENT_TYPES = [
   { value: "CC", label: "Cédula de Ciudadanía" },
@@ -275,26 +276,38 @@ export function SubscriptionForm() {
                 />
               </div>
               <div>
+                <label className={labelClass}>Departamento</label>
+                <select
+                  value={billing.department}
+                  onChange={(e) => {
+                    handleBilling("department", e.target.value)
+                    handleBilling("city", "")
+                  }}
+                  required
+                  className={inputClass}
+                >
+                  <option value="">Selecciona un departamento</option>
+                  {COLOMBIA_DEPARTMENTS.map((dep) => (
+                    <option key={dep} value={dep}>{dep}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className={labelClass}>Ciudad</label>
-                <input
-                  type="text"
+                <select
                   value={billing.city}
                   onChange={(e) => handleBilling("city", e.target.value)}
                   required
+                  disabled={!billing.department}
                   className={inputClass}
-                  placeholder="Bogotá"
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Departamento</label>
-                <input
-                  type="text"
-                  value={billing.department}
-                  onChange={(e) => handleBilling("department", e.target.value)}
-                  required
-                  className={inputClass}
-                  placeholder="Cundinamarca"
-                />
+                >
+                  <option value="">
+                    {billing.department ? "Selecciona una ciudad" : "Primero selecciona un departamento"}
+                  </option>
+                  {(COLOMBIA_LOCATIONS[billing.department] ?? []).map((city) => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -351,26 +364,38 @@ export function SubscriptionForm() {
                   />
                 </div>
                 <div>
+                  <label className={labelClass}>Departamento</label>
+                  <select
+                    value={shipping.department}
+                    onChange={(e) => {
+                      handleShipping("department", e.target.value)
+                      handleShipping("city", "")
+                    }}
+                    required
+                    className={inputClass}
+                  >
+                    <option value="">Selecciona un departamento</option>
+                    {COLOMBIA_DEPARTMENTS.map((dep) => (
+                      <option key={dep} value={dep}>{dep}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className={labelClass}>Ciudad</label>
-                  <input
-                    type="text"
+                  <select
                     value={shipping.city}
                     onChange={(e) => handleShipping("city", e.target.value)}
                     required
+                    disabled={!shipping.department}
                     className={inputClass}
-                    placeholder="Medellín"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Departamento</label>
-                  <input
-                    type="text"
-                    value={shipping.department}
-                    onChange={(e) => handleShipping("department", e.target.value)}
-                    required
-                    className={inputClass}
-                    placeholder="Antioquia"
-                  />
+                  >
+                    <option value="">
+                      {shipping.department ? "Selecciona una ciudad" : "Primero selecciona un departamento"}
+                    </option>
+                    {(COLOMBIA_LOCATIONS[shipping.department] ?? []).map((city) => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             )}
