@@ -209,6 +209,35 @@ async function handlePreApproval(preApprovalId: string) {
       await sendWelcomeEmail(email, name, resetToken)
     }
 
+    // Crear primer pedido en Shopify al activar la suscripción
+    if (shopifyVariantId) {
+      const shippingAddress = shippingData
+        ? {
+            fullName: shippingData.fullName || name,
+            phone: shippingData.phone || '',
+            address: shippingData.address,
+            city: shippingData.city || '',
+            department: shippingData.department || '',
+          }
+        : undefined
+
+      try {
+        const order = await createShopifyOrder({
+          email,
+          name,
+          variantId: shopifyVariantId,
+          note: 'Primera entrega — suscripción activada vía MercadoPago',
+          shipping: shippingAddress,
+        })
+        await log('webhook.preapproval.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
+        console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: shopifyVariantId })
+        console.error('Error creando orden en Shopify:', err)
+      }
+    }
+
     // Limpiar el checkout pendiente
     await supabaseAdmin.from('pending_checkout').delete().eq('email', email)
   } else if (status === 'cancelled' || status === 'paused') {
