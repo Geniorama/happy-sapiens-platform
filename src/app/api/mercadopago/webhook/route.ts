@@ -4,8 +4,27 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { createShopifyOrder } from '@/lib/shopify'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHmac } from 'crypto'
 import { hash } from 'bcryptjs'
+
+function verifyMpSignature(req: Request, rawBody: string, dataId: string): boolean {
+  const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
+  if (!secret) return true // si no hay secret configurado, no bloquear
+
+  const xSignature = req.headers.get('x-signature')
+  const xRequestId = req.headers.get('x-request-id')
+  if (!xSignature) return false
+
+  const parts = Object.fromEntries(xSignature.split(',').map(p => p.split('=')))
+  const ts = parts['ts']
+  const v1 = parts['v1']
+  if (!ts || !v1) return false
+
+  const message = `id:${dataId};request-id:${xRequestId ?? ''};ts:${ts};`
+  const expected = createHmac('sha256', secret).update(message).digest('hex')
+
+  return expected === v1
+}
 
 async function sendWelcomeEmail(email: string, name: string, resetToken: string) {
   const appUrl = (process.env.NEXTAUTH_URL || 'https://happy-sapiens.netlify.app').replace(/\/$/, '')
@@ -407,14 +426,20 @@ async function handlePayment(paymentId: string) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const rawBody = await req.text()
+    const body = JSON.parse(rawBody)
+    const dataId = body.data?.id ?? ''
 
-    await log('webhook.received', 'system', { type: body.type, data_id: body.data?.id, body })
+    if (!verifyMpSignature(req, rawBody, dataId)) {
+      return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
+    }
+
+    await log('webhook.received', 'system', { type: body.type, data_id: dataId, body })
 
     if (body.type === 'preapproval') {
-      await handlePreApproval(body.data.id)
+      await handlePreApproval(dataId)
     } else if (body.type === 'subscription_authorized_payment' || body.type === 'payment') {
-      await handlePayment(body.data.id)
+      await handlePayment(dataId)
     }
 
     return NextResponse.json({ received: true })
