@@ -18,16 +18,62 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  const { type, id } = await req.json()
+  const { type, id, email: bodyEmail } = await req.json()
 
-  if (!type || !id) {
-    return NextResponse.json({ error: 'type e id son requeridos' }, { status: 400 })
+  if (!type) {
+    return NextResponse.json({ error: 'type es requerido' }, { status: 400 })
   }
 
   const logs: string[] = []
 
   try {
-    if (type === 'preapproval') {
+    if (type === 'resend_email') {
+      if (!bodyEmail) return NextResponse.json({ error: 'email es requerido para resend_email' }, { status: 400 })
+
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('id, name, reset_token, reset_token_expires')
+        .eq('email', bodyEmail)
+        .single()
+
+      if (!user) return NextResponse.json({ logs, error: `Usuario no encontrado: ${bodyEmail}` })
+
+      // Regenerar token si expiró o no existe
+      let token = user.reset_token
+      const expires = user.reset_token_expires ? new Date(user.reset_token_expires) : null
+      if (!token || !expires || expires < new Date()) {
+        token = randomBytes(32).toString('hex')
+        const newExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+        await supabaseAdmin
+          .from('users')
+          .update({ reset_token: token, reset_token_expires: newExpires.toISOString() })
+          .eq('id', user.id)
+        logs.push('Token regenerado (estaba expirado o ausente)')
+      } else {
+        logs.push('Token existente reutilizado')
+      }
+
+      const appUrl = (process.env.NEXTAUTH_URL || 'https://happy-sapiens.netlify.app').replace(/\/$/, '')
+      const setupUrl = `${appUrl}/auth/reset-password?token=${token}`
+
+      const result = await sendEmail({
+        to: bodyEmail,
+        subject: '¡Bienvenido a Happy Sapiens! Crea tu contraseña',
+        html: `
+          <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #18181b;">
+            <h2>¡Tu suscripción está activa!</h2>
+            <p>Hola ${user.name},</p>
+            <p>Crea tu contraseña para acceder a la plataforma:</p>
+            <a href="${setupUrl}" style="display:inline-block;margin:24px 0;padding:12px 28px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Crear mi contraseña</a>
+            <p style="color:#71717a;font-size:14px;">Este enlace es válido por 24 horas.</p>
+          </div>
+        `,
+      })
+
+      logs.push(`Email enviado: ${result.success ? 'OK' : result.error}`)
+      return NextResponse.json({ ok: result.success, logs })
+
+    } else if (type === 'preapproval') {
       logs.push(`Obteniendo preapproval ${id}...`)
       const preApproval = await preApprovalClient.get({ id })
       logs.push(`status: ${preApproval.status}, email: ${preApproval.payer_email}`)
@@ -226,7 +272,7 @@ export async function POST(req: Request) {
       }
 
     } else {
-      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval' o 'subscription_authorized_payment'` }, { status: 400 })
+      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval', 'subscription_authorized_payment' o 'resend_email'` }, { status: 400 })
     }
 
     return NextResponse.json({ ok: true, logs })
