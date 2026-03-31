@@ -8,7 +8,7 @@ import { randomBytes } from 'crypto'
 import { hash } from 'bcryptjs'
 
 async function sendWelcomeEmail(email: string, name: string, resetToken: string) {
-  const appUrl = process.env.NEXTAUTH_URL || 'https://happy-sapiens.netlify.app'
+  const appUrl = (process.env.NEXTAUTH_URL || 'https://happy-sapiens.netlify.app').replace(/\/$/, '')
   const setupUrl = `${appUrl}/auth/reset-password?token=${resetToken}`
 
   await sendEmail({

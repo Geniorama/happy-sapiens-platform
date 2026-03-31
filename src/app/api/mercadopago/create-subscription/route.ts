@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Producto no válido' }, { status: 400 })
     }
 
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL
+    const baseUrl = (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL)?.replace(/\/$/, '')
     if (!baseUrl) {
       return NextResponse.json(
         { error: 'Configuración del servidor incompleta' },
