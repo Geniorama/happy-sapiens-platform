@@ -304,8 +304,21 @@ export async function POST(req: Request) {
         logs.push('subscription_variant_id es null — no se crea orden Shopify')
       }
 
+    } else if (type === 'list_shopify_products') {
+      const domain = process.env.SHOPIFY_SHOP_DOMAIN!
+      const token = process.env.SHOPIFY_ADMIN_API_TOKEN!
+      const res = await fetch(`https://${domain}/admin/api/2026-01/products.json?fields=id,title,variants&limit=50`, {
+        headers: { 'X-Shopify-Access-Token': token },
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!res.ok) return NextResponse.json({ error: data.errors }, { status: 400 })
+      const products = (data.products as { id: number; title: string; variants: { id: number; title: string }[] }[])
+        .map(p => ({ title: p.title, variants: p.variants.map(v => ({ id: v.id, title: v.title })) }))
+      return NextResponse.json({ ok: true, products })
+
     } else {
-      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval', 'subscription_authorized_payment' o 'resend_email'` }, { status: 400 })
+      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval', 'subscription_authorized_payment', 'resend_email', 'create_shopify_order' o 'list_shopify_products'` }, { status: 400 })
     }
 
     return NextResponse.json({ ok: true, logs })
