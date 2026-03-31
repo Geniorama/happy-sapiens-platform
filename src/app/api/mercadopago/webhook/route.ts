@@ -56,9 +56,7 @@ async function handlePreApproval(preApprovalId: string) {
     external_reference: preApproval.external_reference,
   })
 
-  const email = preApproval.payer_email
-  if (!email) return
-
+  let email = preApproval.payer_email || ''
   let name = email
   let referralCode: string | null = null
   let productId: string | null = null
@@ -67,6 +65,8 @@ async function handlePreApproval(preApprovalId: string) {
   if (preApproval.external_reference) {
     try {
       const parsed = JSON.parse(preApproval.external_reference)
+      // payer_email no siempre viene en el response del SDK — usar external_reference como fuente
+      if (!email && parsed.email) email = parsed.email
       name = parsed.name || email
       referralCode = parsed.referralCode || null
       productId = parsed.productId || null
@@ -75,6 +75,8 @@ async function handlePreApproval(preApprovalId: string) {
       // external_reference no es JSON, ignorar
     }
   }
+
+  if (!email) return
 
   const status = preApproval.status
 

@@ -34,6 +34,7 @@ export async function POST(req: Request) {
       reason: `${plan.title} - Happy Sapiens`,
       external_reference: JSON.stringify({
         name: userName,
+        email: userEmail,
         productId: plan.id,
         shopifyVariantId: plan.shopifyVariantId,
         referralCode: referralCode || null,

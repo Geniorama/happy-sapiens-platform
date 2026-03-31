@@ -32,9 +32,7 @@ export async function POST(req: Request) {
       const preApproval = await preApprovalClient.get({ id })
       logs.push(`status: ${preApproval.status}, email: ${preApproval.payer_email}`)
 
-      const email = preApproval.payer_email
-      if (!email) return NextResponse.json({ logs, error: 'payer_email vacío' })
-
+      let email = preApproval.payer_email || ''
       let name = email
       let productId: string | null = null
       let shopifyVariantId: string | null = null
@@ -43,6 +41,7 @@ export async function POST(req: Request) {
       if (preApproval.external_reference) {
         try {
           const parsed = JSON.parse(preApproval.external_reference)
+          if (!email && parsed.email) email = parsed.email
           name = parsed.name || email
           productId = parsed.productId || null
           shopifyVariantId = parsed.shopifyVariantId || null
@@ -52,6 +51,8 @@ export async function POST(req: Request) {
           logs.push('external_reference no es JSON válido')
         }
       }
+
+      if (!email) return NextResponse.json({ logs, error: 'email vacío en payer_email y external_reference' })
 
       if (preApproval.status !== 'authorized') {
         return NextResponse.json({ logs, warning: `Estado es '${preApproval.status}', no 'authorized'. No se procesará.` })
