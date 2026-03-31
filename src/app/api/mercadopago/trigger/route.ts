@@ -78,12 +78,12 @@ export async function POST(req: Request) {
 
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('id, name, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .select('id, name, subscription_variant_id, subscription_price, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
         .eq('email', bodyEmail)
         .single()
 
       if (!user) return NextResponse.json({ logs, error: `Usuario no encontrado: ${bodyEmail}` })
-      logs.push(`Usuario: ${user.id}, variant_id: ${user.subscription_variant_id}`)
+      logs.push(`Usuario: ${user.id}, variant_id: ${user.subscription_variant_id}, price: ${user.subscription_price ?? 'no registrado'}`)
 
       if (!user.subscription_variant_id) {
         return NextResponse.json({ logs, error: 'subscription_variant_id es null — no se puede crear la orden' })
@@ -101,6 +101,7 @@ export async function POST(req: Request) {
         email: bodyEmail,
         name: user.name || bodyEmail,
         variantId: user.subscription_variant_id,
+        price: user.subscription_price ?? undefined,
         shipping: shippingAddress,
       })
       logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
@@ -116,6 +117,9 @@ export async function POST(req: Request) {
       let productId: string | null = null
       let shopifyVariantId: string | null = null
       let referralCode: string | null = null
+      const preApprovalAny = preApproval as unknown as Record<string, unknown>
+      const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
+      if (subscriptionPrice !== undefined) logs.push(`Precio suscripción: ${subscriptionPrice}`)
 
       if (preApproval.external_reference) {
         try {
@@ -163,6 +167,7 @@ export async function POST(req: Request) {
             subscription_synced_at: new Date().toISOString(),
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
+            ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
             ...(billingData && {
               billing_document_type: billingData.documentType,
               billing_document_number: billingData.documentNumber,
@@ -207,6 +212,7 @@ export async function POST(req: Request) {
             subscription_synced_at: new Date().toISOString(),
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
+            ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
             referred_by: referrerId,
             reset_token: resetToken,
             reset_token_expires: resetTokenExpires.toISOString(),
@@ -283,7 +289,12 @@ export async function POST(req: Request) {
 
       logs.push(`Usuario encontrado: ${user.id}, variant_id: ${user.subscription_variant_id}`)
 
-      await supabaseAdmin.from('users').update({ subscription_synced_at: new Date().toISOString() }).eq('id', user.id)
+      const recurringPrice = payment.transaction_amount ?? undefined
+      logs.push(`Precio pago: ${recurringPrice ?? 'no disponible'}`)
+      await supabaseAdmin.from('users').update({
+        subscription_synced_at: new Date().toISOString(),
+        ...(recurringPrice !== undefined && { subscription_price: recurringPrice }),
+      }).eq('id', user.id)
 
       if (user.subscription_variant_id) {
         const shippingAddress = user.shipping_address ? {
@@ -295,7 +306,7 @@ export async function POST(req: Request) {
         } : undefined
 
         try {
-          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, shipping: shippingAddress })
+          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, price: recurringPrice, shipping: shippingAddress })
           logs.push(`Orden Shopify creada: #${order.order_number}`)
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)

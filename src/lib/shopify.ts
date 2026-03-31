@@ -79,6 +79,7 @@ export async function createShopifyOrder(params: {
   email: string
   name: string
   variantId: string
+  price?: number
   note?: string
   shipping?: {
     fullName: string
@@ -114,7 +115,7 @@ export async function createShopifyOrder(params: {
         financial_status: 'paid',
         send_receipt: false,
         send_fulfillment_receipt: true,
-        line_items: [{ variant_id: parseInt(params.variantId, 10), quantity: 1 }],
+        line_items: [{ variant_id: parseInt(params.variantId, 10), quantity: 1, ...(params.price !== undefined && { price: params.price.toFixed(2) }) }],
         customer: { email: params.email },
         note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
         tags: 'subscription,auto',

@@ -61,6 +61,8 @@ async function handlePreApproval(preApprovalId: string) {
   let referralCode: string | null = null
   let productId: string | null = null
   let shopifyVariantId: string | null = null
+  const preApprovalAny = preApproval as unknown as Record<string, unknown>
+  const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
 
   if (preApproval.external_reference) {
     try {
@@ -109,6 +111,7 @@ async function handlePreApproval(preApprovalId: string) {
           subscription_synced_at: new Date().toISOString(),
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
+          ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
           ...(billingData && {
             billing_document_type: billingData.documentType,
             billing_document_number: billingData.documentNumber,
@@ -153,6 +156,7 @@ async function handlePreApproval(preApprovalId: string) {
           subscription_synced_at: new Date().toISOString(),
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
+          ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
           referred_by: referrerId,
           reset_token: resetToken,
           reset_token_expires: resetTokenExpires.toISOString(),
@@ -226,6 +230,7 @@ async function handlePreApproval(preApprovalId: string) {
           email,
           name,
           variantId: shopifyVariantId,
+          price: subscriptionPrice,
           note: 'Primera entrega — suscripción activada vía MercadoPago',
           shipping: shippingAddress,
         })
@@ -274,9 +279,13 @@ async function handlePayment(paymentId: string) {
       .single()
 
     if (user) {
+      const recurringPrice = payment.transaction_amount ?? undefined
       await supabaseAdmin
         .from('users')
-        .update({ subscription_synced_at: new Date().toISOString() })
+        .update({
+          subscription_synced_at: new Date().toISOString(),
+          ...(recurringPrice !== undefined && { subscription_price: recurringPrice }),
+        })
         .eq('id', user.id)
 
       if (user.subscription_variant_id) {
@@ -295,6 +304,7 @@ async function handlePayment(paymentId: string) {
             email,
             name: user.name || email,
             variantId: user.subscription_variant_id,
+            price: recurringPrice,
             shipping: shippingAddress,
           })
           await log('webhook.payment.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
