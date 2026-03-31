@@ -73,6 +73,39 @@ export async function POST(req: Request) {
       logs.push(`Email enviado: ${result.success ? 'OK' : result.error}`)
       return NextResponse.json({ ok: result.success, logs })
 
+    } else if (type === 'create_shopify_order') {
+      if (!bodyEmail) return NextResponse.json({ error: 'email es requerido para create_shopify_order' }, { status: 400 })
+
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('id, name, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .eq('email', bodyEmail)
+        .single()
+
+      if (!user) return NextResponse.json({ logs, error: `Usuario no encontrado: ${bodyEmail}` })
+      logs.push(`Usuario: ${user.id}, variant_id: ${user.subscription_variant_id}`)
+
+      if (!user.subscription_variant_id) {
+        return NextResponse.json({ logs, error: 'subscription_variant_id es null — no se puede crear la orden' })
+      }
+
+      const shippingAddress = user.shipping_address ? {
+        fullName: user.shipping_full_name || user.name || bodyEmail,
+        phone: user.shipping_phone || '',
+        address: user.shipping_address,
+        city: user.shipping_city || '',
+        department: user.shipping_department || '',
+      } : undefined
+
+      const order = await createShopifyOrder({
+        email: bodyEmail,
+        name: user.name || bodyEmail,
+        variantId: user.subscription_variant_id,
+        shipping: shippingAddress,
+      })
+      logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
+      return NextResponse.json({ ok: true, logs })
+
     } else if (type === 'preapproval') {
       logs.push(`Obteniendo preapproval ${id}...`)
       const preApproval = await preApprovalClient.get({ id })
