@@ -33,8 +33,28 @@ async function sendWelcomeEmail(email: string, name: string, resetToken: string)
   })
 }
 
+async function log(action: string, email: string, metadata: Record<string, unknown>) {
+  try {
+    await supabaseAdmin.from('system_logs').insert({
+      actor_email: email,
+      action,
+      entity_type: 'subscription',
+      metadata,
+    })
+  } catch {
+    // no romper el flujo si el log falla
+  }
+}
+
 async function handlePreApproval(preApprovalId: string) {
   const preApproval = await preApprovalClient.get({ id: preApprovalId })
+
+  await log('webhook.preapproval.received', preApproval.payer_email || 'unknown', {
+    preApprovalId,
+    status: preApproval.status,
+    payer_email: preApproval.payer_email,
+    external_reference: preApproval.external_reference,
+  })
 
   const email = preApproval.payer_email
   if (!email) return
@@ -156,9 +176,11 @@ async function handlePreApproval(preApprovalId: string) {
 
       if (error) {
         console.error('Error creando usuario:', error)
+        await log('webhook.preapproval.user_create_error', email, { error: error.message, code: error.code })
         return
       }
 
+      await log('webhook.preapproval.user_created', email, { userId: newUser.id, productId })
       console.log(`Usuario creado: ${email} — producto: ${productId}`)
 
       await awardPoints({
@@ -244,10 +266,15 @@ async function handlePayment(paymentId: string) {
             variantId: user.subscription_variant_id,
             shipping: shippingAddress,
           })
+          await log('webhook.payment.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
           console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscription_variant_id })
           console.error('Error creando orden en Shopify:', err)
         }
+      } else {
+        await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_variant_id is null' })
       }
     }
 
@@ -340,6 +367,8 @@ async function handlePayment(paymentId: string) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+
+    await log('webhook.received', 'system', { type: body.type, data_id: body.data?.id, body })
 
     if (body.type === 'preapproval') {
       await handlePreApproval(body.data.id)
