@@ -1,13 +1,14 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
-import { Calendar, Mail, Hash, Check, Sparkles, Package, CreditCard, RefreshCw, BadgeCheck, Receipt, ExternalLink } from "lucide-react"
+import { Calendar, Mail, Hash, Check, Sparkles, Package, CreditCard, RefreshCw, BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock } from "lucide-react"
 import { ProfileForm } from "@/components/dashboard/profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 import { ReferralCode } from "@/components/dashboard/referral-code"
 import { HealthProfileForm } from "@/components/dashboard/health-profile-form"
 import { getHealthProfile } from "@/app/dashboard/coaches/actions"
 import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
+import { getShopifyOrdersByEmail } from "@/lib/shopify"
 
 const PRODUCT_LABELS: Record<string, string> = {
   "happy-on": "Happy On",
@@ -28,6 +29,12 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
   ticket: "Efectivo",
   account_money: "Dinero en cuenta MP",
+}
+
+const FULFILLMENT_STATUS: Record<string, { label: string; color: string; icon: string }> = {
+  fulfilled: { label: "Despachado", color: "bg-green-100 text-green-700", icon: "truck" },
+  partial: { label: "Parcial", color: "bg-yellow-100 text-yellow-700", icon: "truck" },
+  pending: { label: "Pendiente", color: "bg-zinc-100 text-zinc-600", icon: "clock" },
 }
 
 export default async function ProfilePage() {
@@ -55,6 +62,8 @@ export default async function ProfilePage() {
     .eq("user_id", session.user.id)
     .order("payment_date", { ascending: false })
     .limit(20)
+
+  const shopifyOrders = user?.email ? await getShopifyOrdersByEmail(user.email) : []
 
   const { profile: healthProfile } = await getHealthProfile()
 
@@ -305,6 +314,59 @@ export default async function ProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Pedidos Shopify */}
+        {shopifyOrders.length > 0 && (
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
+            <div className="flex items-center gap-3 mb-4 sm:mb-6">
+              <ShoppingBag className="w-5 h-5 text-zinc-500" strokeWidth={1.5} />
+              <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900">Mis Pedidos</h2>
+            </div>
+
+            <div className="space-y-3">
+              {shopifyOrders.map((order) => {
+                const fulfillmentKey = order.fulfillment_status ?? "pending"
+                const fulfillment = FULFILLMENT_STATUS[fulfillmentKey] ?? FULFILLMENT_STATUS.pending
+                const FulfillIcon = fulfillmentKey === "fulfilled" || fulfillmentKey === "partial" ? Truck : Clock
+                const product = order.line_items[0]
+                const orderDate = new Date(order.created_at).toLocaleDateString("es-CO", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+                const amount = product
+                  ? Number(product.price).toLocaleString("es-CO", {
+                      style: "currency",
+                      currency: "COP",
+                      maximumFractionDigits: 0,
+                    })
+                  : "—"
+
+                return (
+                  <div key={order.id} className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200 gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
+                        <Package className="w-4 h-4 text-primary" strokeWidth={1.5} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-zinc-900 text-sm">
+                          Pedido #{order.order_number} · {product?.title ?? "—"}
+                        </p>
+                        <p className="text-xs text-zinc-500">{orderDate} · {amount}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${fulfillment.color}`}>
+                        <FulfillIcon className="w-3 h-3" strokeWidth={2} />
+                        {fulfillment.label}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Transacciones */}
         {(transactions && transactions.length > 0) && (
