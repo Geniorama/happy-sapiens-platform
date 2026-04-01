@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Save, Loader2, Copy, Check, ChevronDown, ChevronUp, Plus, Trash2, Timer } from "lucide-react"
+import { Save, Loader2, Copy, Check, ChevronDown, ChevronUp, Plus, Trash2, Timer, ArrowRight, AlertTriangle } from "lucide-react"
 import { saveCoachAvailability, type AvailabilitySlot, type TimeBlock } from "@/app/coach/actions"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -343,17 +343,30 @@ export function AvailabilityManager({
         </div>
       </div>
 
-      {/* ── Integración con calendarios ────────────────────────── */}
+      {/* ── Integración unidireccional (iCal) ────────────────────────── */}
       <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-100">
-          <h2 className="font-heading text-base text-zinc-900">Sincronizar con tu calendario</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowRight className="w-4 h-4 text-zinc-400" strokeWidth={2} />
+            <h2 className="font-heading text-base text-zinc-900">Sincronización unidireccional</h2>
+            <span className="px-2 py-0.5 text-xs font-medium bg-zinc-100 text-zinc-500 rounded-full">Solo lectura</span>
+          </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Conecta tus citas de Happy Sapiens con Google Calendar, Outlook o Zoho Calendar
+            Suscríbete a tu URL iCal para ver las citas de la app en tu calendario. Tus otros eventos <strong>no</strong> bloquean horarios en la app.
           </p>
         </div>
 
+        {/* Aviso de limitación */}
+        <div className="mx-6 mt-4 flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" strokeWidth={1.5} />
+          <div className="text-xs text-amber-800 space-y-1">
+            <p><strong>Limitación:</strong> Esta integración solo muestra citas de la app en tu calendario externo.</p>
+            <p>Para que tus reuniones, vacaciones u otros compromisos bloqueen automáticamente tu disponibilidad en la app, usa la <strong>sincronización bidireccional con Google Calendar</strong> (sección de arriba).</p>
+          </div>
+        </div>
+
         {/* iCal URL */}
-        <div className="px-6 py-5 border-b border-zinc-100">
+        <div className="px-6 py-5 border-b border-zinc-100 mt-4">
           <p className="text-xs font-medium text-zinc-600 mb-2">Tu URL de calendario (iCal)</p>
           <div className="flex items-center gap-2">
             <input
@@ -419,9 +432,7 @@ export function AvailabilityManager({
                     </ol>
                     <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
                       <p className="text-xs text-amber-700">
-                        La sincronización puede tardar hasta 24 horas en reflejarse según el
-                        calendario. Las nuevas citas y cambios de estado se actualizarán
-                        automáticamente.
+                        La sincronización puede tardar hasta 24 horas en reflejarse según el calendario. Las nuevas citas y cambios de estado se actualizarán automáticamente.
                       </p>
                     </div>
                   </div>

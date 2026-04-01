@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition, useEffect } from "react"
-import { CheckCircle, Link2, Loader2, LogOut, AlertCircle } from "lucide-react"
+import { CheckCircle, Link2, Loader2, LogOut, AlertCircle, ArrowLeftRight, Video, Shield } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 
 interface CalendarConnectionsProps {
@@ -56,12 +56,35 @@ export function CalendarConnections({ googleConnected, googleEmail }: CalendarCo
   }
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-zinc-100">
-        <h2 className="font-heading text-base text-zinc-900">Calendarios conectados</h2>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          Los eventos de tu calendario bloquean automáticamente los horarios en la app (sincronización bidireccional)
-        </p>
+    <div className="rounded-xl border-2 border-primary/30 overflow-hidden bg-white shadow-sm">
+      {/* Header destacado */}
+      <div className="px-6 py-4 border-b border-primary/10 bg-primary/5 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowLeftRight className="w-4 h-4 text-primary" strokeWidth={2} />
+            <h2 className="font-heading text-base text-zinc-900">Sincronización bidireccional</h2>
+            <span className="px-2 py-0.5 text-xs font-semibold bg-primary text-white rounded-full">Recomendado</span>
+          </div>
+          <p className="text-xs text-zinc-600">
+            Conecta tu Google Calendar para una integración completa. Tus eventos bloquean horarios en la app y las citas aparecen automáticamente en tu calendario.
+          </p>
+        </div>
+      </div>
+
+      {/* Qué incluye */}
+      <div className="px-6 py-4 border-b border-zinc-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="flex items-start gap-2">
+          <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" strokeWidth={2} />
+          <p className="text-xs text-zinc-700">Tus eventos de Google <strong>bloquean horarios</strong> en la app automáticamente</p>
+        </div>
+        <div className="flex items-start gap-2">
+          <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" strokeWidth={2} />
+          <p className="text-xs text-zinc-700">Las citas agendadas <strong>aparecen en tu Google Calendar</strong> en tiempo real</p>
+        </div>
+        <div className="flex items-start gap-2">
+          <Video className="w-4 h-4 text-primary shrink-0 mt-0.5" strokeWidth={2} />
+          <p className="text-xs text-zinc-700">Se genera un <strong>link de Google Meet</strong> automáticamente en cada cita</p>
+        </div>
       </div>
 
       {/* Banner feedback */}
@@ -114,10 +137,10 @@ export function CalendarConnections({ googleConnected, googleEmail }: CalendarCo
               <button
                 onClick={handleConnect}
                 disabled={isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
               >
-                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                Conectar
+                {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                Conectar Google Calendar
               </button>
             )}
           </div>
@@ -136,25 +159,13 @@ export function CalendarConnections({ googleConnected, googleEmail }: CalendarCo
           </div>
           <span className="text-xs text-zinc-400 border border-zinc-200 px-2.5 py-1 rounded-lg">Próximamente</span>
         </div>
-
-        {/* Zoho — próximamente */}
-        <div className="flex items-center justify-between px-6 py-4 opacity-50">
-          <div className="flex items-center gap-3">
-            <div className="w-5 h-5 flex items-center justify-center text-[#E42527] font-bold text-sm">Z</div>
-            <div>
-              <p className="text-sm font-medium text-zinc-900">Zoho Calendar</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Próximamente</p>
-            </div>
-          </div>
-          <span className="text-xs text-zinc-400 border border-zinc-200 px-2.5 py-1 rounded-lg">Próximamente</span>
-        </div>
       </div>
 
-      {/* Nota */}
-      <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100">
+      {/* Nota de seguridad */}
+      <div className="px-6 py-3 bg-zinc-50 border-t border-zinc-100 flex items-center gap-2">
+        <Shield className="w-3.5 h-3.5 text-zinc-400 shrink-0" strokeWidth={1.5} />
         <p className="text-xs text-zinc-500">
-          Al conectar tu calendario, Happy Sapiens sincroniza en ambas direcciones: tus eventos bloquean
-          horarios en la app y las citas agendadas aparecen automáticamente en tu Google Calendar.
+          Happy Sapiens solo solicita permisos para leer y crear eventos. Nunca modifica ni elimina eventos existentes en tu calendario.
         </p>
       </div>
     </div>
