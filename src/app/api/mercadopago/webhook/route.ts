@@ -353,11 +353,17 @@ async function handlePayment(paymentId: string) {
           : undefined
 
         try {
+          const paymentDate = payment.date_approved
+            ? new Date(payment.date_approved).toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
+            : new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
+          const orderNote = `Suscripción mensual — ${paymentDate} | Pago MP #${payment.id} | Cobro automático MercadoPago`
+
           const order = await createShopifyOrder({
             email,
             name: user.name || email,
             variantId: user.subscription_variant_id,
             price: recurringPrice,
+            note: orderNote,
             shipping: shippingAddress,
           })
           await log('webhook.payment.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
