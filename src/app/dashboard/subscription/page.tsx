@@ -3,8 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import {
   Calendar, Check, Sparkles, Package, CreditCard, RefreshCw,
-  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock,
+  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock, Settings2,
 } from "lucide-react"
+import Link from "next/link"
 import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
 import { getShopifyOrdersByEmail } from "@/lib/shopify"
 
@@ -158,6 +159,30 @@ export default async function SubscriptionPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {isActive && (
+            <div className="pt-2 flex justify-end">
+              <Link
+                href="/dashboard/subscription/manage"
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <Settings2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Gestionar suscripción
+              </Link>
+            </div>
+          )}
+
+          {subscriptionStatus === "paused" && (
+            <div className="pt-2 flex justify-end">
+              <Link
+                href="/dashboard/subscription/manage"
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <Settings2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Gestionar suscripción
+              </Link>
             </div>
           )}
 
