@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Clock, MapPin, User, ArrowLeft, ChevronLeft, ChevronRight, CalendarX, PauseCircle } from "lucide-react"
+import { Clock, MapPin, User, ArrowLeft, ChevronLeft, ChevronRight, CalendarX, PauseCircle, Video } from "lucide-react"
 import Link from "next/link"
 import { createAppointment } from "@/app/dashboard/coaches/actions"
 import { HealthProfileForm } from "./health-profile-form"
@@ -258,6 +258,7 @@ export function CoachDetail({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [pointsEarned, setPointsEarned] = useState<number | undefined>()
+  const [bookedMeetLink, setBookedMeetLink] = useState<string | undefined>()
   const [showHealthForm, setShowHealthForm] = useState(!healthProfile)
 
   // Horarios disponibles para la fecha seleccionada
@@ -350,10 +351,11 @@ export function CoachDetail({
     } else {
       setMessage({ type: "success", text: "¡Cita agendada exitosamente!" })
       if (result.pointsEarned) setPointsEarned(result.pointsEarned)
+      if (result.meetLink) setBookedMeetLink(result.meetLink)
       setTimeout(() => {
         router.push("/dashboard/coaches/appointments")
         router.refresh()
-      }, 2500)
+      }, 4000)
     }
 
     setIsSubmitting(false)
@@ -462,7 +464,22 @@ export function CoachDetail({
                     : "bg-red-50 border-red-200 text-red-700"
                 }`}
               >
-                {message.text}
+                <p>{message.text}</p>
+                {message.type === "success" && bookedMeetLink && (
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <p className="text-xs font-medium text-green-800 mb-2">Link de Google Meet generado:</p>
+                    <a
+                      href={bookedMeetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <Video className="w-4 h-4" strokeWidth={1.5} />
+                      Abrir Google Meet
+                    </a>
+                    <p className="text-xs text-green-600 mt-2">También lo encontrarás en tus citas.</p>
+                  </div>
+                )}
               </div>
             )}
             {pointsEarned && <PointsBanner points={pointsEarned} />}

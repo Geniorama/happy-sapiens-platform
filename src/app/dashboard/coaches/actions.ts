@@ -166,6 +166,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     revalidatePath("/dashboard/coaches/appointments")
 
     // Crear evento en Google Calendar del coach (silencioso si no tiene conectado)
+    let meetLink: string | undefined
     const { data: newAppt } = await supabaseAdmin
       .from("appointments")
       .select("id")
@@ -188,7 +189,7 @@ export async function createAppointment(data: CreateAppointmentData) {
         .eq("id", session.user.id)
         .single()
 
-      const { eventId: googleEventId, meetLink } = await createCalendarEvent({
+      const { eventId: googleEventId, meetLink: createdMeetLink } = await createCalendarEvent({
         coachId: data.coachId,
         appointmentId: newAppt.id,
         title: `Cita con ${clientUser?.name ?? "cliente"}`,
@@ -201,12 +202,14 @@ export async function createAppointment(data: CreateAppointmentData) {
         ].filter(Boolean).join("\n"),
       })
 
-      if (googleEventId || meetLink) {
+      meetLink = createdMeetLink ?? undefined
+
+      if (googleEventId || createdMeetLink) {
         await supabaseAdmin
           .from("appointments")
           .update({
             ...(googleEventId ? { google_event_id: googleEventId } : {}),
-            ...(meetLink ? { meeting_link: meetLink } : {}),
+            ...(createdMeetLink ? { meeting_link: createdMeetLink } : {}),
           })
           .eq("id", newAppt.id)
       }
@@ -223,7 +226,7 @@ export async function createAppointment(data: CreateAppointmentData) {
       pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.BOOK_APPOINTMENT]
     }
 
-    return { success: true, pointsEarned }
+    return { success: true, pointsEarned, meetLink }
   } catch (error) {
     console.error("Error in createAppointment:", error)
     return { error: "Error interno del servidor" }

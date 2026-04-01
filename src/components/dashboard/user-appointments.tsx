@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Calendar, Clock, User, XCircle, CheckCircle, AlertCircle } from "lucide-react"
+import { Calendar, Clock, User, XCircle, CheckCircle, AlertCircle, Video } from "lucide-react"
 import { cancelAppointment } from "@/app/dashboard/coaches/actions"
 import { useRouter } from "next/navigation"
 import { AddToCalendarButton } from "@/components/dashboard/add-to-calendar-button"
@@ -146,12 +146,23 @@ export function UserAppointments({ scheduled, completed, cancelled }: UserAppoin
 
             <div className="flex flex-wrap items-center gap-2">
               {appointment.meeting_link && appointment.status === "scheduled" && (
-                <JoinMeetingButton
-                  meetingLink={appointment.meeting_link}
-                  appointmentDate={appointment.appointment_date}
-                  appointmentTime={appointment.appointment_time}
-                  durationMinutes={appointment.duration_minutes}
-                />
+                <>
+                  <JoinMeetingButton
+                    meetingLink={appointment.meeting_link}
+                    appointmentDate={appointment.appointment_date}
+                    appointmentTime={appointment.appointment_time}
+                    durationMinutes={appointment.duration_minutes}
+                  />
+                  <a
+                    href={appointment.meeting_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 border border-green-200 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+                  >
+                    <Video className="w-4 h-4" strokeWidth={1.5} />
+                    Ver link de Meet
+                  </a>
+                </>
               )}
               {showAddToCalendar && <AddToCalendarButton appointment={appointment} />}
               {canCancel && (
