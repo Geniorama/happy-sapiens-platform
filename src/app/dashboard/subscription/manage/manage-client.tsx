@@ -7,6 +7,16 @@ import { pauseSubscription, reactivateSubscription, cancelSubscription } from ".
 
 type Action = "pause" | "reactivate" | "cancel" | null
 
+const CANCEL_REASONS = [
+  "El precio es muy alto",
+  "No estoy usando el producto",
+  "Voy a pausarla temporalmente",
+  "El producto no cumplió mis expectativas",
+  "Tuve problemas con los envíos",
+  "Encontré una mejor alternativa",
+  "Otro",
+]
+
 const CONFIRMATIONS: Record<NonNullable<Action>, { description: string; cta: string; bgColor: string; btnColor: string; borderColor: string; textColor: string }> = {
   pause: {
     description: "Tu suscripción quedará en pausa. No se realizarán cobros ni envíos mientras esté pausada. Puedes reactivarla cuando quieras.",
@@ -38,6 +48,8 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
   const [pending, setPending] = useState<Action>(null)
   const [confirming, setConfirming] = useState<Action>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cancelReason, setCancelReason] = useState<string>("")
+  const [cancelOther, setCancelOther] = useState<string>("")
 
   const isActive = status === "active" || status === "past_due"
   const isPaused = status === "paused"
@@ -46,10 +58,18 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
     setPending(action)
     setError(null)
 
-    const fn = action === "pause" ? pauseSubscription
-      : action === "reactivate" ? reactivateSubscription
-      : cancelSubscription
+    if (action === "cancel") {
+      const reason = cancelReason === "Otro" ? cancelOther.trim() || undefined
+        : cancelReason || undefined
+      const result = await cancelSubscription(reason)
+      if (result && "error" in result) {
+        setError(result.error)
+        setPending(null)
+      }
+      return
+    }
 
+    const fn = action === "pause" ? pauseSubscription : reactivateSubscription
     const result = await fn()
     if (result && "error" in result) {
       setError(result.error)
@@ -164,12 +184,64 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
                 <p className="text-sm text-zinc-500 mb-4">
                   Cancela definitivamente. Esta acción no se puede deshacer.
                 </p>
-                {confirming === "cancel"
-                  ? <ConfirmPanel action="cancel" />
-                  : <button onClick={() => setConfirming("cancel")} className="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
-                      Cancelar suscripción
-                    </button>
-                }
+                {confirming === "cancel" ? (
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-200 space-y-4">
+                    <p className="text-sm text-red-800">{CONFIRMATIONS.cancel.description}</p>
+
+                    {/* Motivo (opcional) */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-zinc-600">
+                        ¿Por qué cancelas? <span className="font-normal text-zinc-400">(opcional)</span>
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {CANCEL_REASONS.map((r) => (
+                          <label key={r} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="cancel-reason"
+                              value={r}
+                              checked={cancelReason === r}
+                              onChange={() => setCancelReason(r)}
+                              className="accent-red-500"
+                            />
+                            <span className="text-sm text-zinc-700">{r}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {cancelReason === "Otro" && (
+                        <textarea
+                          value={cancelOther}
+                          onChange={(e) => setCancelOther(e.target.value)}
+                          placeholder="Cuéntanos más (opcional)..."
+                          rows={2}
+                          className="w-full mt-1 px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-200 resize-none"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => handleAction("cancel")}
+                        disabled={pending !== null}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                      >
+                        {pending === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {CONFIRMATIONS.cancel.cta}
+                      </button>
+                      <button
+                        onClick={() => { setConfirming(null); setCancelReason(""); setCancelOther("") }}
+                        disabled={pending !== null}
+                        className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+                      >
+                        No cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirming("cancel")} className="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
+                    Cancelar suscripción
+                  </button>
+                )}
               </div>
             </div>
           </div>

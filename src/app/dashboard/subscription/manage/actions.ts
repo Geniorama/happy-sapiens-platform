@@ -68,7 +68,7 @@ export async function reactivateSubscription(): Promise<ActionResult> {
   }
 }
 
-export async function cancelSubscription(): Promise<ActionResult> {
+export async function cancelSubscription(reason?: string): Promise<ActionResult> {
   const session = await auth()
   if (!session?.user?.id) return { error: "No autorizado" }
 
@@ -85,6 +85,15 @@ export async function cancelSubscription(): Promise<ActionResult> {
       .from("users")
       .update({ subscription_status: "cancelled", subscription_synced_at: new Date().toISOString() })
       .eq("id", session.user.id)
+
+    if (reason) {
+      await supabaseAdmin.from("system_logs").insert({
+        actor_email: session.user.email,
+        action: "subscription.cancelled",
+        entity_type: "subscription",
+        metadata: { reason, subscription_id: subscriptionId },
+      })
+    }
 
     redirect("/dashboard/subscription")
   } catch {
