@@ -31,6 +31,14 @@ export default async function CoachAvailabilityPage() {
         </p>
       </div>
 
+      {/* Sincronización bidireccional — prioridad */}
+      <Suspense>
+        <CalendarConnections
+          googleConnected={googleStatus.connected}
+          googleEmail={googleStatus.email}
+        />
+      </Suspense>
+
       {error ? (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-4">
           {error}
@@ -38,14 +46,6 @@ export default async function CoachAvailabilityPage() {
       ) : (
         <AvailabilityManager initialSlots={availability as any} calendarUrl={calendarUrl} />
       )}
-
-      {/* Calendarios externos */}
-      <Suspense>
-        <CalendarConnections
-          googleConnected={googleStatus.connected}
-          googleEmail={googleStatus.email}
-        />
-      </Suspense>
     </div>
   )
 }
