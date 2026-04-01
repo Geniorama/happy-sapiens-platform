@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState, useEffect } from "react"
-import { User, LogOut, Handshake, Menu, X, Users, Star, CreditCard } from "lucide-react"
+import { User, LogOut, Handshake, Menu, X, Users, Star, CreditCard, PauseCircle } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -24,9 +24,10 @@ interface DashboardLayoutProps {
   children: ReactNode
   userName?: string | null
   userEmail?: string | null
+  subscriptionStatus?: string | null
 }
 
-export function DashboardLayout({ children, userName, userEmail }: DashboardLayoutProps) {
+export function DashboardLayout({ children, userName, userEmail, subscriptionStatus }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [points, setPoints] = useState<number | null>(null)
@@ -163,6 +164,20 @@ export function DashboardLayout({ children, userName, userEmail }: DashboardLayo
 
       {/* Main Content */}
       <main className="lg:pl-64">
+        {subscriptionStatus === "paused" && (
+          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-yellow-800">
+              <PauseCircle className="w-4 h-4 shrink-0" strokeWidth={1.5} />
+              <span>Tu suscripción está pausada. No puedes agendar citas ni obtener cupones mientras esté en pausa.</span>
+            </div>
+            <Link
+              href="/dashboard/subscription/manage"
+              className="shrink-0 text-xs font-semibold text-yellow-700 underline underline-offset-2 hover:text-yellow-900 transition-colors"
+            >
+              Reactivar
+            </Link>
+          </div>
+        )}
         <div className="min-h-screen p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">
           {children}
         </div>

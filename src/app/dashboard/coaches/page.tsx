@@ -41,10 +41,11 @@ export default async function CoachesPage() {
         </p>
       </div>
 
-      <CoachesList 
-        coaches={coaches || []} 
+      <CoachesList
+        coaches={coaches || []}
         userAppointments={userAppointments || []}
         userId={session.user.id}
+        isPaused={session.user.subscriptionStatus === "paused"}
       />
     </div>
   )

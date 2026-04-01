@@ -37,9 +37,10 @@ interface CoachesListProps {
   coaches: Coach[]
   userAppointments: Appointment[]
   userId: string
+  isPaused?: boolean
 }
 
-export function CoachesList({ coaches, userAppointments, userId }: CoachesListProps) {
+export function CoachesList({ coaches, userAppointments, userId, isPaused = false }: CoachesListProps) {
   const [selectedSpecialization, setSelectedSpecialization] = useState<string | null>(null)
 
   // Obtener especializaciones únicas
@@ -195,52 +196,69 @@ export function CoachesList({ coaches, userAppointments, userId }: CoachesListPr
       {/* Lista de coaches */}
       {filteredCoaches.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-          {filteredCoaches.map((coach) => (
-            <Link
-              key={coach.id}
-              href={`/dashboard/coaches/${coach.id}`}
-              className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-zinc-200 hover:shadow-md transition-shadow flex flex-col"
-            >
-              {/* Imagen del coach */}
-              <div className="relative w-full h-48 bg-zinc-100">
-                {coach.image ? (
-                  <img
-                    src={coach.image}
-                    alt={coach.name || "Coach"}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/20">
-                    <User className="w-16 h-16 text-primary/40" strokeWidth={1} />
-                  </div>
-                )}
-                {coach.specialization && (
-                  <div className="absolute top-3 left-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 backdrop-blur-sm text-zinc-700">
-                      {coach.specialization}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Información del coach */}
-              <div className="p-4 sm:p-6 flex flex-col flex-grow">
-                <h3 className="font-heading text-lg sm:text-xl text-zinc-900 mb-2">
-                  {coach.name || "Coach"}
-                </h3>
-                {coach.bio && (
-                  <p className="text-sm text-zinc-600 mb-4 line-clamp-3 flex-grow">
-                    {coach.bio}
-                  </p>
-                )}
-                <div className="mt-auto pt-4 border-t border-zinc-200">
-                  <span className="text-sm font-medium text-primary">
-                    Ver perfil y agendar →
-                  </span>
+          {filteredCoaches.map((coach) => {
+            const cardContent = (
+              <>
+                {/* Imagen del coach */}
+                <div className="relative w-full h-48 bg-zinc-100">
+                  {coach.image ? (
+                    <img
+                      src={coach.image}
+                      alt={coach.name || "Coach"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/20">
+                      <User className="w-16 h-16 text-primary/40" strokeWidth={1} />
+                    </div>
+                  )}
+                  {coach.specialization && (
+                    <div className="absolute top-3 left-3">
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 backdrop-blur-sm text-zinc-700">
+                        {coach.specialization}
+                      </span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Información del coach */}
+                <div className="p-4 sm:p-6 flex flex-col flex-grow">
+                  <h3 className="font-heading text-lg sm:text-xl text-zinc-900 mb-2">
+                    {coach.name || "Coach"}
+                  </h3>
+                  {coach.bio && (
+                    <p className="text-sm text-zinc-600 mb-4 line-clamp-3 flex-grow">
+                      {coach.bio}
+                    </p>
+                  )}
+                  {!isPaused && (
+                    <div className="mt-auto pt-4 border-t border-zinc-200">
+                      <span className="text-sm font-medium text-primary">
+                        Ver perfil y agendar →
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )
+
+            return isPaused ? (
+              <div
+                key={coach.id}
+                className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-zinc-200 flex flex-col opacity-60 cursor-not-allowed"
+              >
+                {cardContent}
               </div>
-            </Link>
-          ))}
+            ) : (
+              <Link
+                key={coach.id}
+                href={`/dashboard/coaches/${coach.id}`}
+                className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-zinc-200 hover:shadow-md transition-shadow flex flex-col"
+              >
+                {cardContent}
+              </Link>
+            )
+          })}
         </div>
       ) : (
         <div className="bg-white rounded-xl sm:rounded-2xl p-6 sm:p-8 lg:p-12 shadow-sm border border-zinc-200 text-center">

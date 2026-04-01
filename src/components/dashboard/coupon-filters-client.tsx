@@ -35,9 +35,10 @@ interface CouponFiltersClientProps {
   partners: Partner[]
   campaigns: Campaign[]
   userId: string
+  isPaused?: boolean
 }
 
-export function CouponFiltersClient({ partners, campaigns: initialCampaigns, userId }: CouponFiltersClientProps) {
+export function CouponFiltersClient({ partners, campaigns: initialCampaigns, userId, isPaused = false }: CouponFiltersClientProps) {
   const [selectedPartner, setSelectedPartner] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -196,6 +197,7 @@ export function CouponFiltersClient({ partners, campaigns: initialCampaigns, use
                 availableCount={coupon.available_count}
                 userObtainedCount={coupon.user_obtained_count}
                 maxPerUser={coupon.max_per_user}
+                isPaused={isPaused}
               />
             ))}
           </div>

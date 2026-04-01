@@ -22,9 +22,10 @@ export default async function Layout({
   }
 
   return (
-    <DashboardLayout 
-      userName={session.user?.name} 
+    <DashboardLayout
+      userName={session.user?.name}
       userEmail={session.user?.email}
+      subscriptionStatus={session.user?.subscriptionStatus}
     >
       {children}
     </DashboardLayout>

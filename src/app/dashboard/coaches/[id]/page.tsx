@@ -76,6 +76,7 @@ export default async function CoachDetailPage({
         externalBlocked={googleBlocked}
         userId={session.user.id}
         healthProfile={healthProfile}
+        isPaused={session.user.subscriptionStatus === "paused"}
       />
     </div>
   )

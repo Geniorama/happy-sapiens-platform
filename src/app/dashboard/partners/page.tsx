@@ -142,6 +142,7 @@ export default async function PartnersPage() {
             partners={allPartners || []}
             campaigns={campaignsWithUserCount || []}
             userId={session.user.id}
+            isPaused={session.user.subscriptionStatus === "paused"}
           />
         </div>
       </div>

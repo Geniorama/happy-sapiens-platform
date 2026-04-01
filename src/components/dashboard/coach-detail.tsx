@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Clock, MapPin, User, ArrowLeft, ChevronLeft, ChevronRight, CalendarX } from "lucide-react"
+import { Clock, MapPin, User, ArrowLeft, ChevronLeft, ChevronRight, CalendarX, PauseCircle } from "lucide-react"
 import Link from "next/link"
 import { createAppointment } from "@/app/dashboard/coaches/actions"
 import { HealthProfileForm } from "./health-profile-form"
@@ -78,6 +78,7 @@ interface CoachDetailProps {
   externalBlocked?: ExternalBlocked[]
   userId: string
   healthProfile: HealthProfile | null
+  isPaused?: boolean
 }
 
 // ─── Date helpers (timezone-safe) ─────────────────────────────────────────────
@@ -246,6 +247,7 @@ export function CoachDetail({
   externalBlocked = [],
   userId,
   healthProfile,
+  isPaused = false,
 }: CoachDetailProps) {
   const router = useRouter()
   const [selectedDate, setSelectedDate] = useState<string>("")
@@ -414,8 +416,25 @@ export function CoachDetail({
         </div>
       </div>
 
+      {/* Aviso suscripción pausada */}
+      {isPaused && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 flex items-start gap-3">
+          <PauseCircle className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" strokeWidth={1.5} />
+          <div>
+            <p className="text-sm font-medium text-yellow-800">Suscripción pausada</p>
+            <p className="text-sm text-yellow-700 mt-1">
+              No puedes agendar citas mientras tu suscripción esté en pausa.{" "}
+              <a href="/dashboard/subscription/manage" className="underline font-medium hover:text-yellow-900">
+                Reactívala aquí
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Health profile form */}
-      {showHealthForm && (
+      {!isPaused && showHealthForm && (
         <div className="mb-4 sm:mb-6">
           <HealthProfileForm
             userId={userId}
@@ -429,7 +448,7 @@ export function CoachDetail({
       )}
 
       {/* Booking form */}
-      {!showHealthForm && (
+      {!isPaused && !showHealthForm && (
         <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">
           <h2 className="text-xl sm:text-2xl font-heading text-zinc-900 mb-6">Agendar Cita</h2>
 

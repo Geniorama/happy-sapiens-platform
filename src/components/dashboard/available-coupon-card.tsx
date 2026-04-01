@@ -33,9 +33,10 @@ interface AvailableCouponCardProps {
   availableCount: number
   userObtainedCount: number
   maxPerUser: number | null
+  isPaused?: boolean
 }
 
-export function AvailableCouponCard({ coupon, userId, availableCount, userObtainedCount, maxPerUser }: AvailableCouponCardProps) {
+export function AvailableCouponCard({ coupon, userId, availableCount, userObtainedCount, maxPerUser, isPaused = false }: AvailableCouponCardProps) {
   const [isAssigning, setIsAssigning] = useState(false)
   const [termsModalOpen, setTermsModalOpen] = useState(false)
   const [localCount, setLocalCount] = useState(availableCount)
@@ -317,17 +318,24 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
 
         {/* Botones */}
         <div className="mt-auto space-y-2">
+          {isPaused ? (
+            <div className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-100 text-zinc-400 text-sm font-medium rounded-lg cursor-not-allowed">
+              <Ticket className="w-4 h-4" strokeWidth={1.5} />
+              Suscripción pausada
+            </div>
+          ) : (
           <button
             onClick={handleAssignCoupon}
             disabled={isAssigning || !canObtain}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-primary text-white text-sm sm:text-base font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <Ticket className="w-4 h-4" strokeWidth={1.5} />
-            {isAssigning ? "Obteniendo..." : 
+            {isAssigning ? "Obteniendo..." :
              hasReachedLimit ? "Límite alcanzado" :
-             localCount <= 0 ? "Agotado" : 
+             localCount <= 0 ? "Agotado" :
              "Obtener Cupón"}
           </button>
+          )}
 
           {coupon.partner.website_url && (
             <a
