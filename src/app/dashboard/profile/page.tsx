@@ -351,7 +351,7 @@ export default async function ProfilePage() {
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${txStatus.color}`}>
                         {txStatus.label}
                       </span>
-                      {tx.mercadopago_payment_id && (
+                      {tx.mercadopago_payment_id && /^\d+$/.test(tx.mercadopago_payment_id) && (
                         <a
                           href={`https://www.mercadopago.com.co/activities/payments/${tx.mercadopago_payment_id}`}
                           target="_blank"
