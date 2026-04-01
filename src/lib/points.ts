@@ -88,14 +88,17 @@ export async function awardPoints(options: AwardPointsOptions): Promise<{ succes
     return { success: false, error: "Puntos no configurados o inválidos para esta acción" }
   }
 
-  // Los administradores no acumulan puntos
+  // Administradores, usuarios con suscripción pausada o cancelada no acumulan puntos
   try {
     const { data: recipient } = await supabaseAdmin
       .from("users")
-      .select("role")
+      .select("role, subscription_status")
       .eq("id", options.userId)
       .single()
     if (recipient?.role === "admin") return { success: true }
+    if (recipient?.subscription_status === "paused" || recipient?.subscription_status === "cancelled") {
+      return { success: true }
+    }
   } catch {
     // Si falla la verificación, continuar normalmente
   }
