@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import {
   Calendar, Check, Sparkles, Package, CreditCard, RefreshCw,
-  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock, Settings2,
+  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock, Settings2, AlertTriangle,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -79,6 +79,30 @@ export default async function SubscriptionPage() {
       </div>
 
       <div className="space-y-4 sm:space-y-6">
+
+        {/* Banner past_due */}
+        {subscriptionStatus === "past_due" && (
+          <div className="flex items-start gap-4 p-5 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" strokeWidth={1.5} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-red-800 mb-1">Tu suscripción tiene un pago pendiente</h3>
+              <p className="text-sm text-red-700 mb-3">
+                No pudimos procesar tu último cobro. Tu acceso a la plataforma y los próximos envíos están suspendidos hasta regularizar el pago.
+              </p>
+              <a
+                href="https://www.mercadopago.com.co/subscriptions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Actualizar método de pago en Mercado Pago
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Estado de la suscripción */}
         <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-zinc-200">

@@ -156,13 +156,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               token.id = data.id
               token.role = data.role || "user"
               token.subscriptionStatus = data.subscription_status ?? null
+              token.subscriptionStatusFetchedAt = Date.now()
             } else if (isOAuth) {
-              // Email OAuth no tiene cuenta → marcar para bloquear en la sesión
               token.noAccount = true
             }
           } catch {
             token.role = "user"
           }
+        }
+      } else if (token.id) {
+        // Refrescar subscription_status cada 5 minutos para detectar cambios (past_due, cancelled)
+        const lastFetch = token.subscriptionStatusFetchedAt as number | undefined
+        if (!lastFetch || Date.now() - lastFetch > 5 * 60 * 1000) {
+          try {
+            const { data } = await supabaseAdmin
+              .from("users")
+              .select("subscription_status")
+              .eq("id", token.id as string)
+              .single()
+            if (data) {
+              token.subscriptionStatus = data.subscription_status ?? null
+              token.subscriptionStatusFetchedAt = Date.now()
+            }
+          } catch { /* no romper el flujo */ }
         }
       }
       return token

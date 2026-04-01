@@ -272,12 +272,14 @@ async function handlePreApproval(preApprovalId: string) {
 
     // Limpiar el checkout pendiente
     await supabaseAdmin.from('pending_checkout').delete().eq('email', email)
-  } else if (status === 'cancelled' || status === 'paused') {
+  } else if (status === 'cancelled' || status === 'paused' || status === 'past_due') {
     if (existingUser) {
       await supabaseAdmin
         .from('users')
         .update({
-          subscription_status: status === 'cancelled' ? 'cancelled' : 'paused',
+          subscription_status: status === 'cancelled' ? 'cancelled'
+            : status === 'paused' ? 'paused'
+            : 'past_due',
           subscription_synced_at: new Date().toISOString(),
         })
         .eq('id', existingUser.id)
@@ -290,14 +292,24 @@ async function handlePreApproval(preApprovalId: string) {
 async function handlePayment(paymentId: string) {
   const payment = await paymentClient.get({ id: paymentId })
 
-  if (payment.status !== 'approved') return
-
   // Pago de suscripción recurrente (cobro mensual automático)
   // subscription_id existe en runtime pero no está en los tipos del SDK
   const paymentAny = payment as unknown as Record<string, unknown>
   if (paymentAny.subscription_id) {
     const email = payment.payer?.email
     if (!email) return
+
+    // Pago rechazado → marcar suscripción como past_due (no crear orden Shopify)
+    if (payment.status === 'rejected' || payment.status === 'cancelled') {
+      await supabaseAdmin
+        .from('users')
+        .update({ subscription_status: 'past_due', subscription_synced_at: new Date().toISOString() })
+        .eq('email', email)
+      await log('webhook.payment.rejected', email, { paymentId, status: payment.status })
+      return
+    }
+
+    if (payment.status !== 'approved') return
 
     const { data: user } = await supabaseAdmin
       .from('users')

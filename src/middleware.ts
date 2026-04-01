@@ -29,6 +29,13 @@ export default auth((req) => {
     pathname.startsWith("/dashboard") || pathname.startsWith("/coach")
 
   if (requiresSubscription && subscriptionStatus !== "active") {
+    // Usuarios con pago vencido pueden ver solo la página de suscripción
+    if (subscriptionStatus === "past_due" && pathname.startsWith("/dashboard/subscription")) {
+      return NextResponse.next()
+    }
+    if (subscriptionStatus === "past_due") {
+      return NextResponse.redirect(new URL("/dashboard/subscription", req.url))
+    }
     return NextResponse.redirect(new URL("/auth/subscription-required", req.url))
   }
 

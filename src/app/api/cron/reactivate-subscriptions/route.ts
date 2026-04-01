@@ -10,39 +10,57 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  const { data: users, error } = await supabaseAdmin
+  const logs: string[] = []
+
+  // 1. Reactivar suscripciones cuya pausa ha vencido
+  const { data: pausedUsers } = await supabaseAdmin
     .from('users')
     .select('id, subscription_id, email')
     .eq('subscription_status', 'paused')
     .not('subscription_pause_ends_at', 'is', null)
     .lte('subscription_pause_ends_at', new Date().toISOString())
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!users?.length) return NextResponse.json({ ok: true, reactivated: 0 })
-
-  const results: { email: string; ok: boolean; error?: string }[] = []
-
-  for (const user of users) {
+  const reactivated: string[] = []
+  for (const user of pausedUsers ?? []) {
     try {
-      await preApprovalClient.update({
-        id: user.subscription_id,
-        body: { status: 'authorized' },
-      })
-
-      await supabaseAdmin
-        .from('users')
-        .update({
-          subscription_status: 'active',
-          subscription_synced_at: new Date().toISOString(),
-          subscription_pause_ends_at: null,
-        })
-        .eq('id', user.id)
-
-      results.push({ email: user.email, ok: true })
+      await preApprovalClient.update({ id: user.subscription_id, body: { status: 'authorized' } })
+      await supabaseAdmin.from('users').update({
+        subscription_status: 'active',
+        subscription_synced_at: new Date().toISOString(),
+        subscription_pause_ends_at: null,
+      }).eq('id', user.id)
+      reactivated.push(user.email)
     } catch (err) {
-      results.push({ email: user.email, ok: false, error: err instanceof Error ? err.message : String(err) })
+      logs.push(`Error reactivando ${user.email}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
+  logs.push(`Reactivadas por fin de pausa: ${reactivated.length}`)
 
-  return NextResponse.json({ ok: true, reactivated: results.filter(r => r.ok).length, results })
+  // 2. Marcar past_due si subscription_end_date venció hace más de 3 días sin pago
+  const gracePeriod = new Date()
+  gracePeriod.setDate(gracePeriod.getDate() - 3)
+
+  const { data: overdueUsers } = await supabaseAdmin
+    .from('users')
+    .select('id, email')
+    .eq('subscription_status', 'active')
+    .not('subscription_end_date', 'is', null)
+    .lte('subscription_end_date', gracePeriod.toISOString())
+
+  const markedPastDue: string[] = []
+  for (const user of overdueUsers ?? []) {
+    await supabaseAdmin.from('users').update({
+      subscription_status: 'past_due',
+      subscription_synced_at: new Date().toISOString(),
+    }).eq('id', user.id)
+    markedPastDue.push(user.email)
+  }
+  logs.push(`Marcadas como past_due por fecha vencida: ${markedPastDue.length}`)
+
+  return NextResponse.json({
+    ok: true,
+    reactivated: reactivated.length,
+    past_due_marked: markedPastDue.length,
+    logs,
+  })
 }
