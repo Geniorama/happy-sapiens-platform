@@ -138,6 +138,7 @@ export interface ShopifyOrder {
   id: number
   order_number: number
   created_at: string
+  closed_at: string | null
   financial_status: string
   fulfillment_status: string | null
   line_items: { title: string; price: string; quantity: number }[]
@@ -145,7 +146,7 @@ export interface ShopifyOrder {
 
 // Obtener pedidos de un cliente por email
 export async function getShopifyOrdersByEmail(email: string): Promise<ShopifyOrder[]> {
-  const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&fields=id,order_number,created_at,financial_status,fulfillment_status,line_items&limit=20`
+  const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&fields=id,order_number,created_at,closed_at,financial_status,fulfillment_status,line_items&limit=20`
 
   const response = await fetch(restUrl, {
     headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN },

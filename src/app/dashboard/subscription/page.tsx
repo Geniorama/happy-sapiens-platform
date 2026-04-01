@@ -33,6 +33,7 @@ const FULFILLMENT_STATUS: Record<string, { label: string; color: string; truck: 
   fulfilled: { label: "Despachado", color: "bg-green-100 text-green-700", truck: true },
   partial: { label: "Parcial", color: "bg-yellow-100 text-yellow-700", truck: true },
   pending: { label: "Pendiente despacho", color: "bg-zinc-100 text-zinc-600", truck: false },
+  archived: { label: "Archivado", color: "bg-zinc-100 text-zinc-500", truck: false },
 }
 
 export default async function SubscriptionPage() {
@@ -203,7 +204,9 @@ export default async function SubscriptionPage() {
             </div>
             <div className="space-y-3">
               {shopifyOrders.map((order) => {
-                const fulfillmentKey = order.fulfillment_status ?? "pending"
+                const fulfillmentKey = order.closed_at
+                  ? "archived"
+                  : (order.fulfillment_status ?? "pending")
                 const fulfillment = FULFILLMENT_STATUS[fulfillmentKey] ?? FULFILLMENT_STATUS.pending
                 const FulfillIcon = fulfillment.truck ? Truck : Clock
                 const product = order.line_items[0]
