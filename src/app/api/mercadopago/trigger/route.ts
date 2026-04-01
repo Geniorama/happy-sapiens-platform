@@ -119,7 +119,10 @@ export async function POST(req: Request) {
       let referralCode: string | null = null
       const preApprovalAny = preApproval as unknown as Record<string, unknown>
       const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
+      const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
+      const dateCreated = preApprovalAny.date_created as string | undefined
       if (subscriptionPrice !== undefined) logs.push(`Precio suscripción: ${subscriptionPrice}`)
+      if (nextPaymentDate) logs.push(`Próximo pago: ${nextPaymentDate}`)
 
       if (preApproval.external_reference) {
         try {
@@ -164,7 +167,10 @@ export async function POST(req: Request) {
           .from('users')
           .update({
             subscription_status: 'active',
+            subscription_id: id,
             subscription_synced_at: new Date().toISOString(),
+            subscription_start_date: dateCreated ?? new Date().toISOString(),
+            subscription_end_date: nextPaymentDate ?? null,
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
             ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
@@ -209,7 +215,10 @@ export async function POST(req: Request) {
             email,
             role: 'user',
             subscription_status: 'active',
+            subscription_id: id,
             subscription_synced_at: new Date().toISOString(),
+            subscription_start_date: dateCreated ?? new Date().toISOString(),
+            subscription_end_date: nextPaymentDate ?? null,
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
             ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),

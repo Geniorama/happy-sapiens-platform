@@ -82,6 +82,8 @@ async function handlePreApproval(preApprovalId: string) {
   let shopifyVariantId: string | null = null
   const preApprovalAny = preApproval as unknown as Record<string, unknown>
   const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
+  const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
+  const dateCreated = preApprovalAny.date_created as string | undefined
 
   if (preApproval.external_reference) {
     try {
@@ -127,7 +129,10 @@ async function handlePreApproval(preApprovalId: string) {
         .from('users')
         .update({
           subscription_status: 'active',
+          subscription_id: preApprovalId,
           subscription_synced_at: new Date().toISOString(),
+          subscription_start_date: dateCreated ?? new Date().toISOString(),
+          subscription_end_date: nextPaymentDate ?? null,
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
           ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
@@ -172,7 +177,10 @@ async function handlePreApproval(preApprovalId: string) {
           email,
           role: 'user',
           subscription_status: 'active',
+          subscription_id: preApprovalId,
           subscription_synced_at: new Date().toISOString(),
+          subscription_start_date: dateCreated ?? new Date().toISOString(),
+          subscription_end_date: nextPaymentDate ?? null,
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
           ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
@@ -299,13 +307,27 @@ async function handlePayment(paymentId: string) {
 
     if (user) {
       const recurringPrice = payment.transaction_amount ?? undefined
+      const paymentAnyData = payment as unknown as Record<string, unknown>
+      const nextDate = paymentAnyData.next_payment_date as string | undefined
+
       await supabaseAdmin
         .from('users')
         .update({
           subscription_synced_at: new Date().toISOString(),
           ...(recurringPrice !== undefined && { subscription_price: recurringPrice }),
+          ...(nextDate && { subscription_end_date: nextDate }),
         })
         .eq('id', user.id)
+
+      await supabaseAdmin.from('payment_transactions').upsert({
+        user_id: user.id,
+        mercadopago_payment_id: String(payment.id),
+        status: payment.status ?? 'approved',
+        amount: recurringPrice ?? null,
+        currency: (payment as unknown as Record<string, unknown>).currency_id as string ?? 'COP',
+        payment_method: payment.payment_type_id ?? null,
+        payment_date: payment.date_approved ?? new Date().toISOString(),
+      }, { onConflict: 'mercadopago_payment_id' })
 
       if (user.subscription_variant_id) {
         const shippingAddress = user.shipping_address
