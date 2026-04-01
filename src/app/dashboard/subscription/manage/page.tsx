@@ -9,11 +9,23 @@ export default async function ManagePage() {
 
   const { data: user } = await supabaseAdmin
     .from("users")
-    .select("subscription_status, subscription_id")
+    .select("subscription_status, subscription_id, subscription_end_date")
     .eq("id", session.user.id)
     .single()
 
   if (!user?.subscription_id) redirect("/dashboard/subscription")
 
-  return <ManageSubscriptionClient status={user.subscription_status ?? "inactive"} />
+  const canCancel = user.subscription_end_date
+    ? new Date(user.subscription_end_date).getTime() - Date.now() >= 30 * 24 * 60 * 60 * 1000
+    : true
+
+  const nextBillingDate = user.subscription_end_date ?? null
+
+  return (
+    <ManageSubscriptionClient
+      status={user.subscription_status ?? "inactive"}
+      canCancel={canCancel}
+      nextBillingDate={nextBillingDate}
+    />
+  )
 }

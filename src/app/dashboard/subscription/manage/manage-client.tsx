@@ -50,7 +50,11 @@ const PAUSE_DURATIONS: { months: 1 | 2 | 3; label: string }[] = [
   { months: 3, label: "3 meses" },
 ]
 
-export function ManageSubscriptionClient({ status }: { status: string }) {
+export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }: {
+  status: string
+  canCancel: boolean
+  nextBillingDate: string | null
+}) {
   const [pending, setPending] = useState<Action>(null)
   const [confirming, setConfirming] = useState<Action>(null)
   const [error, setError] = useState<string | null>(null)
@@ -230,6 +234,21 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
                 <p className="text-sm text-zinc-500 mb-4">
                   Cancela definitivamente. Esta acción no se puede deshacer.
                 </p>
+
+                {!canCancel && nextBillingDate && (
+                  <div className="flex items-start gap-2 p-3 bg-zinc-50 border border-zinc-200 rounded-lg mb-4">
+                    <AlertTriangle className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
+                    <p className="text-sm text-zinc-600">
+                      Solo puedes cancelar con al menos 30 días de anticipación al próximo cobro.
+                      Tu próximo cobro es el{" "}
+                      <span className="font-medium">
+                        {new Date(nextBillingDate).toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}
+                      </span>
+                      .
+                    </p>
+                  </div>
+                )}
+
                 {confirming === "cancel" ? (
                   <div className="p-4 bg-red-50 rounded-lg border border-red-200 space-y-4">
                     <p className="text-sm text-red-800">{CONFIRMATIONS.cancel.description}</p>
@@ -284,7 +303,11 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => setConfirming("cancel")} className="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
+                  <button
+                    onClick={() => setConfirming("cancel")}
+                    disabled={!canCancel}
+                    className="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                     Cancelar suscripción
                   </button>
                 )}
