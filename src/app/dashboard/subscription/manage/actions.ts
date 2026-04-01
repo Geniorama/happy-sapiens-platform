@@ -3,9 +3,8 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { preApprovalClient } from "@/lib/mercadopago"
-import { redirect } from "next/navigation"
 
-type ActionResult = { error: string } | { success: string }
+type ActionResult = { error: string } | { success: true }
 
 async function getSubscriptionId(): Promise<string | null> {
   const session = await auth()
@@ -48,7 +47,7 @@ export async function pauseSubscription(months: 1 | 2 | 3): Promise<ActionResult
     return { error: "No se pudo pausar la suscripción. Intenta de nuevo." }
   }
 
-  redirect("/dashboard/subscription")
+  return { success: true }
 }
 
 export async function reactivateSubscription(): Promise<ActionResult> {
@@ -76,7 +75,7 @@ export async function reactivateSubscription(): Promise<ActionResult> {
     return { error: "No se pudo reactivar la suscripción. Intenta de nuevo." }
   }
 
-  redirect("/dashboard/subscription")
+  return { success: true }
 }
 
 export async function cancelSubscription(reason?: string): Promise<ActionResult> {
@@ -109,5 +108,5 @@ export async function cancelSubscription(reason?: string): Promise<ActionResult>
     return { error: "No se pudo cancelar la suscripción. Intenta de nuevo." }
   }
 
-  redirect("/dashboard/subscription")
+  return { success: true }
 }

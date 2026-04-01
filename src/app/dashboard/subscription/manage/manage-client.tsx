@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { useSession } from "next-auth/react"
 import { ArrowLeft, PauseCircle, PlayCircle, XCircle, AlertTriangle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { pauseSubscription, reactivateSubscription, cancelSubscription } from "./actions"
@@ -55,6 +57,9 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
   canCancel: boolean
   nextBillingDate: string | null
 }) {
+  const router = useRouter()
+  const { update: updateSession } = useSession()
+
   const [pending, setPending] = useState<Action>(null)
   const [confirming, setConfirming] = useState<Action>(null)
   const [error, setError] = useState<string | null>(null)
@@ -69,22 +74,27 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
     setPending(action)
     setError(null)
 
+    let result
     if (action === "pause") {
-      const result = await pauseSubscription(pauseMonths)
-      if (result && "error" in result) { setError(result.error); setPending(null) }
-      return
-    }
-
-    if (action === "cancel") {
+      result = await pauseSubscription(pauseMonths)
+    } else if (action === "cancel") {
       const reason = cancelReason === "Otro" ? cancelOther.trim() || undefined
         : cancelReason || undefined
-      const result = await cancelSubscription(reason)
-      if (result && "error" in result) { setError(result.error); setPending(null) }
+      result = await cancelSubscription(reason)
+    } else {
+      result = await reactivateSubscription()
+    }
+
+    if (result && "error" in result) {
+      setError(result.error)
+      setPending(null)
       return
     }
 
-    const result = await reactivateSubscription()
-    if (result && "error" in result) { setError(result.error); setPending(null) }
+    // Refrescar la sesión para que el JWT tome el nuevo estado de suscripción
+    await updateSession()
+    router.push("/dashboard/subscription")
+    router.refresh()
   }
 
   function ConfirmPanel({ action }: { action: NonNullable<Action> }) {
