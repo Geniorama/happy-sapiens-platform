@@ -63,6 +63,17 @@ export async function createAppointment(data: CreateAppointmentData) {
       return { error: "No autorizado" }
     }
 
+    // Verificar que la suscripción no esté pausada
+    const { data: userStatus } = await supabaseAdmin
+      .from("users")
+      .select("subscription_status")
+      .eq("id", session.user.id)
+      .single()
+
+    if (userStatus?.subscription_status === "paused") {
+      return { error: "Tu suscripción está pausada. Reactívala para agendar citas con coaches." }
+    }
+
     // Verificar que el usuario tenga perfil de salud completo
     const hasProfile = await hasHealthProfile()
     if (!hasProfile) {

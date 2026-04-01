@@ -44,11 +44,11 @@ export async function pauseSubscription(months: 1 | 2 | 3): Promise<ActionResult
         subscription_pause_ends_at: pauseEndsAt.toISOString(),
       })
       .eq("id", session.user.id)
-
-    redirect("/dashboard/subscription")
   } catch {
     return { error: "No se pudo pausar la suscripción. Intenta de nuevo." }
   }
+
+  redirect("/dashboard/subscription")
 }
 
 export async function reactivateSubscription(): Promise<ActionResult> {
@@ -72,11 +72,11 @@ export async function reactivateSubscription(): Promise<ActionResult> {
         subscription_pause_ends_at: null,
       })
       .eq("id", session.user.id)
-
-    redirect("/dashboard/subscription")
   } catch {
     return { error: "No se pudo reactivar la suscripción. Intenta de nuevo." }
   }
+
+  redirect("/dashboard/subscription")
 }
 
 export async function cancelSubscription(reason?: string): Promise<ActionResult> {
@@ -105,9 +105,9 @@ export async function cancelSubscription(reason?: string): Promise<ActionResult>
         metadata: { reason, subscription_id: subscriptionId },
       })
     }
-
-    redirect("/dashboard/subscription")
   } catch {
     return { error: "No se pudo cancelar la suscripción. Intenta de nuevo." }
   }
+
+  redirect("/dashboard/subscription")
 }

@@ -313,7 +313,7 @@ async function handlePayment(paymentId: string) {
 
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, name, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+      .select('id, name, subscription_status, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
       .eq('email', email)
       .single()
 
@@ -340,6 +340,13 @@ async function handlePayment(paymentId: string) {
         payment_method: payment.payment_type_id ?? null,
         payment_date: payment.date_approved ?? new Date().toISOString(),
       }, { onConflict: 'mercadopago_payment_id' })
+
+      // Si la suscripción está pausada, no despachar el producto este mes
+      if (user.subscription_status === 'paused') {
+        await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_paused' })
+        console.log(`Despacho omitido para ${email}: suscripción pausada`)
+        return
+      }
 
       if (user.subscription_variant_id) {
         const shippingAddress = user.shipping_address

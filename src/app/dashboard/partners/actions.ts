@@ -12,6 +12,17 @@ export async function assignCoupon(partnerId: string, campaignTitle?: string | n
   }
 
   try {
+    // Verificar que la suscripción no esté pausada
+    const { data: userStatus } = await supabaseAdmin
+      .from("users")
+      .select("subscription_status")
+      .eq("id", session.user.id)
+      .single()
+
+    if (userStatus?.subscription_status === "paused") {
+      return { error: "Tu suscripción está pausada. Reactívala para redimir cupones." }
+    }
+
     // Buscar un cupón disponible para esta campaña específica
     let query = supabaseAdmin
       .from("coupons")

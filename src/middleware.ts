@@ -29,11 +29,13 @@ export default auth((req) => {
     pathname.startsWith("/dashboard") || pathname.startsWith("/coach")
 
   if (requiresSubscription && subscriptionStatus !== "active") {
-    // Usuarios con pago vencido pueden ver solo la página de suscripción
-    if (subscriptionStatus === "past_due" && pathname.startsWith("/dashboard/subscription")) {
+    // Suscripción pausada: acceso completo al dashboard (restricciones se manejan en cada feature)
+    if (subscriptionStatus === "paused") {
       return NextResponse.next()
     }
+    // Pago vencido: solo puede ver la página de suscripción
     if (subscriptionStatus === "past_due") {
+      if (pathname.startsWith("/dashboard/subscription")) return NextResponse.next()
       return NextResponse.redirect(new URL("/dashboard/subscription", req.url))
     }
     return NextResponse.redirect(new URL("/auth/subscription-required", req.url))
