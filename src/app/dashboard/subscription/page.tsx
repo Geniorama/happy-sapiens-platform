@@ -32,7 +32,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 const FULFILLMENT_STATUS: Record<string, { label: string; color: string; truck: boolean }> = {
   fulfilled: { label: "Despachado", color: "bg-green-100 text-green-700", truck: true },
   partial: { label: "Parcial", color: "bg-yellow-100 text-yellow-700", truck: true },
-  pending: { label: "Pendiente despacho", color: "bg-zinc-100 text-zinc-600", truck: false },
+  pending: { label: "Pendiente despacho", color: "bg-orange-100 text-orange-700", truck: false },
   archived: { label: "Archivado", color: "bg-zinc-100 text-zinc-500", truck: false },
 }
 
