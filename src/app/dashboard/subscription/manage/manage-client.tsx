@@ -44,10 +44,17 @@ const CONFIRMATIONS: Record<NonNullable<Action>, { description: string; cta: str
   },
 }
 
+const PAUSE_DURATIONS: { months: 1 | 2 | 3; label: string }[] = [
+  { months: 1, label: "1 mes" },
+  { months: 2, label: "2 meses" },
+  { months: 3, label: "3 meses" },
+]
+
 export function ManageSubscriptionClient({ status }: { status: string }) {
   const [pending, setPending] = useState<Action>(null)
   const [confirming, setConfirming] = useState<Action>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pauseMonths, setPauseMonths] = useState<1 | 2 | 3>(1)
   const [cancelReason, setCancelReason] = useState<string>("")
   const [cancelOther, setCancelOther] = useState<string>("")
 
@@ -58,23 +65,22 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
     setPending(action)
     setError(null)
 
+    if (action === "pause") {
+      const result = await pauseSubscription(pauseMonths)
+      if (result && "error" in result) { setError(result.error); setPending(null) }
+      return
+    }
+
     if (action === "cancel") {
       const reason = cancelReason === "Otro" ? cancelOther.trim() || undefined
         : cancelReason || undefined
       const result = await cancelSubscription(reason)
-      if (result && "error" in result) {
-        setError(result.error)
-        setPending(null)
-      }
+      if (result && "error" in result) { setError(result.error); setPending(null) }
       return
     }
 
-    const fn = action === "pause" ? pauseSubscription : reactivateSubscription
-    const result = await fn()
-    if (result && "error" in result) {
-      setError(result.error)
-      setPending(null)
-    }
+    const result = await reactivateSubscription()
+    if (result && "error" in result) { setError(result.error); setPending(null) }
   }
 
   function ConfirmPanel({ action }: { action: NonNullable<Action> }) {
@@ -138,12 +144,52 @@ export function ManageSubscriptionClient({ status }: { status: string }) {
                 <p className="text-sm text-zinc-500 mb-4">
                   Detén temporalmente los cobros y envíos. Puedes reactivarla en cualquier momento.
                 </p>
-                {confirming === "pause"
-                  ? <ConfirmPanel action="pause" />
-                  : <button onClick={() => setConfirming("pause")} className="px-4 py-2 border border-yellow-300 text-yellow-700 text-sm font-medium rounded-lg hover:bg-yellow-50 transition-colors">
-                      Pausar suscripción
-                    </button>
-                }
+                {confirming === "pause" ? (
+                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 space-y-4">
+                    <p className="text-sm text-yellow-800">{CONFIRMATIONS.pause.description}</p>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-zinc-600">¿Por cuánto tiempo?</p>
+                      <div className="flex gap-2">
+                        {PAUSE_DURATIONS.map(({ months, label }) => (
+                          <button
+                            key={months}
+                            onClick={() => setPauseMonths(months)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                              pauseMonths === months
+                                ? "bg-yellow-600 text-white border-yellow-600"
+                                : "border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAction("pause")}
+                        disabled={pending !== null}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                      >
+                        {pending === "pause" && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Pausar por {PAUSE_DURATIONS.find(d => d.months === pauseMonths)?.label}
+                      </button>
+                      <button
+                        onClick={() => setConfirming(null)}
+                        disabled={pending !== null}
+                        className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirming("pause")} className="px-4 py-2 border border-yellow-300 text-yellow-700 text-sm font-medium rounded-lg hover:bg-yellow-50 transition-colors">
+                    Pausar suscripción
+                  </button>
+                )}
               </div>
             </div>
           </div>

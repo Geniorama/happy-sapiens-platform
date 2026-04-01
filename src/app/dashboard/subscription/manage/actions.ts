@@ -20,7 +20,7 @@ async function getSubscriptionId(): Promise<string | null> {
   return user?.subscription_id ?? null
 }
 
-export async function pauseSubscription(): Promise<ActionResult> {
+export async function pauseSubscription(months: 1 | 2 | 3): Promise<ActionResult> {
   const session = await auth()
   if (!session?.user?.id) return { error: "No autorizado" }
 
@@ -33,9 +33,16 @@ export async function pauseSubscription(): Promise<ActionResult> {
       body: { status: "paused" },
     })
 
+    const pauseEndsAt = new Date()
+    pauseEndsAt.setMonth(pauseEndsAt.getMonth() + months)
+
     await supabaseAdmin
       .from("users")
-      .update({ subscription_status: "paused", subscription_synced_at: new Date().toISOString() })
+      .update({
+        subscription_status: "paused",
+        subscription_synced_at: new Date().toISOString(),
+        subscription_pause_ends_at: pauseEndsAt.toISOString(),
+      })
       .eq("id", session.user.id)
 
     redirect("/dashboard/subscription")
@@ -59,7 +66,11 @@ export async function reactivateSubscription(): Promise<ActionResult> {
 
     await supabaseAdmin
       .from("users")
-      .update({ subscription_status: "active", subscription_synced_at: new Date().toISOString() })
+      .update({
+        subscription_status: "active",
+        subscription_synced_at: new Date().toISOString(),
+        subscription_pause_ends_at: null,
+      })
       .eq("id", session.user.id)
 
     redirect("/dashboard/subscription")

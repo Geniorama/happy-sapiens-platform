@@ -5,6 +5,7 @@ import {
   Calendar, Check, Sparkles, Package, CreditCard, RefreshCw,
   BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock, Settings2,
 } from "lucide-react"
+
 import Link from "next/link"
 import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
 import { getShopifyOrdersByEmail } from "@/lib/shopify"
@@ -59,6 +60,7 @@ export default async function SubscriptionPage() {
   const subscriptionStatusLabels: Record<string, { label: string; color: string }> = {
     active: { label: "Activa", color: "bg-green-100 text-green-700" },
     inactive: { label: "Inactiva", color: "bg-zinc-100 text-zinc-700" },
+    paused: { label: "Pausada", color: "bg-yellow-100 text-yellow-700" },
     cancelled: { label: "Cancelada", color: "bg-orange-100 text-orange-700" },
     past_due: { label: "Pago Atrasado", color: "bg-red-100 text-red-700" },
   }
@@ -67,6 +69,7 @@ export default async function SubscriptionPage() {
   const statusInfo = subscriptionStatusLabels[subscriptionStatus] ?? subscriptionStatusLabels.inactive
   const subscriptionPlan = user?.subscription_product ? SUBSCRIPTION_PLANS[user.subscription_product] : null
   const isActive = subscriptionStatus === "active" || subscriptionStatus === "past_due"
+  const isPaused = subscriptionStatus === "paused"
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -162,19 +165,21 @@ export default async function SubscriptionPage() {
             </div>
           )}
 
-          {isActive && (
-            <div className="pt-2 flex justify-end">
-              <Link
-                href="/dashboard/subscription/manage"
-                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
-              >
-                <Settings2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                Gestionar suscripción
-              </Link>
+          {isPaused && user?.subscription_pause_ends_at && (
+            <div className="flex items-center gap-3 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+              <div className="flex-shrink-0 w-9 h-9 bg-yellow-100 rounded-full flex items-center justify-center">
+                <Clock className="w-4 h-4 text-yellow-600" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-xs text-yellow-700 mb-0.5">Reactivación automática</p>
+                <p className="font-medium text-yellow-900">
+                  {new Date(user.subscription_pause_ends_at).toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}
+                </p>
+              </div>
             </div>
           )}
 
-          {subscriptionStatus === "paused" && (
+          {(isActive || isPaused) && (
             <div className="pt-2 flex justify-end">
               <Link
                 href="/dashboard/subscription/manage"
