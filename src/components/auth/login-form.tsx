@@ -164,17 +164,6 @@ export function LoginForm() {
           Google
         </button>
 
-        <button
-          type="button"
-          onClick={() => handleOAuthSignIn("strava")}
-          disabled={isLoading}
-          className="flex cursor-pointer items-center justify-center gap-3 px-4 py-3 border border-zinc-300 rounded-lg hover:bg-zinc-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-          </svg>
-          Strava
-        </button>
       </div>
 
       <p className="text-center text-sm text-zinc-600">
