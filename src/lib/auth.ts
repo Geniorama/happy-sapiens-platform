@@ -58,6 +58,9 @@ const StravaProvider = {
       image: profile.profile,
     }
   },
+  client: {
+    token_endpoint_auth_method: "client_secret_post",
+  },
 }
 
 // Schema de validación para login
