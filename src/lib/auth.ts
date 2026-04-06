@@ -2,11 +2,10 @@ import NextAuth, { type DefaultSession } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
 import Facebook from "next-auth/providers/facebook"
-import type { OAuthConfig } from "next-auth/providers"
+import Strava, { type StravaProfile } from "next-auth/providers/strava"
 import { compare } from "bcryptjs"
 import { z } from "zod"
 import { supabaseAdmin } from "@/lib/supabase"
-import { StravaProfile } from "next-auth/providers/strava"
 
 // Extender los tipos de NextAuth
 declare module "next-auth" {
@@ -17,53 +16,6 @@ declare module "next-auth" {
       subscriptionStatus: string | null
     } & DefaultSession["user"]
   }
-}
-
-// Provider personalizado de Strava
-const StravaProvider: OAuthConfig<StravaProfile> = {
-  id: "strava",
-  name: "Strava",
-  type: "oauth" as const,
-  authorization: {
-    url: "https://www.strava.com/oauth/authorize",
-    params: {
-      // profile:read_all es necesario para obtener email en el perfil.
-      scope: "read,profile:read_all,activity:read_all",
-      response_type: "code",
-      approval_prompt: "auto",
-    },
-  },
-  token: {
-    url: "https://www.strava.com/oauth/token",
-    async request({ params, provider }: { params: { code: string }; provider: { clientId: string; clientSecret: string } }) {
-      const response = await fetch("https://www.strava.com/oauth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: provider.clientId as string,
-          client_secret: provider.clientSecret as string,
-          code: params.code as string,
-          grant_type: "authorization_code",
-        }),
-      })
-      return { tokens: await response.json() }
-    },
-  },
-  userinfo: "https://www.strava.com/api/v3/athlete",
-  clientId: process.env.STRAVA_CLIENT_ID,
-  clientSecret: process.env.STRAVA_CLIENT_SECRET,
-  profile(profile: StravaProfile) {
-    return {
-      id: String(profile.id),
-      name: `${profile.firstname} ${profile.lastname}`,
-      // Evitar emails sintéticos para no romper el match con la cuenta suscripta.
-      email: profile.email ?? null,
-      image: profile.profile,
-    }
-  },
-  client: {
-    token_endpoint_auth_method: "client_secret_post",
-  },
 }
 
 // Schema de validación para login
@@ -154,8 +106,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
     }),
 
-    // Provider de Strava
-    StravaProvider,
+    // Provider de Strava (usar provider oficial evita inconsistencias OAuth, p. ej. state vacío)
+    Strava({
+      clientId: process.env.STRAVA_CLIENT_ID!,
+      clientSecret: process.env.STRAVA_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: "read,profile:read_all,activity:read_all",
+          response_type: "code",
+          approval_prompt: "auto",
+        },
+      },
+      profile(profile: StravaProfile & { email?: string }) {
+        return {
+          id: String(profile.id),
+          name: `${profile.firstname} ${profile.lastname}`,
+          // Evitar emails sintéticos para no romper el match con la cuenta suscripta.
+          email: profile.email ?? null,
+          image: profile.profile,
+        }
+      },
+    }),
   ],
   callbacks: {
     async signIn({ account, user }) {
