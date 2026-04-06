@@ -2,6 +2,7 @@ import NextAuth, { type DefaultSession } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
 import Facebook from "next-auth/providers/facebook"
+import type { OAuthConfig } from "next-auth/providers"
 import { compare } from "bcryptjs"
 import { z } from "zod"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -19,14 +20,15 @@ declare module "next-auth" {
 }
 
 // Provider personalizado de Strava
-const StravaProvider = {
+const StravaProvider: OAuthConfig<StravaProfile> = {
   id: "strava",
   name: "Strava",
   type: "oauth" as const,
   authorization: {
     url: "https://www.strava.com/oauth/authorize",
     params: {
-      scope: "read,activity:read_all",
+      // profile:read_all es necesario para obtener email en el perfil.
+      scope: "read,profile:read_all,activity:read_all",
       response_type: "code",
       approval_prompt: "auto",
     },
@@ -54,7 +56,8 @@ const StravaProvider = {
     return {
       id: String(profile.id),
       name: `${profile.firstname} ${profile.lastname}`,
-      email: profile.email || `${profile.id}@strava.com`, // Fallback si no hay email
+      // Evitar emails sintéticos para no romper el match con la cuenta suscripta.
+      email: profile.email ?? null,
       image: profile.profile,
     }
   },
@@ -142,12 +145,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
 
     // Provider de Strava
-    StravaProvider as any,
+    StravaProvider,
   ],
   callbacks: {
-    async signIn({ account }) {
+    async signIn({ account, user }) {
       // Credentials: la validación ya ocurre en authorize()
       if (account?.provider === "credentials") return true
+
+      // En Strava necesitamos email real para vincular con usuario existente.
+      if (account?.provider === "strava" && !user?.email) {
+        return "/auth/error?error=StravaEmailRequired"
+      }
 
       // OAuth: el usuario debe tener una suscripción existente en Supabase.
       // No se permite crear cuentas nuevas vía OAuth sin pasar por el checkout.

@@ -21,6 +21,11 @@ const errorMessages: Record<string, { title: string; description: string }> = {
     description:
       "Tu cuenta de Facebook o Google no está registrada en la plataforma. Para acceder necesitas una suscripción activa.",
   },
+  StravaEmailRequired: {
+    title: "Email no disponible en Strava",
+    description:
+      "Strava no compartio tu email con Happy Sapiens. Acepta los permisos solicitados o inicia sesion con correo y contraseña.",
+  },
   CredentialsSignin: {
     title: "Credenciales incorrectas",
     description: "El correo o la contraseña son incorrectos. Verifica tus datos e intenta de nuevo.",
