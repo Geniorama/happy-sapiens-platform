@@ -26,6 +26,21 @@ const errorMessages: Record<string, { title: string; description: string }> = {
     description:
       "Strava no compartio tu email con Happy Sapiens. Acepta los permisos solicitados o inicia sesion con correo y contraseña.",
   },
+  StravaNotLinked: {
+    title: "Cuenta de Strava sin vincular",
+    description:
+      "Tu cuenta de Strava no esta vinculada a un usuario de Happy Sapiens. Inicia sesion con Google o correo y contraseña para vincularla.",
+  },
+  StravaLinkedToDifferentAthlete: {
+    title: "Conflicto de vinculación en Strava",
+    description:
+      "Tu usuario ya está vinculado a otro atleta de Strava. Contáctanos para actualizar la vinculación de forma segura.",
+  },
+  StravaLinkFailed: {
+    title: "No se pudo vincular Strava",
+    description:
+      "Ocurrió un error al guardar la vinculación con Strava. Intenta de nuevo en unos minutos.",
+  },
   CredentialsSignin: {
     title: "Credenciales incorrectas",
     description: "El correo o la contraseña son incorrectos. Verifica tus datos e intenta de nuevo.",

@@ -1,7 +1,6 @@
 import NextAuth, { type DefaultSession } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
-import Facebook from "next-auth/providers/facebook"
 import Strava, { type StravaProfile } from "next-auth/providers/strava"
 import { compare } from "bcryptjs"
 import { z } from "zod"
@@ -101,12 +100,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
 
-    // Provider de Facebook
-    Facebook({
-      clientId: process.env.FACEBOOK_CLIENT_ID!,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-    }),
-
     // Provider de Strava (usar provider oficial evita inconsistencias OAuth, p. ej. state vacío)
     Strava({
       clientId: process.env.STRAVA_CLIENT_ID!,
@@ -150,21 +143,72 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Credentials: la validación ya ocurre en authorize()
       if (account?.provider === "credentials") return true
 
-      if (account?.provider === "strava" && authDebugEnabled) {
-        console.log("[AUTH][STRAVA][signIn] user recibido", {
-          provider: account.provider,
-          providerAccountId: account.providerAccountId,
-          email: maskEmail(user?.email),
-          hasEmail: Boolean(user?.email),
-        })
-      }
+      if (account?.provider === "strava") {
+        const athleteId = account.providerAccountId
 
-      // En Strava necesitamos email real para vincular con usuario existente.
-      if (account?.provider === "strava" && !user?.email) {
         if (authDebugEnabled) {
-          console.warn("[AUTH][STRAVA][signIn] Strava no devolvio email")
+          console.log("[AUTH][STRAVA][signIn] iniciando validacion de vinculo", {
+            athleteId,
+            email: maskEmail(user?.email),
+          })
         }
-        return "/auth/error?error=StravaEmailRequired"
+
+        // 1) Si el atleta ya está vinculado a un usuario, permitir acceso.
+        if (athleteId) {
+          const { data: linkedUser, error: linkedUserError } = await supabaseAdmin
+            .from("users")
+            .select("id")
+            .eq("strava_athlete_id", athleteId)
+            .single()
+
+          if (!linkedUserError && linkedUser) {
+            if (authDebugEnabled) {
+              console.log("[AUTH][STRAVA][signIn] atleta ya vinculado", {
+                userId: linkedUser.id,
+              })
+            }
+            return true
+          }
+        }
+
+        // 2) Primer login con Strava: intentar vincular por email (si Strava lo entrega).
+        if (user?.email && athleteId) {
+          const { data: userByEmail, error: userByEmailError } = await supabaseAdmin
+            .from("users")
+            .select("id, strava_athlete_id")
+            .eq("email", user.email)
+            .single()
+
+          if (!userByEmailError && userByEmail) {
+            // Si ya está vinculado a otro athlete_id, evitar sobrescribir silenciosamente.
+            if (userByEmail.strava_athlete_id && userByEmail.strava_athlete_id !== athleteId) {
+              return "/auth/error?error=StravaLinkedToDifferentAthlete"
+            }
+
+            const { error: updateError } = await supabaseAdmin
+              .from("users")
+              .update({ strava_athlete_id: athleteId })
+              .eq("id", userByEmail.id)
+
+            if (updateError) {
+              return "/auth/error?error=StravaLinkFailed"
+            }
+
+            if (authDebugEnabled) {
+              console.log("[AUTH][STRAVA][signIn] cuenta vinculada por email", {
+                userId: userByEmail.id,
+                athleteId,
+              })
+            }
+            return true
+          }
+        }
+
+        // 3) Sin vínculo previo y sin email útil para vincular.
+        if (!user?.email) {
+          return "/auth/error?error=StravaEmailRequired"
+        }
+        return "/auth/error?error=StravaNotLinked"
       }
 
       // OAuth: el usuario debe tener una suscripción existente en Supabase.
@@ -178,8 +222,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Para credentials, user.id ya es el ID de Supabase (retornado por authorize).
         // Para OAuth, user.id es el ID del proveedor → buscamos por email.
         const isOAuth = account?.provider !== "credentials"
-        const lookupField = isOAuth ? "email" : "id"
-        const lookupValue = isOAuth ? user.email : user.id
+        const isStrava = account?.provider === "strava"
+        const lookupField = !isOAuth
+          ? "id"
+          : isStrava
+            ? "strava_athlete_id"
+            : "email"
+        const lookupValue = !isOAuth
+          ? user.id
+          : isStrava
+            ? account?.providerAccountId
+            : user.email
 
         if (account?.provider === "strava" && authDebugEnabled) {
           console.log("[AUTH][STRAVA][jwt] lookup inicial", {
