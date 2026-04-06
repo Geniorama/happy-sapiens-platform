@@ -5,6 +5,7 @@ import Facebook from "next-auth/providers/facebook"
 import { compare } from "bcryptjs"
 import { z } from "zod"
 import { supabaseAdmin } from "@/lib/supabase"
+import { StravaProfile } from "next-auth/providers/strava"
 
 // Extender los tipos de NextAuth
 declare module "next-auth" {
@@ -25,20 +26,35 @@ const StravaProvider = {
   authorization: {
     url: "https://www.strava.com/oauth/authorize",
     params: {
-      scope: "read,activity:read",
+      scope: "read,activity:read_all",
       response_type: "code",
       approval_prompt: "auto",
     },
   },
-  token: "https://www.strava.com/oauth/token",
+  token: {
+    url: "https://www.strava.com/oauth/token",
+    async request({ params, provider }: { params: { code: string }; provider: { clientId: string; clientSecret: string } }) {
+      const response = await fetch("https://www.strava.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: provider.clientId as string,
+          client_secret: provider.clientSecret as string,
+          code: params.code as string,
+          grant_type: "authorization_code",
+        }),
+      })
+      return { tokens: await response.json() }
+    },
+  },
   userinfo: "https://www.strava.com/api/v3/athlete",
   clientId: process.env.STRAVA_CLIENT_ID,
   clientSecret: process.env.STRAVA_CLIENT_SECRET,
-  profile(profile: any) {
+  profile(profile: StravaProfile) {
     return {
       id: String(profile.id),
       name: `${profile.firstname} ${profile.lastname}`,
-      email: profile.email || null,
+      email: profile.email || `${profile.id}@strava.com`, // Fallback si no hay email
       image: profile.profile,
     }
   },
