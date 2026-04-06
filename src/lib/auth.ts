@@ -72,6 +72,16 @@ const loginSchema = z.object({
   password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
 })
 
+const authDebugEnabled = process.env.AUTH_DEBUG === "true"
+
+function maskEmail(email?: string | null) {
+  if (!email) return null
+  const [localPart, domain] = email.split("@")
+  if (!localPart || !domain) return "***"
+  const visible = localPart.slice(0, 2)
+  return `${visible}***@${domain}`
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true, // Confiar en el host automáticamente (útil para desarrollo)
   session: {
@@ -152,8 +162,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Credentials: la validación ya ocurre en authorize()
       if (account?.provider === "credentials") return true
 
+      if (account?.provider === "strava" && authDebugEnabled) {
+        console.log("[AUTH][STRAVA][signIn] user recibido", {
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+          email: maskEmail(user?.email),
+          hasEmail: Boolean(user?.email),
+        })
+      }
+
       // En Strava necesitamos email real para vincular con usuario existente.
       if (account?.provider === "strava" && !user?.email) {
+        if (authDebugEnabled) {
+          console.warn("[AUTH][STRAVA][signIn] Strava no devolvio email")
+        }
         return "/auth/error?error=StravaEmailRequired"
       }
 
@@ -171,6 +193,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const lookupField = isOAuth ? "email" : "id"
         const lookupValue = isOAuth ? user.email : user.id
 
+        if (account?.provider === "strava" && authDebugEnabled) {
+          console.log("[AUTH][STRAVA][jwt] lookup inicial", {
+            lookupField,
+            lookupValue: lookupField === "email" ? maskEmail(lookupValue as string | null) : lookupValue,
+          })
+        }
+
         if (lookupValue) {
           try {
             const { data } = await supabaseAdmin
@@ -180,16 +209,31 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               .single()
 
             if (data) {
+              if (account?.provider === "strava" && authDebugEnabled) {
+                console.log("[AUTH][STRAVA][jwt] usuario encontrado en Supabase", {
+                  userId: data.id,
+                  role: data.role,
+                  subscriptionStatus: data.subscription_status ?? null,
+                })
+              }
               token.id = data.id
               token.role = data.role || "user"
               token.subscriptionStatus = data.subscription_status ?? null
               token.subscriptionStatusFetchedAt = Date.now()
             } else if (isOAuth) {
+              if (account?.provider === "strava" && authDebugEnabled) {
+                console.warn("[AUTH][STRAVA][jwt] no se encontro usuario por email")
+              }
               token.noAccount = true
             }
           } catch {
+            if (account?.provider === "strava" && authDebugEnabled) {
+              console.error("[AUTH][STRAVA][jwt] error consultando Supabase")
+            }
             token.role = "user"
           }
+        } else if (account?.provider === "strava" && authDebugEnabled) {
+          console.warn("[AUTH][STRAVA][jwt] lookupValue vacio para Strava")
         }
       } else if (token.id) {
         // Refrescar subscription_status cada 5 minutos para detectar cambios (past_due, cancelled)
