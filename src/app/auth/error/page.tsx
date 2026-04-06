@@ -49,6 +49,7 @@ export default async function AuthErrorPage({
 }) {
   const { error } = await searchParams
   const { title, description } = (error && errorMessages[error]) || defaultError
+  const showDebugCode = process.env.AUTH_DEBUG === "true"
 
   const isNoAccount =
     error === "OAuthCreateAccount" || error === "OAuthAccountNotLinked"
@@ -59,6 +60,11 @@ export default async function AuthErrorPage({
         <div className="space-y-2">
           <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
           <p className="text-gray-600">{description}</p>
+          {showDebugCode && error ? (
+            <p className="text-xs text-gray-500 font-mono">
+              Código técnico: {error}
+            </p>
+          ) : null}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
