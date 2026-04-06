@@ -25,6 +25,7 @@ const loginSchema = z.object({
 })
 
 const authDebugEnabled = process.env.AUTH_DEBUG === "true"
+const stravaForceApproval = process.env.STRAVA_FORCE_APPROVAL === "true"
 
 function maskEmail(email?: string | null) {
   if (!email) return null
@@ -110,11 +111,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Strava({
       clientId: process.env.STRAVA_CLIENT_ID!,
       clientSecret: process.env.STRAVA_CLIENT_SECRET!,
+      checks: ["state"],
       authorization: {
         params: {
           scope: "read,profile:read_all,activity:read_all",
           response_type: "code",
-          approval_prompt: "auto",
+          approval_prompt: stravaForceApproval ? "force" : "auto",
         },
       },
       profile(profile: StravaProfile & { email?: string }) {
@@ -128,6 +130,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
+  logger: {
+    error(error) {
+      console.error("[AUTH][ERROR]", error)
+    },
+    warn(code) {
+      if (authDebugEnabled) {
+        console.warn("[AUTH][WARN]", code)
+      }
+    },
+    debug(code, metadata) {
+      if (authDebugEnabled) {
+        console.log("[AUTH][DEBUG]", code, metadata)
+      }
+    },
+  },
   callbacks: {
     async signIn({ account, user }) {
       // Credentials: la validación ya ocurre en authorize()
