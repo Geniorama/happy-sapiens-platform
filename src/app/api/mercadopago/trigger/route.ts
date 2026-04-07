@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('id, name, subscription_variant_id, subscription_price, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .select('id, name, subscription_variant_id, subscription_price, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
         .eq('email', bodyEmail)
         .single()
 
@@ -88,6 +88,13 @@ export async function POST(req: Request) {
       if (!user.subscription_variant_id) {
         return NextResponse.json({ logs, error: 'subscription_variant_id es null — no se puede crear la orden' })
       }
+
+      const billingAddress = user.billing_address ? {
+        phone: user.billing_phone || '',
+        address: user.billing_address,
+        city: user.billing_city || '',
+        department: user.billing_department || '',
+      } : undefined
 
       const shippingAddress = user.shipping_address ? {
         fullName: user.shipping_full_name || user.name || bodyEmail,
@@ -102,6 +109,7 @@ export async function POST(req: Request) {
         name: user.name || bodyEmail,
         variantId: user.subscription_variant_id,
         price: user.subscription_price ?? undefined,
+        billing: billingAddress,
         shipping: shippingAddress,
       })
       logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
@@ -277,6 +285,13 @@ export async function POST(req: Request) {
       logs.push('pending_checkout eliminado')
 
       if (shopifyVariantId) {
+        const billingAddress = billingData ? {
+          phone: billingData.phone || '',
+          address: billingData.address,
+          city: billingData.city || '',
+          department: billingData.department || '',
+        } : undefined
+
         const shippingAddress = shippingData ? {
           fullName: shippingData.fullName || name,
           phone: shippingData.phone || '',
@@ -292,6 +307,7 @@ export async function POST(req: Request) {
             variantId: shopifyVariantId,
             price: subscriptionPrice,
             note: 'Primera entrega — suscripción activada vía MercadoPago',
+            billing: billingAddress,
             shipping: shippingAddress,
           })
           logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
@@ -316,7 +332,7 @@ export async function POST(req: Request) {
 
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('id, name, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .select('id, name, subscription_variant_id, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
         .eq('email', email)
         .single()
 
@@ -332,6 +348,13 @@ export async function POST(req: Request) {
       }).eq('id', user.id)
 
       if (user.subscription_variant_id) {
+        const billingAddress = user.billing_address ? {
+          phone: user.billing_phone || '',
+          address: user.billing_address,
+          city: user.billing_city || '',
+          department: user.billing_department || '',
+        } : undefined
+
         const shippingAddress = user.shipping_address ? {
           fullName: user.shipping_full_name || user.name || email,
           phone: user.shipping_phone || '',
@@ -341,7 +364,7 @@ export async function POST(req: Request) {
         } : undefined
 
         try {
-          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, price: recurringPrice, shipping: shippingAddress })
+          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, price: recurringPrice, billing: billingAddress, shipping: shippingAddress })
           logs.push(`Orden Shopify creada: #${order.order_number}`)
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)

@@ -242,6 +242,15 @@ async function handlePreApproval(preApprovalId: string) {
 
     // Crear primer pedido en Shopify al activar la suscripción
     if (shopifyVariantId) {
+      const billingAddress = billingData
+        ? {
+            phone: billingData.phone || '',
+            address: billingData.address,
+            city: billingData.city || '',
+            department: billingData.department || '',
+          }
+        : undefined
+
       const shippingAddress = shippingData
         ? {
             fullName: shippingData.fullName || name,
@@ -259,6 +268,7 @@ async function handlePreApproval(preApprovalId: string) {
           variantId: shopifyVariantId,
           price: subscriptionPrice,
           note: 'Primera entrega — suscripción activada vía MercadoPago',
+          billing: billingAddress,
           shipping: shippingAddress,
         })
         await log('webhook.preapproval.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
@@ -313,7 +323,7 @@ async function handlePayment(paymentId: string) {
 
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, name, subscription_status, subscription_variant_id, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+      .select('id, name, subscription_status, subscription_variant_id, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
       .eq('email', email)
       .single()
 
@@ -349,6 +359,15 @@ async function handlePayment(paymentId: string) {
       }
 
       if (user.subscription_variant_id) {
+        const billingAddress = user.billing_address
+          ? {
+              phone: user.billing_phone || '',
+              address: user.billing_address,
+              city: user.billing_city || '',
+              department: user.billing_department || '',
+            }
+          : undefined
+
         const shippingAddress = user.shipping_address
           ? {
               fullName: user.shipping_full_name || user.name || email,
@@ -371,6 +390,7 @@ async function handlePayment(paymentId: string) {
             variantId: user.subscription_variant_id,
             price: recurringPrice,
             note: orderNote,
+            billing: billingAddress,
             shipping: shippingAddress,
           })
           await log('webhook.payment.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })

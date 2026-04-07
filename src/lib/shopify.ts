@@ -81,6 +81,13 @@ export async function createShopifyOrder(params: {
   variantId: string
   price?: number
   note?: string
+  billing?: {
+    fullName?: string
+    phone: string
+    address: string
+    city: string
+    department: string
+  }
   shipping?: {
     fullName: string
     phone: string
@@ -91,17 +98,23 @@ export async function createShopifyOrder(params: {
 }) {
   const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json`
 
+  const buildAddress = (data: { fullName?: string; phone: string; address: string; city: string; department: string }, fallbackName: string) => ({
+    name: data.fullName || fallbackName,
+    address1: data.address,
+    city: data.city,
+    province: data.department,
+    country: 'Colombia',
+    country_code: 'CO',
+    phone: data.phone,
+  })
+
   const shippingAddress = params.shipping
-    ? {
-        name: params.shipping.fullName,
-        address1: params.shipping.address,
-        city: params.shipping.city,
-        province: params.shipping.department,
-        country: 'Colombia',
-        country_code: 'CO',
-        phone: params.shipping.phone,
-      }
+    ? buildAddress(params.shipping, params.name)
     : undefined
+
+  const billingAddress = params.billing
+    ? buildAddress(params.billing, params.name)
+    : shippingAddress
 
   const response = await fetch(restUrl, {
     method: 'POST',
@@ -119,7 +132,11 @@ export async function createShopifyOrder(params: {
         customer: { email: params.email },
         note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
         tags: 'subscription,auto',
-        ...(shippingAddress && { shipping_address: shippingAddress }),
+        ...(billingAddress && { billing_address: billingAddress }),
+        ...(shippingAddress && {
+          shipping_address: shippingAddress,
+          shipping_lines: [{ title: 'Envío estándar', price: '0.00', code: 'standard' }],
+        }),
       },
     }),
     cache: 'no-store',
