@@ -126,9 +126,17 @@ export async function createShopifyOrder(params: {
       order: {
         email: params.email,
         financial_status: 'paid',
+        taxes_included: true,
         send_receipt: false,
         send_fulfillment_receipt: true,
-        line_items: [{ variant_id: parseInt(params.variantId, 10), quantity: 1, ...(params.price !== undefined && { price: params.price.toFixed(2) }) }],
+        line_items: [{
+          variant_id: parseInt(params.variantId, 10),
+          quantity: 1,
+          ...(params.price !== undefined && { price: params.price.toFixed(2) }),
+          tax_lines: params.price !== undefined
+            ? [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }]
+            : [],
+        }],
         customer: { email: params.email },
         note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
         tags: 'subscription,auto',
