@@ -37,6 +37,7 @@ export async function POST(req: Request) {
         email: userEmail,
         productId: plan.id,
         shopifyVariantId: plan.shopifyVariantId,
+        taxExempt: plan.taxExempt,
         referralCode: referralCode || null,
       }),
       auto_recurring: {

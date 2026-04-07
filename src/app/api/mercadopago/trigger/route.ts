@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('id, name, subscription_variant_id, subscription_price, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .select('id, name, subscription_variant_id, subscription_price, subscription_tax_exempt, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
         .eq('email', bodyEmail)
         .single()
 
@@ -109,6 +109,7 @@ export async function POST(req: Request) {
         name: user.name || bodyEmail,
         variantId: user.subscription_variant_id,
         price: user.subscription_price ?? undefined,
+        taxExempt: user.subscription_tax_exempt === true,
         billing: billingAddress,
         shipping: shippingAddress,
       })
@@ -124,6 +125,7 @@ export async function POST(req: Request) {
       let name = email
       let productId: string | null = null
       let shopifyVariantId: string | null = null
+      let taxExempt = false
       let referralCode: string | null = null
       const preApprovalAny = preApproval as unknown as Record<string, unknown>
       const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
@@ -139,6 +141,7 @@ export async function POST(req: Request) {
           name = parsed.name || email
           productId = parsed.productId || null
           shopifyVariantId = parsed.shopifyVariantId || null
+          taxExempt = parsed.taxExempt === true
           referralCode = parsed.referralCode || null
           logs.push(`external_reference: ${JSON.stringify(parsed)}`)
         } catch {
@@ -181,6 +184,7 @@ export async function POST(req: Request) {
             subscription_end_date: nextPaymentDate ?? null,
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
+            subscription_tax_exempt: taxExempt,
             ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
             ...(billingData && {
               billing_document_type: billingData.documentType,
@@ -229,6 +233,7 @@ export async function POST(req: Request) {
             subscription_end_date: nextPaymentDate ?? null,
             subscription_product: productId,
             subscription_variant_id: shopifyVariantId,
+            subscription_tax_exempt: taxExempt,
             ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
             referred_by: referrerId,
             reset_token: resetToken,
@@ -306,6 +311,7 @@ export async function POST(req: Request) {
             name,
             variantId: shopifyVariantId,
             price: subscriptionPrice,
+            taxExempt,
             note: 'Primera entrega — suscripción activada vía MercadoPago',
             billing: billingAddress,
             shipping: shippingAddress,
@@ -364,7 +370,7 @@ export async function POST(req: Request) {
         } : undefined
 
         try {
-          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, price: recurringPrice, billing: billingAddress, shipping: shippingAddress })
+          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscription_variant_id, price: recurringPrice, taxExempt: user.subscription_tax_exempt === true, billing: billingAddress, shipping: shippingAddress })
           logs.push(`Orden Shopify creada: #${order.order_number}`)
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)

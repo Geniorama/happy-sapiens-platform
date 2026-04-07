@@ -80,6 +80,7 @@ async function handlePreApproval(preApprovalId: string) {
   let referralCode: string | null = null
   let productId: string | null = null
   let shopifyVariantId: string | null = null
+  let taxExempt = false
   const preApprovalAny = preApproval as unknown as Record<string, unknown>
   const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
   const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
@@ -94,6 +95,7 @@ async function handlePreApproval(preApprovalId: string) {
       referralCode = parsed.referralCode || null
       productId = parsed.productId || null
       shopifyVariantId = parsed.shopifyVariantId || null
+      taxExempt = parsed.taxExempt === true
     } catch {
       // external_reference no es JSON, ignorar
     }
@@ -135,6 +137,7 @@ async function handlePreApproval(preApprovalId: string) {
           subscription_end_date: nextPaymentDate ?? null,
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
+          subscription_tax_exempt: taxExempt,
           ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
           ...(billingData && {
             billing_document_type: billingData.documentType,
@@ -183,6 +186,7 @@ async function handlePreApproval(preApprovalId: string) {
           subscription_end_date: nextPaymentDate ?? null,
           subscription_product: productId,
           subscription_variant_id: shopifyVariantId,
+          subscription_tax_exempt: taxExempt,
           ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
           referred_by: referrerId,
           reset_token: resetToken,
@@ -267,6 +271,7 @@ async function handlePreApproval(preApprovalId: string) {
           name,
           variantId: shopifyVariantId,
           price: subscriptionPrice,
+          taxExempt,
           note: 'Primera entrega — suscripción activada vía MercadoPago',
           billing: billingAddress,
           shipping: shippingAddress,
@@ -323,7 +328,7 @@ async function handlePayment(paymentId: string) {
 
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, name, subscription_status, subscription_variant_id, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+      .select('id, name, subscription_status, subscription_variant_id, subscription_tax_exempt, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
       .eq('email', email)
       .single()
 
@@ -389,6 +394,7 @@ async function handlePayment(paymentId: string) {
             name: user.name || email,
             variantId: user.subscription_variant_id,
             price: recurringPrice,
+            taxExempt: user.subscription_tax_exempt === true,
             note: orderNote,
             billing: billingAddress,
             shipping: shippingAddress,

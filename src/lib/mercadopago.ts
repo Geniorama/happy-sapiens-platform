@@ -18,6 +18,7 @@ export type SubscriptionPlan = {
   description: string
   price: number
   currency: string
+  taxExempt: boolean
   shopifyVariantId: string
 }
 
@@ -26,24 +27,27 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     id: 'happy-blend',
     title: 'Happy Blend',
     description: 'Suscripción mensual Happy Blend + acceso a la plataforma Happy Sapiens',
-    price: 1600,
+    price: 152915,
     currency: 'COP',
+    taxExempt: true,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND!,
   },
   'happy-on': {
     id: 'happy-on',
     title: 'Happy On',
     description: 'Suscripción mensual Happy On + acceso a la plataforma Happy Sapiens',
-    price: 1600,
+    price: 102000,
     currency: 'COP',
+    taxExempt: false,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON!,
   },
   'happy-off': {
     id: 'happy-off',
     title: 'Happy Off',
     description: 'Suscripción mensual Happy Off + acceso a la plataforma Happy Sapiens',
-    price: 1600,
+    price: 102000,
     currency: 'COP',
+    taxExempt: false,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF!,
   },
 }

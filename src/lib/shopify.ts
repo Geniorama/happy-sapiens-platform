@@ -80,6 +80,7 @@ export async function createShopifyOrder(params: {
   name: string
   variantId: string
   price?: number
+  taxExempt?: boolean
   note?: string
   billing?: {
     fullName?: string
@@ -133,7 +134,7 @@ export async function createShopifyOrder(params: {
           variant_id: parseInt(params.variantId, 10),
           quantity: 1,
           ...(params.price !== undefined && { price: params.price.toFixed(2) }),
-          tax_lines: params.price !== undefined
+          tax_lines: (params.price !== undefined && !params.taxExempt)
             ? [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }]
             : [],
         }],
