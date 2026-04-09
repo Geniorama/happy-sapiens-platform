@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useRef } from "react"
+import { useState, useTransition, useRef, useEffect } from "react"
 import { Upload, Loader2, X, Check, ImageIcon, Eye, EyeOff } from "lucide-react"
 import { updateCover, uploadCoverImage } from "@/app/admin/covers/actions"
 
@@ -31,6 +31,14 @@ function CoverCard({ cover }: { cover: Cover }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Sincronizar con datos del servidor tras revalidación
+  useEffect(() => {
+    setTitle(cover.title || "")
+    setSubtitle(cover.subtitle || "")
+    setImageUrl(cover.image_url || "")
+    setIsActive(cover.is_active)
+  }, [cover.title, cover.subtitle, cover.image_url, cover.is_active])
 
   const handleSave = () => {
     setError(null)
