@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
+import { SectionCover } from "@/components/dashboard/section-cover"
 import { UserCouponsList } from "@/components/dashboard/user-coupons-list"
 import { AvailableCouponCard } from "@/components/dashboard/available-coupon-card"
 import { CouponFiltersClient } from "@/components/dashboard/coupon-filters-client"
@@ -11,6 +12,13 @@ export default async function PartnersPage() {
   if (!session?.user?.id) {
     redirect("/auth/login")
   }
+
+  const { data: cover } = await supabaseAdmin
+    .from("section_covers")
+    .select("title, subtitle, image_url, is_active")
+    .eq("section_key", "partners")
+    .eq("is_active", true)
+    .single()
 
   // Obtener todas las marcas activas para los filtros
   const { data: allPartners } = await supabaseAdmin
@@ -109,13 +117,13 @@ export default async function PartnersPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-4 sm:mb-6 lg:mb-8">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl uppercase font-heading text-zinc-900 mb-1 sm:mb-2">Aliados</h1>
-        <p className="text-sm sm:text-base text-zinc-600">
-          Genera cupones de descuento exclusivos para usar en nuestras marcas aliadas
-        </p>
-      </div>
+      <SectionCover
+        title={cover?.title || ""}
+        subtitle={cover?.subtitle || ""}
+        imageUrl={cover?.image_url}
+        fallbackTitle="Aliados"
+        fallbackSubtitle="Genera cupones de descuento exclusivos para usar en nuestras marcas aliadas"
+      />
 
       <div className="space-y-8">
         {/* Mis Cupones */}

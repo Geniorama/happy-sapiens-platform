@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
+import { SectionCover } from "@/components/dashboard/section-cover"
 import { CoachesList } from "@/components/dashboard/coaches-list"
 
 export default async function CoachesPage() {
@@ -9,6 +10,13 @@ export default async function CoachesPage() {
   if (!session?.user?.id) {
     redirect("/auth/login")
   }
+
+  const { data: cover } = await supabaseAdmin
+    .from("section_covers")
+    .select("title, subtitle, image_url, is_active")
+    .eq("section_key", "coaches")
+    .eq("is_active", true)
+    .single()
 
   // Obtener todos los coaches activos (usuarios con role='coach')
   const { data: coaches } = await supabaseAdmin
@@ -31,15 +39,13 @@ export default async function CoachesPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-4 sm:mb-6 lg:mb-8">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl uppercase font-heading text-zinc-900 mb-1 sm:mb-2">
-          Ritual Coaches
-        </h1>
-        <p className="text-sm sm:text-base text-zinc-600">
-          Agenda citas con nuestros profesionales especializados
-        </p>
-      </div>
+      <SectionCover
+        title={cover?.title || ""}
+        subtitle={cover?.subtitle || ""}
+        imageUrl={cover?.image_url}
+        fallbackTitle="Ritual Coaches"
+        fallbackSubtitle="Agenda citas con nuestros profesionales especializados"
+      />
 
       <CoachesList
         coaches={coaches || []}

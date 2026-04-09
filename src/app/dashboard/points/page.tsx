@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth"
+import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import { getPointsBalance, getPointsHistory } from "@/lib/points"
+import { SectionCover } from "@/components/dashboard/section-cover"
 import { PointsHistory } from "@/components/dashboard/points-history"
 import { Star, TrendingUp, Gift, Zap } from "lucide-react"
 
@@ -25,10 +27,18 @@ export default async function PointsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/login")
 
-  const [balance, history] = await Promise.all([
+  const [balance, history, coverRes] = await Promise.all([
     getPointsBalance(session.user.id),
     getPointsHistory(session.user.id, { limit: 50 }),
+    supabaseAdmin
+      .from("section_covers")
+      .select("title, subtitle, image_url, is_active")
+      .eq("section_key", "points")
+      .eq("is_active", true)
+      .single(),
   ])
+
+  const cover = coverRes.data
 
   const earned = history.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0)
   const spent = history.filter((t) => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0)
@@ -41,15 +51,15 @@ export default async function PointsPage() {
   ]
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl uppercase font-heading text-zinc-900 mb-1 sm:mb-2">
-          Mis Puntos
-        </h1>
-        <p className="text-sm sm:text-base text-zinc-600">
-          Gana puntos por cada acción dentro de la plataforma y canjéalos por recompensas.
-        </p>
-      </div>
+    <div>
+      <SectionCover
+        title={cover?.title || ""}
+        subtitle={cover?.subtitle || ""}
+        imageUrl={cover?.image_url}
+        fallbackTitle="Mis Puntos"
+        fallbackSubtitle="Gana puntos por cada acción dentro de la plataforma y canjéalos por recompensas."
+      />
+      <div className="max-w-7xl mx-auto">
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
@@ -93,6 +103,7 @@ export default async function PointsPage() {
       <div className="bg-white rounded-xl border border-zinc-200 p-5 sm:p-6">
         <h2 className="font-heading text-lg text-zinc-900 mb-4 uppercase">Historial de transacciones</h2>
         <PointsHistory transactions={history} actionLabels={ACTION_LABELS} />
+      </div>
       </div>
     </div>
   )

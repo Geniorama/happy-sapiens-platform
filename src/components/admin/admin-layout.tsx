@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
-import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText } from "lucide-react"
+import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -38,6 +38,7 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
     { name: "Coaches", href: "/admin/coaches", icon: UserCheck, exact: false },
     { name: "Usuarios", href: "/admin/users", icon: Users, exact: false },
     { name: "Puntos", href: "/admin/points", icon: Star, exact: false },
+    { name: "Portadas", href: "/admin/covers", icon: ImageIcon, exact: false },
     { name: "Logs", href: "/admin/logs", icon: ScrollText, exact: false },
     { name: "Mi Perfil", href: "/admin/profile", icon: User, exact: false },
   ]

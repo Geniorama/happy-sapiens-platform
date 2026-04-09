@@ -7,6 +7,7 @@ import {
 } from "lucide-react"
 
 import Link from "next/link"
+import { SectionCover } from "@/components/dashboard/section-cover"
 import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
 import { getShopifyOrdersByEmail } from "@/lib/shopify"
 
@@ -57,6 +58,13 @@ export default async function SubscriptionPage() {
 
   const shopifyOrders = user?.email ? await getShopifyOrdersByEmail(user.email) : []
 
+  const { data: cover } = await supabaseAdmin
+    .from("section_covers")
+    .select("title, subtitle, image_url, is_active")
+    .eq("section_key", "subscription")
+    .eq("is_active", true)
+    .single()
+
   const subscriptionStatusLabels: Record<string, { label: string; color: string }> = {
     active: { label: "Activa", color: "bg-green-100 text-green-700" },
     inactive: { label: "Inactiva", color: "bg-zinc-100 text-zinc-700" },
@@ -72,11 +80,15 @@ export default async function SubscriptionPage() {
   const isPaused = subscriptionStatus === "paused"
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-4 sm:mb-6 lg:mb-8">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-heading text-zinc-900 mb-1 sm:mb-2">Mi Suscripción</h1>
-        <p className="text-sm sm:text-base text-zinc-600">Estado de tu suscripción, pedidos y pagos</p>
-      </div>
+    <div>
+      <SectionCover
+        title={cover?.title || ""}
+        subtitle={cover?.subtitle || ""}
+        imageUrl={cover?.image_url}
+        fallbackTitle="Mi Suscripción"
+        fallbackSubtitle="Estado de tu suscripción, pedidos y pagos"
+      />
+      <div className="max-w-7xl mx-auto">
 
       <div className="space-y-4 sm:space-y-6">
 
@@ -346,6 +358,7 @@ export default async function SubscriptionPage() {
           </div>
         )}
 
+      </div>
       </div>
     </div>
   )

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { redirect } from "next/navigation"
 import { Calendar, Mail, Hash } from "lucide-react"
+import { SectionCover } from "@/components/dashboard/section-cover"
 import { ProfileForm } from "@/components/dashboard/profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 import { ReferralCode } from "@/components/dashboard/referral-code"
@@ -29,12 +30,23 @@ export default async function ProfilePage() {
 
   const { profile: healthProfile } = await getHealthProfile()
 
+  const { data: cover } = await supabaseAdmin
+    .from("section_covers")
+    .select("title, subtitle, image_url, is_active")
+    .eq("section_key", "profile")
+    .eq("is_active", true)
+    .single()
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-4 sm:mb-6 lg:mb-8">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-heading text-zinc-900 mb-1 sm:mb-2">Mi Perfil</h1>
-        <p className="text-sm sm:text-base text-zinc-600">Gestiona tu información personal</p>
-      </div>
+    <div>
+      <SectionCover
+        title={cover?.title || ""}
+        subtitle={cover?.subtitle || ""}
+        imageUrl={cover?.image_url}
+        fallbackTitle="Mi Perfil"
+        fallbackSubtitle="Gestiona tu información personal"
+      />
+      <div className="max-w-7xl mx-auto">
 
       <div className="space-y-4 sm:space-y-6">
         {/* Avatar */}
@@ -107,6 +119,7 @@ export default async function ProfilePage() {
             referralStats={referralStats}
           />
         )}
+      </div>
       </div>
     </div>
   )
