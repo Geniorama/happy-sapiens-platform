@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "npm rebuild lightningcss --update-binary || true"
+    "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/"   
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.980.0",
