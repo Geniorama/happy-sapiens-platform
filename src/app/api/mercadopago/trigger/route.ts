@@ -338,7 +338,7 @@ export async function POST(req: Request) {
 
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('id, name, subscription_variant_id, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
+        .select('id, name, subscription_variant_id, subscription_tax_exempt, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
         .eq('email', email)
         .single()
 
