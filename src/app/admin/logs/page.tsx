@@ -1,31 +1,55 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { LogsViewer } from "@/components/admin/logs-viewer"
-import { ScrollText } from "lucide-react"
 
 export default async function AdminLogsPage() {
-  const [logsRes, paymentsRes] = await Promise.all([
-    supabaseAdmin
-      .from("system_logs")
-      .select("id, actor_email, action, entity_type, entity_id, metadata, created_at")
-      .order("created_at", { ascending: false })
-      .limit(500),
-    supabaseAdmin
-      .from("payment_transactions")
-      .select("id, status, amount, currency, payment_method, created_at, user_id, users(email)")
-      .order("created_at", { ascending: false })
-      .limit(500),
+  const [logRows, paymentRows] = await Promise.all([
+    prisma.systemLog.findMany({
+      select: {
+        id: true,
+        actorEmail: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        metadata: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
+    prisma.paymentTransaction.findMany({
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        currency: true,
+        paymentMethod: true,
+        createdAt: true,
+        userId: true,
+        user: { select: { email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
   ])
 
-  const logs = logsRes.data ?? []
+  const logs = logRows.map((l) => ({
+    id: l.id,
+    actor_email: l.actorEmail,
+    action: l.action,
+    entity_type: l.entityType,
+    entity_id: l.entityId,
+    metadata: (l.metadata ?? {}) as Record<string, unknown>,
+    created_at: l.createdAt.toISOString(),
+  }))
 
-  const payments = (paymentsRes.data ?? []).map((p: any) => ({
+  const payments = paymentRows.map((p) => ({
     id: p.id,
-    user_email: p.users?.email ?? null,
+    user_email: p.user?.email ?? null,
     status: p.status,
-    amount: p.amount,
+    amount: p.amount !== null && p.amount !== undefined ? Number(p.amount) : null,
     currency: p.currency,
-    payment_method: p.payment_method,
-    created_at: p.created_at,
+    payment_method: p.paymentMethod,
+    created_at: p.createdAt.toISOString(),
   }))
 
   // Stats rápidas
@@ -58,7 +82,7 @@ export default async function AdminLogsPage() {
         ))}
       </div>
 
-      <LogsViewer logs={logs as any} payments={payments} />
+      <LogsViewer logs={logs} payments={payments} />
     </div>
   )
 }

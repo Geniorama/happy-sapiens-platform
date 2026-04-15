@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { getCalendarToken } from "@/lib/coach-utils"
 
 function escapeIcal(str: string): string {
@@ -16,6 +16,16 @@ function toIcalDate(date: string, time: string): string {
   return dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
 }
 
+// Formatea un Prisma Date (@db.Date) a "YYYY-MM-DD" en UTC
+function dateToYmd(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+// Formatea un Prisma Time (@db.Time) a "HH:MM:SS" en UTC
+function timeToHms(d: Date): string {
+  return d.toISOString().slice(11, 19)
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -23,13 +33,13 @@ export async function GET(
   const { token } = await params
 
   // Buscar coach cuyo token coincida
-  const { data: coaches, error } = await supabaseAdmin
-    .from("users")
-    .select("id, name")
-    .eq("role", "coach")
-    .eq("is_coach_active", true)
-
-  if (error || !coaches) {
+  let coaches
+  try {
+    coaches = await prisma.user.findMany({
+      where: { role: "coach", isCoachActive: true },
+      select: { id: true, name: true },
+    })
+  } catch {
     return new NextResponse("Not found", { status: 404 })
   }
 
@@ -40,12 +50,16 @@ export async function GET(
   }
 
   // Obtener citas del coach
-  const { data: appointments } = await supabaseAdmin
-    .from("appointments")
-    .select(`*, user:users!user_id(id, name, email)`)
-    .eq("coach_id", coach.id)
-    .in("status", ["scheduled", "completed"])
-    .order("appointment_date", { ascending: true })
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      coachId: coach.id,
+      status: { in: ["scheduled", "completed"] },
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+    orderBy: { appointmentDate: "asc" },
+  })
 
   const lines: string[] = [
     "BEGIN:VCALENDAR",
@@ -57,16 +71,18 @@ export async function GET(
     "METHOD:PUBLISH",
   ]
 
-  for (const apt of appointments || []) {
-    const startDt = toIcalDate(apt.appointment_date, apt.appointment_time || "00:00:00")
+  for (const apt of appointments) {
+    const dateStr = dateToYmd(apt.appointmentDate)
+    const timeStr = timeToHms(apt.appointmentTime) || "00:00:00"
+    const startDt = toIcalDate(dateStr, timeStr)
     // End = start + duration_minutes
-    const startMs = new Date(`${apt.appointment_date}T${apt.appointment_time}Z`).getTime()
-    const endMs = startMs + (apt.duration_minutes || 60) * 60 * 1000
+    const startMs = new Date(`${dateStr}T${timeStr}Z`).getTime()
+    const endMs = startMs + (apt.durationMinutes || 60) * 60 * 1000
     const endDt = new Date(endMs).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
 
     const summary = escapeIcal(`Cita con ${apt.user?.name || "Cliente"}`)
-    const description = escapeIcal(apt.consultation_reason || "")
-    const location = escapeIcal(apt.meeting_link || "")
+    const description = escapeIcal(apt.consultationReason || "")
+    const location = escapeIcal(apt.meetingLink || "")
 
     lines.push(
       "BEGIN:VEVENT",

@@ -14,12 +14,14 @@ En la raíz del proyecto (mismo nivel que `package.json`), crea un archivo llama
 
 ```env
 # ============================================
-# SUPABASE (REQUERIDO)
+# POSTGRES / AWS RDS (REQUERIDO)
 # ============================================
-# Ve a: https://supabase.com → Tu proyecto → Settings → API
-NEXT_PUBLIC_SUPABASE_URL="https://tu-proyecto.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="tu-anon-key-muy-larga"
-SUPABASE_SERVICE_ROLE_KEY="tu-service-role-key-muy-larga"
+# URL de conexión con pooling (PgBouncer / RDS Proxy) — usada por la app en runtime.
+# Incluir ?pgbouncer=true&connection_limit=1 si usás PgBouncer en modo transaction.
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require"
+
+# URL directa a la DB (sin pooler) — usada por `prisma migrate` y `prisma db push`.
+DIRECT_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require"
 
 # ============================================
 # NEXTAUTH (REQUERIDO)
@@ -72,7 +74,7 @@ npm run dev
 Para verificar que las variables están cargadas correctamente, revisa la consola al iniciar el servidor. No deberías ver errores como:
 
 - ❌ `NEXTAUTH_URL no está configurado`
-- ❌ `Invalid Supabase URL`
+- ❌ `Can't reach database server`
 - ❌ `Access token is required`
 
 ## 🔍 Variables MÁS Importantes (no pueden faltar):
@@ -85,11 +87,11 @@ Para verificar que las variables están cargadas correctamente, revisa la consol
    - Genera con: `openssl rand -base64 32`
    - Debe ser diferente en producción
 
-3. **`NEXT_PUBLIC_SUPABASE_URL`** - URL de Supabase
-   - Format: `https://xxxxx.supabase.co`
+3. **`DATABASE_URL`** — PostgreSQL en RDS (con pooling)
+   - Formato: `postgresql://user:pass@host:5432/db?sslmode=require`
 
-4. **`SUPABASE_SERVICE_ROLE_KEY`** - Key de servidor
-   - ⚠️ NUNCA la compartas públicamente
+4. **`DIRECT_URL`** — PostgreSQL directo (sin pooler, para migraciones)
+   - Mismo formato, apunta a la instancia directa
 
 5. **`MERCADOPAGO_ACCESS_TOKEN`** - Token de MP
    - Prueba: Empieza con `TEST-`
@@ -101,9 +103,10 @@ Para verificar que las variables están cargadas correctamente, revisa la consol
 ✅ Agrega `NEXTAUTH_URL="http://localhost:3000"` a `.env.local`
 ✅ Reinicia el servidor
 
-### Error: "Invalid Supabase URL"
-✅ Verifica que la URL empiece con `https://`
-✅ Verifica que termine con `.supabase.co`
+### Error: "Can't reach database server"
+✅ Verifica que `DATABASE_URL` y `DIRECT_URL` estén configuradas
+✅ Revisá el security group de RDS: inbound TCP 5432 desde tu IP
+✅ Si la instancia tiene `Publicly accessible = No`, no se conectará desde fuera de la VPC
 
 ### Variables no se cargan
 ✅ El archivo debe llamarse **`.env.local`** (con el punto al inicio)

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { CoachLayout } from "@/components/coach/coach-layout"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -15,11 +15,10 @@ export default async function Layout({ children }: { children: React.ReactNode }
   }
 
   // Obtener imagen actualizada del perfil (puede haber cambiado desde el login)
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("image")
-    .eq("id", session.user.id)
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { image: true },
+  })
 
   return (
     <CoachLayout

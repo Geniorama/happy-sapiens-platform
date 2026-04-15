@@ -1,9 +1,10 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { uploadToS3 } from "@/lib/s3"
+import { Prisma } from "@prisma/client"
 
 async function getAdminSession() {
   const session = await auth()
@@ -48,30 +49,53 @@ export async function createPartner(data: PartnerFormData) {
 
   if (!data.name?.trim()) return { error: "El nombre es requerido" }
 
-  const { data: created, error } = await supabaseAdmin
-    .from("partners")
-    .insert({
-      name: data.name.trim(),
-      category: data.category?.trim() || null,
-      website_url: data.website_url?.trim() || null,
-      discount_percentage: data.discount_percentage ?? null,
-      discount_description: data.discount_description?.trim() || null,
-      logo_url: data.logo_url?.trim() || null,
-      cover_image_url: data.cover_image_url?.trim() || null,
-      terms_and_conditions: data.terms_and_conditions?.trim() || null,
-      is_active: true,
+  try {
+    const created = await prisma.partner.create({
+      data: {
+        name: data.name.trim(),
+        category: data.category?.trim() || null,
+        websiteUrl: data.website_url?.trim() || null,
+        discountPercentage: data.discount_percentage ?? null,
+        discountDescription: data.discount_description?.trim() || null,
+        logoUrl: data.logo_url?.trim() || null,
+        coverImageUrl: data.cover_image_url?.trim() || null,
+        termsAndConditions: data.terms_and_conditions?.trim() || null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        websiteUrl: true,
+        discountPercentage: true,
+        discountDescription: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        termsAndConditions: true,
+        isActive: true,
+      },
     })
-    .select("id, name, category, website_url, discount_percentage, discount_description, logo_url, cover_image_url, terms_and_conditions, is_active")
-    .single()
 
-  if (error) {
-    console.error("Error creando marca:", error)
+    const partner = {
+      id: created.id,
+      name: created.name,
+      category: created.category,
+      website_url: created.websiteUrl,
+      discount_percentage: created.discountPercentage,
+      discount_description: created.discountDescription,
+      logo_url: created.logoUrl,
+      cover_image_url: created.coverImageUrl,
+      terms_and_conditions: created.termsAndConditions,
+      is_active: created.isActive ?? true,
+    }
+
+    revalidatePath("/admin/partners")
+    revalidatePath("/dashboard/partners")
+    return { success: true, partner }
+  } catch (err) {
+    console.error("Error creando marca:", err)
     return { error: "Error al crear la marca" }
   }
-
-  revalidatePath("/admin/partners")
-  revalidatePath("/dashboard/partners")
-  return { success: true, partner: created }
 }
 
 export async function updatePartner(id: string, data: PartnerFormData) {
@@ -80,22 +104,22 @@ export async function updatePartner(id: string, data: PartnerFormData) {
 
   if (!data.name?.trim()) return { error: "El nombre es requerido" }
 
-  const { error } = await supabaseAdmin
-    .from("partners")
-    .update({
-      name: data.name.trim(),
-      category: data.category?.trim() || null,
-      website_url: data.website_url?.trim() || null,
-      discount_percentage: data.discount_percentage ?? null,
-      discount_description: data.discount_description?.trim() || null,
-      logo_url: data.logo_url?.trim() || null,
-      cover_image_url: data.cover_image_url?.trim() || null,
-      terms_and_conditions: data.terms_and_conditions?.trim() || null,
+  try {
+    await prisma.partner.update({
+      where: { id },
+      data: {
+        name: data.name.trim(),
+        category: data.category?.trim() || null,
+        websiteUrl: data.website_url?.trim() || null,
+        discountPercentage: data.discount_percentage ?? null,
+        discountDescription: data.discount_description?.trim() || null,
+        logoUrl: data.logo_url?.trim() || null,
+        coverImageUrl: data.cover_image_url?.trim() || null,
+        termsAndConditions: data.terms_and_conditions?.trim() || null,
+      },
     })
-    .eq("id", id)
-
-  if (error) {
-    console.error("Error actualizando marca:", error)
+  } catch (err) {
+    console.error("Error actualizando marca:", err)
     return { error: "Error al actualizar la marca" }
   }
 
@@ -108,21 +132,12 @@ export async function deletePartner(id: string) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  // Eliminar todos los cupones de la marca primero
-  const { error: couponsError } = await supabaseAdmin
-    .from("coupons")
-    .delete()
-    .eq("partner_id", id)
-
-  if (couponsError) {
-    console.error("Error eliminando cupones de la marca:", couponsError)
-    return { error: "Error al eliminar los cupones de la marca" }
-  }
-
-  const { error } = await supabaseAdmin.from("partners").delete().eq("id", id)
-
-  if (error) {
-    console.error("Error eliminando marca:", error)
+  try {
+    // Eliminar todos los cupones de la marca primero
+    await prisma.coupon.deleteMany({ where: { partnerId: id } })
+    await prisma.partner.delete({ where: { id } })
+  } catch (err) {
+    console.error("Error eliminando marca:", err)
     return { error: "Error al eliminar la marca" }
   }
 
@@ -154,33 +169,30 @@ export async function createCategory(name: string) {
   const slug = toSlug(trimmed)
   if (!slug) return { error: "El nombre no genera un slug válido" }
 
-  const { data: created, error } = await supabaseAdmin
-    .from("partner_categories")
-    .insert({ slug, name: trimmed })
-    .select("id, slug, name")
-    .single()
-
-  if (error) {
-    if (error.code === "23505") return { error: "Ya existe una categoría con ese slug" }
-    console.error("Error creando categoría:", error)
+  try {
+    const created = await prisma.partnerCategory.create({
+      data: { slug, name: trimmed },
+      select: { id: true, slug: true, name: true },
+    })
+    revalidatePath("/admin/partners")
+    return { success: true, category: created }
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { error: "Ya existe una categoría con ese slug" }
+    }
+    console.error("Error creando categoría:", err)
     return { error: "Error al crear la categoría" }
   }
-
-  revalidatePath("/admin/partners")
-  return { success: true, category: created }
 }
 
 export async function deleteCategory(id: string) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("partner_categories")
-    .delete()
-    .eq("id", id)
-
-  if (error) {
-    console.error("Error eliminando categoría:", error)
+  try {
+    await prisma.partnerCategory.delete({ where: { id } })
+  } catch (err) {
+    console.error("Error eliminando categoría:", err)
     return { error: "Error al eliminar la categoría" }
   }
 
@@ -193,13 +205,13 @@ export async function bulkTogglePartnersActive(ids: string[], isActive: boolean)
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("partners")
-    .update({ is_active: isActive })
-    .in("id", ids)
-
-  if (error) {
-    console.error("Error en bulk toggle partners:", error)
+  try {
+    await prisma.partner.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive },
+    })
+  } catch (err) {
+    console.error("Error en bulk toggle partners:", err)
     return { error: "Error al actualizar el estado" }
   }
 
@@ -212,20 +224,11 @@ export async function bulkDeletePartners(ids: string[]) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error: couponsError } = await supabaseAdmin
-    .from("coupons")
-    .delete()
-    .in("partner_id", ids)
-
-  if (couponsError) {
-    console.error("Error eliminando cupones en bulk:", couponsError)
-    return { error: "Error al eliminar los cupones asociados" }
-  }
-
-  const { error } = await supabaseAdmin.from("partners").delete().in("id", ids)
-
-  if (error) {
-    console.error("Error en bulk delete partners:", error)
+  try {
+    await prisma.coupon.deleteMany({ where: { partnerId: { in: ids } } })
+    await prisma.partner.deleteMany({ where: { id: { in: ids } } })
+  } catch (err) {
+    console.error("Error en bulk delete partners:", err)
     return { error: "Error al eliminar las marcas" }
   }
 
@@ -239,13 +242,13 @@ export async function togglePartnerActive(id: string, isActive: boolean) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("partners")
-    .update({ is_active: isActive })
-    .eq("id", id)
-
-  if (error) {
-    console.error("Error toggling partner:", error)
+  try {
+    await prisma.partner.update({
+      where: { id },
+      data: { isActive },
+    })
+  } catch (err) {
+    console.error("Error toggling partner:", err)
     return { error: "Error al actualizar el estado" }
   }
 

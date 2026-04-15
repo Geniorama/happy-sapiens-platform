@@ -1,31 +1,47 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { CoachesManager } from "@/components/admin/coaches-manager"
 
 export default async function AdminCoachesPage() {
-  const { data: coaches } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, image, specialization, bio, is_coach_active, created_at")
-    .eq("role", "coach")
-    .order("name")
+  const coachRows = await prisma.user.findMany({
+    where: { role: "coach" },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      specialization: true,
+      bio: true,
+      isCoachActive: true,
+      createdAt: true,
+    },
+    orderBy: { name: "asc" },
+  })
 
   // Count appointments per coach
-  const coachIds = (coaches ?? []).map((c) => c.id)
+  const coachIds = coachRows.map((c) => c.id)
 
-  let appointmentCounts: Record<string, number> = {}
+  const appointmentCounts: Record<string, number> = {}
 
   if (coachIds.length > 0) {
-    const { data: appts } = await supabaseAdmin
-      .from("appointments")
-      .select("coach_id")
-      .in("coach_id", coachIds)
-
-    for (const appt of appts ?? []) {
-      appointmentCounts[appt.coach_id] = (appointmentCounts[appt.coach_id] ?? 0) + 1
+    const grouped = await prisma.appointment.groupBy({
+      by: ["coachId"],
+      where: { coachId: { in: coachIds } },
+      _count: { _all: true },
+    })
+    for (const g of grouped) {
+      appointmentCounts[g.coachId] = g._count._all
     }
   }
 
-  const coachesWithCounts = (coaches ?? []).map((c) => ({
-    ...c,
+  const coachesWithCounts = coachRows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email ?? "",
+    image: c.image,
+    specialization: c.specialization,
+    bio: c.bio,
+    is_coach_active: c.isCoachActive ?? false,
+    created_at: c.createdAt.toISOString(),
     appointments_count: appointmentCounts[c.id] ?? 0,
   }))
 

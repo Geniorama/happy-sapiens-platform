@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { randomBytes } from "crypto"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { getShopifyCustomerById } from "@/lib/shopify"
 import { sendEmail } from "@/lib/email"
 
@@ -92,22 +92,26 @@ export async function POST(request: NextRequest) {
     const subscriptionStatus = topic === "orders/paid" ? "active" : "cancelled"
     const shopifyGid = customer.id
 
-    const { data: user } = await supabaseAdmin
-      .from("users")
-      .select("id")
-      .or(`email.eq.${customer.email},shopify_customer_id.eq.${shopifyGid}`)
-      .single()
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: customer.email },
+          { shopifyCustomerId: shopifyGid },
+        ],
+      },
+      select: { id: true },
+    })
 
     if (user) {
       // Actualizar suscripción del usuario existente
-      await supabaseAdmin
-        .from("users")
-        .update({
-          shopify_customer_id: shopifyGid,
-          subscription_status: subscriptionStatus,
-          subscription_synced_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          shopifyCustomerId: shopifyGid,
+          subscriptionStatus: subscriptionStatus,
+          subscriptionSyncedAt: new Date(),
+        },
+      })
 
       console.log(`Suscripción actualizada: ${customer.email} → ${subscriptionStatus}`)
     } else if (topic === "orders/paid") {
@@ -116,24 +120,23 @@ export async function POST(request: NextRequest) {
       const resetToken = randomBytes(32).toString("hex")
       const resetTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 horas
 
-      const { error: createError } = await supabaseAdmin
-        .from("users")
-        .insert({
-          name,
-          email: customer.email,
-          role: "user",
-          shopify_customer_id: shopifyGid,
-          subscription_status: "active",
-          subscription_synced_at: new Date().toISOString(),
-          reset_token: resetToken,
-          reset_token_expires: resetTokenExpires.toISOString(),
+      try {
+        await prisma.user.create({
+          data: {
+            name,
+            email: customer.email,
+            role: "user",
+            shopifyCustomerId: shopifyGid,
+            subscriptionStatus: "active",
+            subscriptionSyncedAt: new Date(),
+            resetToken: resetToken,
+            resetTokenExpires: resetTokenExpires,
+          },
         })
-
-      if (createError) {
-        console.error("Error creando usuario:", createError)
-      } else {
         console.log(`Usuario creado: ${customer.email}`)
         await sendWelcomeEmail(customer.email, name, resetToken)
+      } catch (createError) {
+        console.error("Error creando usuario:", createError)
       }
     }
   } catch (error) {

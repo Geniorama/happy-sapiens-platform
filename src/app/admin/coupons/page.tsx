@@ -1,48 +1,59 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { CouponsManager } from "@/components/admin/coupons-manager"
 
 export default async function AdminCouponsPage() {
   // Fetch all partners for the create form
-  const { data: partners } = await supabaseAdmin
-    .from("partners")
-    .select("id, name, logo_url")
-    .eq("is_active", true)
-    .order("name")
+  const partnerRows = await prisma.partner.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, logoUrl: true },
+    orderBy: { name: "asc" },
+  })
+
+  const partners = partnerRows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    logo_url: p.logoUrl,
+  }))
 
   // Fetch all coupons with partner info to build campaigns
-  const { data: coupons } = await supabaseAdmin
-    .from("coupons")
-    .select(`
-      id,
-      partner_id,
-      title,
-      description,
-      expires_at,
-      cover_image_url,
-      terms_and_conditions,
-      max_per_user,
-      discount_percentage,
-      discount_description,
-      coupon_code,
-      is_assigned,
-      used_at,
-      assigned_at,
-      user_id,
-      partner:partners!inner(id, name)
-    `)
-    .order("created_at", { ascending: false })
+  const couponRows = await prisma.coupon.findMany({
+    select: {
+      id: true,
+      partnerId: true,
+      title: true,
+      description: true,
+      expiresAt: true,
+      coverImageUrl: true,
+      termsAndConditions: true,
+      maxPerUser: true,
+      discountPercentage: true,
+      discountDescription: true,
+      couponCode: true,
+      isAssigned: true,
+      usedAt: true,
+      assignedAt: true,
+      userId: true,
+      partner: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
 
   // Collect all user_ids from assigned coupons to fetch emails
-  const assignedCoupons = (coupons ?? []).filter((c) => c.is_assigned && (c as any).user_id)
-  const userIds = [...new Set(assignedCoupons.map((c) => (c as any).user_id as string))]
+  const assignedUserIds = Array.from(
+    new Set(
+      couponRows
+        .filter((c) => c.isAssigned && c.userId)
+        .map((c) => c.userId as string)
+    )
+  )
 
   const userEmailMap: Record<string, string> = {}
-  if (userIds.length > 0) {
-    const { data: users } = await supabaseAdmin
-      .from("users")
-      .select("id, email, name")
-      .in("id", userIds)
-    for (const u of users ?? []) {
+  if (assignedUserIds.length > 0) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: assignedUserIds } },
+      select: { id: true, email: true, name: true },
+    })
+    for (const u of users) {
       userEmailMap[u.id] = u.email || u.name || u.id
     }
   }
@@ -79,22 +90,21 @@ export default async function AdminCouponsPage() {
 
   const campaignMap: CampaignMap = {}
 
-  for (const coupon of coupons ?? []) {
-    const partner = coupon.partner as any
-    const key = `${coupon.partner_id}-${coupon.title ?? ""}-${coupon.description ?? ""}`
+  for (const coupon of couponRows) {
+    const key = `${coupon.partnerId}-${coupon.title ?? ""}-${coupon.description ?? ""}`
 
     if (!campaignMap[key]) {
       campaignMap[key] = {
-        partner_id: coupon.partner_id,
-        partner_name: partner?.name ?? "Desconocido",
+        partner_id: coupon.partnerId,
+        partner_name: coupon.partner?.name ?? "Desconocido",
         title: coupon.title,
         description: coupon.description,
-        expires_at: (coupon as any).expires_at ?? null,
-        cover_image_url: (coupon as any).cover_image_url ?? null,
-        terms_and_conditions: (coupon as any).terms_and_conditions ?? null,
-        max_per_user: (coupon as any).max_per_user ?? null,
-        discount_percentage: (coupon as any).discount_percentage ?? null,
-        discount_description: (coupon as any).discount_description ?? null,
+        expires_at: coupon.expiresAt ? coupon.expiresAt.toISOString() : null,
+        cover_image_url: coupon.coverImageUrl ?? null,
+        terms_and_conditions: coupon.termsAndConditions ?? null,
+        max_per_user: coupon.maxPerUser ?? null,
+        discount_percentage: coupon.discountPercentage ?? null,
+        discount_description: coupon.discountDescription ?? null,
         total: 0,
         available: 0,
         assigned: 0,
@@ -104,19 +114,19 @@ export default async function AdminCouponsPage() {
     }
 
     campaignMap[key].total++
-    if (!coupon.is_assigned) {
+    if (!coupon.isAssigned) {
       campaignMap[key].available++
     } else {
       campaignMap[key].assigned++
-      if (coupon.used_at) campaignMap[key].used++
-      const userId = (coupon as any).user_id as string
+      if (coupon.usedAt) campaignMap[key].used++
+      const userId = coupon.userId as string
       campaignMap[key].assignedCoupons.push({
         id: coupon.id,
-        coupon_code: (coupon as any).coupon_code,
+        coupon_code: coupon.couponCode,
         user_id: userId,
         user_email: userEmailMap[userId] ?? userId,
-        assigned_at: (coupon as any).assigned_at ?? null,
-        used_at: coupon.used_at ?? null,
+        assigned_at: coupon.assignedAt ? coupon.assignedAt.toISOString() : null,
+        used_at: coupon.usedAt ? coupon.usedAt.toISOString() : null,
       })
     }
   }
@@ -134,7 +144,7 @@ export default async function AdminCouponsPage() {
         </p>
       </div>
 
-      <CouponsManager campaigns={campaigns} partners={partners ?? []} />
+      <CouponsManager campaigns={campaigns} partners={partners} />
     </div>
   )
 }

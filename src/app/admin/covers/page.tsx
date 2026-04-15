@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { redirect } from "next/navigation"
 import { CoversManager } from "@/components/admin/covers-manager"
 
@@ -10,10 +10,18 @@ export default async function CoversPage() {
     redirect("/auth/login")
   }
 
-  const { data: covers } = await supabaseAdmin
-    .from("section_covers")
-    .select("*")
-    .order("created_at")
+  const rows = await prisma.sectionCover.findMany({
+    orderBy: { createdAt: "asc" },
+  })
+
+  const covers = rows.map((c) => ({
+    id: c.id,
+    section_key: c.sectionKey,
+    title: c.title,
+    subtitle: c.subtitle,
+    image_url: c.imageUrl,
+    is_active: c.isActive ?? false,
+  }))
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -26,7 +34,7 @@ export default async function CoversPage() {
         </p>
       </div>
 
-      <CoversManager covers={covers || []} />
+      <CoversManager covers={covers} />
     </div>
   )
 }

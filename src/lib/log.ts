@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "./supabase"
+import { prisma } from "@/lib/db"
+import type { Prisma } from "@prisma/client"
 
 interface LogParams {
   actorId: string
@@ -15,13 +16,15 @@ interface LogParams {
  */
 export async function logAdminAction(params: LogParams): Promise<void> {
   try {
-    await supabaseAdmin.from("system_logs").insert({
-      actor_id: params.actorId,
-      actor_email: params.actorEmail,
-      action: params.action,
-      entity_type: params.entityType ?? null,
-      entity_id: params.entityId ?? null,
-      metadata: params.metadata ?? {},
+    await prisma.systemLog.create({
+      data: {
+        actorId: params.actorId,
+        actorEmail: params.actorEmail,
+        action: params.action,
+        entityType: params.entityType ?? null,
+        entityId: params.entityId ?? null,
+        metadata: (params.metadata ?? {}) as Prisma.InputJsonValue,
+      },
     })
   } catch (err) {
     console.error("[log] Failed to write system log:", err)

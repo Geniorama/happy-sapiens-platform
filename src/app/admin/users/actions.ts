@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { logAdminAction } from "@/lib/log"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
@@ -14,7 +14,10 @@ async function getAdminSession() {
 }
 
 async function getUserEmail(userId: string): Promise<string | null> {
-  const { data } = await supabaseAdmin.from("users").select("email").eq("id", userId).single()
+  const data = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  })
   return data?.email ?? null
 }
 
@@ -42,40 +45,48 @@ export async function createUser(data: {
       return { error: "La fecha de vencimiento debe ser posterior a la de inicio" }
   }
 
-  const { data: existing } = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("email", data.email.trim().toLowerCase())
-    .single()
+  const email = data.email.trim().toLowerCase()
+
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  })
 
   if (existing) return { error: "Ya existe un usuario con ese email" }
 
   const hashedPassword = await hash(data.password, 10)
-  const now = new Date().toISOString()
 
-  const { data: created, error } = await supabaseAdmin
-    .from("users")
-    .insert({
-      name: data.name.trim(),
-      email: data.email.trim().toLowerCase(),
-      password: hashedPassword,
-      role: data.role,
-      subscription_status: data.subscription_status,
-      subscription_start_date: data.subscription_status === "active"
-        ? new Date(data.subscription_start_date!).toISOString()
-        : null,
-      subscription_end_date: data.subscription_status === "active"
-        ? new Date(data.subscription_end_date!).toISOString()
-        : null,
-      is_coach_active: data.role === "coach",
-      created_at: now,
-      updated_at: now,
+  let created
+  try {
+    created = await prisma.user.create({
+      data: {
+        name: data.name.trim(),
+        email,
+        password: hashedPassword,
+        role: data.role,
+        subscriptionStatus: data.subscription_status,
+        subscriptionStartDate:
+          data.subscription_status === "active" ? new Date(data.subscription_start_date!) : null,
+        subscriptionEndDate:
+          data.subscription_status === "active" ? new Date(data.subscription_end_date!) : null,
+        isCoachActive: data.role === "coach",
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        phone: true,
+        birthDate: true,
+        gender: true,
+        subscriptionStatus: true,
+        subscriptionEndDate: true,
+        image: true,
+        createdAt: true,
+      },
     })
-    .select("id, name, email, role, phone, birth_date, gender, subscription_status, subscription_end_date, image, created_at")
-    .single()
-
-  if (error) {
-    console.error("Error creando usuario:", error)
+  } catch (err) {
+    console.error("Error creando usuario:", err)
     return { error: "Error al crear el usuario" }
   }
 
@@ -87,14 +98,32 @@ export async function createUser(data: {
     entityId: created.id,
     metadata: {
       target_name: data.name.trim(),
-      target_email: data.email.trim().toLowerCase(),
+      target_email: email,
       role: data.role,
       subscription_status: data.subscription_status,
     },
   })
 
+  const userPayload = {
+    id: created.id,
+    name: created.name,
+    email: created.email,
+    role: created.role,
+    phone: created.phone,
+    birth_date: created.birthDate ? created.birthDate.toISOString().slice(0, 10) : null,
+    gender: created.gender,
+    subscription_status: created.subscriptionStatus,
+    subscription_end_date: created.subscriptionEndDate
+      ? created.subscriptionEndDate.toISOString()
+      : null,
+    image: created.image,
+    created_at: created.createdAt.toISOString(),
+    coupons_count: 0,
+    total_points: 0,
+  }
+
   revalidatePath("/admin/users")
-  return { success: true, user: { ...created, coupons_count: 0, total_points: 0 } }
+  return { success: true, user: userPayload }
 }
 
 export async function updateUser(
@@ -113,29 +142,28 @@ export async function updateUser(
   if (!data.name?.trim()) return { error: "El nombre es requerido" }
   if (!data.email?.trim()) return { error: "El email es requerido" }
 
-  const { data: existing } = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("email", data.email.trim().toLowerCase())
-    .neq("id", userId)
-    .single()
+  const email = data.email.trim().toLowerCase()
+
+  const existing = await prisma.user.findFirst({
+    where: { email, NOT: { id: userId } },
+    select: { id: true },
+  })
 
   if (existing) return { error: "El email ya está en uso por otro usuario" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      name: data.name.trim(),
-      email: data.email.trim().toLowerCase(),
-      phone: data.phone?.trim() || null,
-      birth_date: data.birth_date || null,
-      gender: data.gender || null,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name.trim(),
+        email,
+        phone: data.phone?.trim() || null,
+        birthDate: data.birth_date ? new Date(data.birth_date) : null,
+        gender: data.gender || null,
+      },
     })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error actualizando usuario:", error)
+  } catch (err) {
+    console.error("Error actualizando usuario:", err)
     return { error: "Error al actualizar el usuario" }
   }
 
@@ -149,23 +177,21 @@ export async function changeUserRole(userId: string, role: "user" | "coach" | "a
 
   if (userId === session.user.id) return { error: "No puedes cambiar tu propio rol" }
 
-  const { data: target } = await supabaseAdmin
-    .from("users")
-    .select("email, role")
-    .eq("id", userId)
-    .single()
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, role: true },
+  })
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      role,
-      is_coach_active: role === "coach",
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        role,
+        isCoachActive: role === "coach",
+      },
     })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error cambiando rol:", error)
+  } catch (err) {
+    console.error("Error cambiando rol:", err)
     return { error: "Error al cambiar el rol" }
   }
 
@@ -196,21 +222,22 @@ export async function setSubscription(
 
   const targetEmail = await getUserEmail(userId)
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      subscription_status: status,
-      subscription_start_date: status === "active" ? new Date().toISOString() : null,
-      subscription_end_date:
-        status === "active"
-          ? endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-          : null,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        subscriptionStatus: status,
+        subscriptionStartDate: status === "active" ? new Date() : null,
+        subscriptionEndDate:
+          status === "active"
+            ? endDate
+              ? new Date(endDate)
+              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            : null,
+      },
     })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error actualizando suscripción:", error)
+  } catch (err) {
+    console.error("Error actualizando suscripción:", err)
     return { error: "Error al actualizar la suscripción" }
   }
 
@@ -241,16 +268,13 @@ export async function resetPassword(userId: string, newPassword: string) {
   const targetEmail = await getUserEmail(userId)
   const hashedPassword = await hash(newPassword, 10)
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      password: hashedPassword,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
     })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error reseteando contraseña:", error)
+  } catch (err) {
+    console.error("Error reseteando contraseña:", err)
     return { error: "Error al resetear la contraseña" }
   }
 
@@ -274,15 +298,15 @@ export async function bulkDeleteUsers(ids: string[]) {
   if (safeIds.length === 0) return { error: "No puedes eliminar tu propia cuenta" }
 
   // Obtener emails antes de borrar
-  const { data: targets } = await supabaseAdmin
-    .from("users")
-    .select("email")
-    .in("id", safeIds)
+  const targets = await prisma.user.findMany({
+    where: { id: { in: safeIds } },
+    select: { email: true },
+  })
 
-  const { error } = await supabaseAdmin.from("users").delete().in("id", safeIds)
-
-  if (error) {
-    console.error("Error en bulk delete users:", error)
+  try {
+    await prisma.user.deleteMany({ where: { id: { in: safeIds } } })
+  } catch (err) {
+    console.error("Error en bulk delete users:", err)
     return { error: "Error al eliminar los usuarios" }
   }
 
@@ -293,7 +317,7 @@ export async function bulkDeleteUsers(ids: string[]) {
     entityType: "user",
     metadata: {
       count: safeIds.length,
-      target_emails: targets?.map((t) => t.email) ?? [],
+      target_emails: targets.map((t) => t.email),
     },
   })
 
@@ -305,26 +329,27 @@ export async function bulkSetSubscription(ids: string[], status: "active" | "ina
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const now = new Date().toISOString()
-  const update =
+  const now = new Date()
+  const data =
     status === "active"
       ? {
-          subscription_status: "active",
-          subscription_start_date: now,
-          subscription_end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: now,
+          subscriptionStatus: "active",
+          subscriptionStartDate: now,
+          subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         }
       : {
-          subscription_status: "inactive",
-          subscription_start_date: null,
-          subscription_end_date: null,
-          updated_at: now,
+          subscriptionStatus: "inactive",
+          subscriptionStartDate: null,
+          subscriptionEndDate: null,
         }
 
-  const { error } = await supabaseAdmin.from("users").update(update).in("id", ids)
-
-  if (error) {
-    console.error("Error en bulk set subscription:", error)
+  try {
+    await prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data,
+    })
+  } catch (err) {
+    console.error("Error en bulk set subscription:", err)
     return { error: "Error al actualizar la suscripción" }
   }
 
@@ -348,10 +373,10 @@ export async function deleteUser(userId: string) {
 
   const targetEmail = await getUserEmail(userId)
 
-  const { error } = await supabaseAdmin.from("users").delete().eq("id", userId)
-
-  if (error) {
-    console.error("Error eliminando usuario:", error)
+  try {
+    await prisma.user.delete({ where: { id: userId } })
+  } catch (err) {
+    console.error("Error eliminando usuario:", err)
     return { error: "Error al eliminar el usuario" }
   }
 

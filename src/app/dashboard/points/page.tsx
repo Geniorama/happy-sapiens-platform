@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { redirect } from "next/navigation"
 import { getPointsBalance, getPointsHistory } from "@/lib/points"
 import { SectionCover } from "@/components/dashboard/section-cover"
@@ -27,18 +27,23 @@ export default async function PointsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/login")
 
-  const [balance, history, coverRes] = await Promise.all([
+  const [balance, history, coverRow] = await Promise.all([
     getPointsBalance(session.user.id),
     getPointsHistory(session.user.id, { limit: 50 }),
-    supabaseAdmin
-      .from("section_covers")
-      .select("title, subtitle, image_url, is_active")
-      .eq("section_key", "points")
-      .eq("is_active", true)
-      .single(),
+    prisma.sectionCover.findFirst({
+      where: { sectionKey: "points", isActive: true },
+      select: { title: true, subtitle: true, imageUrl: true, isActive: true },
+    }),
   ])
 
-  const cover = coverRes.data
+  const cover = coverRow
+    ? {
+        title: coverRow.title,
+        subtitle: coverRow.subtitle,
+        image_url: coverRow.imageUrl,
+        is_active: coverRow.isActive,
+      }
+    : null
 
   const earned = history.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0)
   const spent = history.filter((t) => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0)

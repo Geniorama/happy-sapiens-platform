@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { uploadToS3 } from "@/lib/s3"
 
@@ -42,19 +42,18 @@ export async function updateCover(sectionKey: string, data: CoverFormData) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("section_covers")
-    .update({
-      title: data.title?.trim() || null,
-      subtitle: data.subtitle?.trim() || null,
-      image_url: data.image_url?.trim() || null,
-      is_active: data.is_active ?? true,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.sectionCover.update({
+      where: { sectionKey },
+      data: {
+        title: data.title?.trim() || null,
+        subtitle: data.subtitle?.trim() || null,
+        imageUrl: data.image_url?.trim() || null,
+        isActive: data.is_active ?? true,
+      },
     })
-    .eq("section_key", sectionKey)
-
-  if (error) {
-    console.error("Error actualizando portada:", error)
+  } catch (err) {
+    console.error("Error actualizando portada:", err)
     return { error: "Error al actualizar la portada" }
   }
 

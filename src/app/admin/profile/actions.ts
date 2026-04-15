@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { compare, hash } from "bcryptjs"
 
@@ -18,17 +18,16 @@ export async function updateAdminProfile(data: { name: string; phone?: string })
 
   if (!data.name?.trim()) return { error: "El nombre es requerido" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      name: data.name.trim(),
-      phone: data.phone?.trim() || null,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        name: data.name.trim(),
+        phone: data.phone?.trim() || null,
+      },
     })
-    .eq("id", session.user.id)
-
-  if (error) {
-    console.error("Error actualizando perfil admin:", error)
+  } catch (err) {
+    console.error("Error actualizando perfil admin:", err)
     return { error: "Error al actualizar el perfil" }
   }
 
@@ -46,11 +45,10 @@ export async function updateAdminPassword(data: {
   if (!data.newPassword || data.newPassword.length < 6)
     return { error: "La nueva contraseña debe tener al menos 6 caracteres" }
 
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("password")
-    .eq("id", session.user.id)
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { password: true },
+  })
 
   if (!user?.password) return { error: "Esta cuenta no tiene contraseña configurada" }
 
@@ -59,13 +57,13 @@ export async function updateAdminPassword(data: {
 
   const hashed = await hash(data.newPassword, 10)
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ password: hashed, updated_at: new Date().toISOString() })
-    .eq("id", session.user.id)
-
-  if (error) {
-    console.error("Error actualizando contraseña:", error)
+  try {
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: { password: hashed },
+    })
+  } catch (err) {
+    console.error("Error actualizando contraseña:", err)
     return { error: "Error al actualizar la contraseña" }
   }
 

@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 
 async function getAdminSession() {
@@ -17,23 +17,22 @@ export async function promoteToCoach(email: string) {
 
   if (!email?.trim()) return { error: "El email es requerido" }
 
-  const { data: user, error: findError } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, role")
-    .eq("email", email.trim().toLowerCase())
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { email: email.trim().toLowerCase() },
+    select: { id: true, name: true, email: true, role: true },
+  })
 
-  if (findError || !user) return { error: "No se encontró un usuario con ese email" }
+  if (!user) return { error: "No se encontró un usuario con ese email" }
   if (user.role === "coach") return { error: "Este usuario ya es coach" }
   if (user.role === "admin") return { error: "No se puede cambiar el rol de un administrador" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ role: "coach", is_coach_active: true })
-    .eq("id", user.id)
-
-  if (error) {
-    console.error("Error promoviendo coach:", error)
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { role: "coach", isCoachActive: true },
+    })
+  } catch (err) {
+    console.error("Error promoviendo coach:", err)
     return { error: "Error al actualizar el rol" }
   }
 
@@ -45,13 +44,13 @@ export async function removeCoachRole(userId: string) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ role: "user", is_coach_active: false })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error removiendo rol coach:", error)
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: "user", isCoachActive: false },
+    })
+  } catch (err) {
+    console.error("Error removiendo rol coach:", err)
     return { error: "Error al actualizar el rol" }
   }
 
@@ -63,13 +62,13 @@ export async function bulkToggleCoachesActive(ids: string[], isActive: boolean) 
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ is_coach_active: isActive })
-    .in("id", ids)
-
-  if (error) {
-    console.error("Error en bulk toggle coaches:", error)
+  try {
+    await prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data: { isCoachActive: isActive },
+    })
+  } catch (err) {
+    console.error("Error en bulk toggle coaches:", err)
     return { error: "Error al actualizar el estado" }
   }
 
@@ -81,13 +80,13 @@ export async function bulkRemoveCoachRole(ids: string[]) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ role: "user", is_coach_active: false })
-    .in("id", ids)
-
-  if (error) {
-    console.error("Error en bulk remove coach role:", error)
+  try {
+    await prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data: { role: "user", isCoachActive: false },
+    })
+  } catch (err) {
+    console.error("Error en bulk remove coach role:", err)
     return { error: "Error al quitar el rol" }
   }
 
@@ -99,13 +98,13 @@ export async function toggleCoachActive(userId: string, isActive: boolean) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({ is_coach_active: isActive })
-    .eq("id", userId)
-
-  if (error) {
-    console.error("Error toggling coach:", error)
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { isCoachActive: isActive },
+    })
+  } catch (err) {
+    console.error("Error toggling coach:", err)
     return { error: "Error al actualizar el estado" }
   }
 

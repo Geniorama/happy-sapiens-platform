@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
+import type { Prisma } from "@prisma/client"
 
 const ITEMS_PER_PAGE = 12
 
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
-    
+
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
@@ -21,160 +22,176 @@ export async function GET(request: NextRequest) {
     // Si hay búsqueda, primero obtener partners que coincidan
     let matchingPartnerIds: string[] = []
     if (search && search.trim().length > 0) {
-      const searchLower = `%${search.toLowerCase().trim()}%`
-      const { data: matchingPartners } = await supabaseAdmin
-        .from("partners")
-        .select("id")
-        .ilike("name", searchLower)
-        .eq("is_active", true)
-      
-      if (matchingPartners) {
-        matchingPartnerIds = matchingPartners.map(p => p.id)
-      }
+      const matchingPartners = await prisma.partner.findMany({
+        where: {
+          name: { contains: search.trim(), mode: "insensitive" },
+          isActive: true,
+        },
+        select: { id: true },
+      })
+      matchingPartnerIds = matchingPartners.map((p) => p.id)
     }
 
-    // Construir query base
-    let query = supabaseAdmin
-      .from("coupons")
-      .select(`
-        id,
-        title,
-        description,
-        cover_image_url,
-        expires_at,
-        max_per_user,
-        terms_and_conditions,
-        discount_percentage,
-        discount_description,
-        partner:partners!inner(
-          id,
-          name,
-          website_url,
-          category,
-          discount_percentage,
-          discount_description,
-          cover_image_url,
-          logo_url,
-          terms_and_conditions
-        )
-      `)
-      .eq("is_assigned", false)
-      .eq("partner.is_active", true)
+    // Construir where base
+    const where: Prisma.CouponWhereInput = {
+      isAssigned: false,
+      partner: { isActive: true },
+    }
 
     // Aplicar búsqueda por texto
     if (search && search.trim().length > 0) {
-      const searchLower = `%${search.toLowerCase().trim()}%`
-      
+      const term = search.trim()
+      const searchOr: Prisma.CouponWhereInput[] = [
+        { title: { contains: term, mode: "insensitive" } },
+        { description: { contains: term, mode: "insensitive" } },
+      ]
       if (matchingPartnerIds.length > 0) {
-        // Buscar en título, descripción O en partners que coincidan
-        query = query.or(`title.ilike.${searchLower},description.ilike.${searchLower},partner_id.in.(${matchingPartnerIds.join(",")})`)
-      } else {
-        // Solo buscar en título y descripción
-        query = query.or(`title.ilike.${searchLower},description.ilike.${searchLower}`)
+        searchOr.push({ partnerId: { in: matchingPartnerIds } })
       }
+      where.OR = searchOr
     }
 
     // Aplicar filtros
     if (partnerId) {
-      query = query.eq("partner_id", partnerId)
+      where.partnerId = partnerId
     }
 
     if (category) {
-      query = query.eq("partner.category", category)
+      where.partner = { isActive: true, category }
     }
-
-    query = query.order("created_at", { ascending: false })
 
     // Paginación
     const from = (page - 1) * ITEMS_PER_PAGE
-    const to = from + ITEMS_PER_PAGE - 1
 
-    const { data: availableCoupons, error } = await query.range(from, to)
-
-    if (error) {
-      console.error("Error fetching coupons:", error)
+    let availableCoupons
+    try {
+      availableCoupons = await prisma.coupon.findMany({
+        where,
+        include: {
+          partner: {
+            select: {
+              id: true,
+              name: true,
+              websiteUrl: true,
+              category: true,
+              discountPercentage: true,
+              discountDescription: true,
+              coverImageUrl: true,
+              logoUrl: true,
+              termsAndConditions: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: from,
+        take: ITEMS_PER_PAGE,
+      })
+    } catch (err) {
+      console.error("Error fetching coupons:", err)
       return NextResponse.json({ error: "Error al obtener cupones" }, { status: 500 })
     }
 
+    // Mapear a shape snake_case esperada por el frontend
+    const mappedCoupons = availableCoupons.map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      cover_image_url: c.coverImageUrl,
+      expires_at: c.expiresAt,
+      max_per_user: c.maxPerUser,
+      terms_and_conditions: c.termsAndConditions,
+      discount_percentage: c.discountPercentage,
+      discount_description: c.discountDescription,
+      partner: {
+        id: c.partner.id,
+        name: c.partner.name,
+        website_url: c.partner.websiteUrl,
+        category: c.partner.category,
+        discount_percentage: c.partner.discountPercentage,
+        discount_description: c.partner.discountDescription,
+        cover_image_url: c.partner.coverImageUrl,
+        logo_url: c.partner.logoUrl,
+        terms_and_conditions: c.partner.termsAndConditions,
+      },
+    }))
+
     // Agrupar cupones por campaña
-    const groupedCoupons = availableCoupons?.reduce((acc: any[], coupon: any) => {
-      const key = `${coupon.partner.id}-${coupon.title || 'standard'}-${coupon.description || ''}`
-      const existing = acc.find(item => 
-        item.partner.id === coupon.partner.id && 
-        item.title === coupon.title && 
-        item.description === coupon.description
+    type Campaign = typeof mappedCoupons[number] & { available_count: number }
+    const groupedCoupons = mappedCoupons.reduce((acc: Campaign[], coupon) => {
+      const existing = acc.find(
+        (item) =>
+          item.partner.id === coupon.partner.id &&
+          item.title === coupon.title &&
+          item.description === coupon.description,
       )
-      
+
       if (existing) {
         existing.available_count += 1
       } else {
         acc.push({
           ...coupon,
-          available_count: 1
+          available_count: 1,
         })
       }
-      
+
       return acc
-    }, []) || []
+    }, [])
 
     // Para cada campaña, obtener cuántos ya tiene el usuario
     const campaignsWithUserCount = await Promise.all(
-      groupedCoupons.map(async (campaign: any) => {
-        let countQuery = supabaseAdmin
-          .from("coupons")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", session.user.id)
-          .eq("partner_id", campaign.partner.id)
-          .eq("is_assigned", true)
+      groupedCoupons.map(async (campaign) => {
+        const countWhere: Prisma.CouponWhereInput = {
+          userId: session.user.id,
+          partnerId: campaign.partner.id,
+          isAssigned: true,
+        }
 
         if (campaign.title !== undefined) {
-          countQuery = countQuery.eq("title", campaign.title)
+          countWhere.title = campaign.title
         }
         if (campaign.description !== undefined) {
-          countQuery = countQuery.eq("description", campaign.description)
+          countWhere.description = campaign.description
         }
 
-        const { count } = await countQuery
+        const count = await prisma.coupon.count({ where: countWhere })
 
         return {
           ...campaign,
-          user_obtained_count: count || 0
+          user_obtained_count: count,
         }
-      })
+      }),
     )
 
     // Obtener el total de cupones (para saber si hay más páginas)
-    let countQuery = supabaseAdmin
-      .from("coupons")
-      .select("*", { count: "exact", head: true })
-      .eq("is_assigned", false)
-      .eq("partner.is_active", true)
+    const countWhere: Prisma.CouponWhereInput = {
+      isAssigned: false,
+      partner: { isActive: true },
+    }
 
     if (partnerId) {
-      countQuery = countQuery.eq("partner_id", partnerId)
+      countWhere.partnerId = partnerId
     }
 
     if (category) {
-      countQuery = countQuery.eq("partner.category", category)
+      countWhere.partner = { isActive: true, category }
     }
 
-    const { count: totalCount } = await countQuery
+    const totalCount = await prisma.coupon.count({ where: countWhere })
 
     // Calcular si hay más páginas basado en los cupones obtenidos
-    // Si obtuvimos menos cupones que ITEMS_PER_PAGE, no hay más páginas
-    const hasMore = (availableCoupons?.length || 0) >= ITEMS_PER_PAGE
+    const hasMore = availableCoupons.length >= ITEMS_PER_PAGE
 
     return NextResponse.json({
       campaigns: campaignsWithUserCount,
       hasMore,
       page,
-      totalCount: totalCount || 0
+      totalCount,
     })
   } catch (error) {
     console.error("Error in available coupons API:", error)
     return NextResponse.json(
       { error: "Error interno del servidor" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

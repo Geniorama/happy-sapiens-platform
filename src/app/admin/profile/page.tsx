@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { AdminProfileForm } from "@/components/admin/admin-profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 
@@ -8,18 +8,33 @@ export default async function AdminProfilePage() {
   const session = await auth()
   if (!session || session.user.role !== "admin") redirect("/auth/login")
 
-  const { data: profile } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, phone, image, created_at")
-    .eq("id", session.user.id)
-    .single()
+  const row = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      image: true,
+      createdAt: true,
+    },
+  })
 
-  if (!profile) {
+  if (!row) {
     return (
       <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-4">
         Error al cargar el perfil
       </div>
     )
+  }
+
+  const profile = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    image: row.image,
+    created_at: row.createdAt.toISOString(),
   }
 
   return (

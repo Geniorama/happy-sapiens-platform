@@ -1,7 +1,7 @@
 'use server'
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { preApprovalClient } from "@/lib/mercadopago"
 
 type ActionResult = { error: string } | { success: true }
@@ -10,13 +10,12 @@ async function getSubscriptionId(): Promise<string | null> {
   const session = await auth()
   if (!session?.user?.id) return null
 
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("subscription_id, subscription_status")
-    .eq("id", session.user.id)
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { subscriptionId: true, subscriptionStatus: true },
+  })
 
-  return user?.subscription_id ?? null
+  return user?.subscriptionId ?? null
 }
 
 export async function pauseSubscription(months: 1 | 2 | 3): Promise<ActionResult> {
@@ -35,14 +34,14 @@ export async function pauseSubscription(months: 1 | 2 | 3): Promise<ActionResult
     const pauseEndsAt = new Date()
     pauseEndsAt.setMonth(pauseEndsAt.getMonth() + months)
 
-    await supabaseAdmin
-      .from("users")
-      .update({
-        subscription_status: "paused",
-        subscription_synced_at: new Date().toISOString(),
-        subscription_pause_ends_at: pauseEndsAt.toISOString(),
-      })
-      .eq("id", session.user.id)
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        subscriptionStatus: "paused",
+        subscriptionSyncedAt: new Date(),
+        subscriptionPauseEndsAt: pauseEndsAt,
+      },
+    })
   } catch {
     return { error: "No se pudo pausar la suscripción. Intenta de nuevo." }
   }
@@ -63,14 +62,14 @@ export async function reactivateSubscription(): Promise<ActionResult> {
       body: { status: "authorized" },
     })
 
-    await supabaseAdmin
-      .from("users")
-      .update({
-        subscription_status: "active",
-        subscription_synced_at: new Date().toISOString(),
-        subscription_pause_ends_at: null,
-      })
-      .eq("id", session.user.id)
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        subscriptionStatus: "active",
+        subscriptionSyncedAt: new Date(),
+        subscriptionPauseEndsAt: null,
+      },
+    })
   } catch {
     return { error: "No se pudo reactivar la suscripción. Intenta de nuevo." }
   }
@@ -91,17 +90,22 @@ export async function cancelSubscription(reason?: string): Promise<ActionResult>
       body: { status: "cancelled" },
     })
 
-    await supabaseAdmin
-      .from("users")
-      .update({ subscription_status: "cancelled", subscription_synced_at: new Date().toISOString() })
-      .eq("id", session.user.id)
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        subscriptionStatus: "cancelled",
+        subscriptionSyncedAt: new Date(),
+      },
+    })
 
     if (reason) {
-      await supabaseAdmin.from("system_logs").insert({
-        actor_email: session.user.email,
-        action: "subscription.cancelled",
-        entity_type: "subscription",
-        metadata: { reason, subscription_id: subscriptionId },
+      await prisma.systemLog.create({
+        data: {
+          actorEmail: session.user.email ?? "",
+          action: "subscription.cancelled",
+          entityType: "subscription",
+          metadata: { reason, subscription_id: subscriptionId },
+        },
       })
     }
   } catch {

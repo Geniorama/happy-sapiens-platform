@@ -1,8 +1,9 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { awardPoints, spendPoints, type PointActionType } from "@/lib/points"
 
 async function getAdminSession() {
   const session = await auth()
@@ -23,31 +24,38 @@ export async function adminAdjustPoints(
   if (!description?.trim()) return { error: "La descripción es requerida" }
 
   // Verificar que el usuario no sea admin
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("role, name")
-    .eq("id", userId)
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, name: true },
+  })
 
   if (!user) return { error: "Usuario no encontrado" }
   if (user.role === "admin") return { error: "No se pueden ajustar puntos de un administrador" }
 
-  const rpcName = amount > 0 ? "award_points" : "spend_points"
   const absAmount = Math.abs(amount)
   const actionType = amount > 0 ? "admin_adjustment" : "admin_deduction"
 
-  const { error } = await supabaseAdmin.rpc(rpcName, {
-    p_user_id: userId,
-    p_amount: absAmount,
-    p_action_type: actionType,
-    p_description: description.trim(),
-    p_reference_type: "admin",
-    p_reference_id: null,
-    p_metadata: { adjusted_by: session.user.id },
-  })
+  const result =
+    amount > 0
+      ? await awardPoints({
+          userId,
+          actionType: actionType as PointActionType,
+          amount: absAmount,
+          description: description.trim(),
+          referenceType: "admin",
+          metadata: { adjusted_by: session.user.id },
+        })
+      : await spendPoints({
+          userId,
+          amount: absAmount,
+          actionType,
+          description: description.trim(),
+          referenceType: "admin",
+          metadata: { adjusted_by: session.user.id },
+        })
 
-  if (error) {
-    console.error("Error ajustando puntos:", error)
+  if (!result.success) {
+    console.error("Error ajustando puntos:", result.error)
     return { error: "Error al ajustar los puntos" }
   }
 
@@ -67,23 +75,31 @@ export async function bulkAdjustPoints(
   if (!description?.trim()) return { error: "La descripción es requerida" }
   if (userIds.length === 0) return { error: "Selecciona al menos un usuario" }
 
-  const rpcName = amount > 0 ? "award_points" : "spend_points"
   const absAmount = Math.abs(amount)
   const actionType = amount > 0 ? "admin_adjustment" : "admin_deduction"
 
   for (const userId of userIds) {
-    const { error } = await supabaseAdmin.rpc(rpcName, {
-      p_user_id: userId,
-      p_amount: absAmount,
-      p_action_type: actionType,
-      p_description: description.trim(),
-      p_reference_type: "admin",
-      p_reference_id: null,
-      p_metadata: { adjusted_by: session.user.id },
-    })
+    const result =
+      amount > 0
+        ? await awardPoints({
+            userId,
+            actionType: actionType as PointActionType,
+            amount: absAmount,
+            description: description.trim(),
+            referenceType: "admin",
+            metadata: { adjusted_by: session.user.id },
+          })
+        : await spendPoints({
+            userId,
+            amount: absAmount,
+            actionType,
+            description: description.trim(),
+            referenceType: "admin",
+            metadata: { adjusted_by: session.user.id },
+          })
 
-    if (error) {
-      console.error("Error en bulk adjust points:", error)
+    if (!result.success) {
+      console.error("Error en bulk adjust points:", result.error)
       return { error: "Error al ajustar los puntos de uno o más usuarios" }
     }
   }
@@ -96,13 +112,31 @@ export async function getPointsHistory(userId: string) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado", history: [] }
 
-  const { data, error } = await supabaseAdmin
-    .from("point_transactions")
-    .select("id, amount, action_type, description, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(20)
+  try {
+    const rows = await prisma.pointTransaction.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        amount: true,
+        actionType: true,
+        description: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    })
 
-  if (error) return { error: "Error al obtener historial", history: [] }
-  return { history: data ?? [] }
+    const history = rows.map((r) => ({
+      id: r.id,
+      amount: r.amount,
+      action_type: r.actionType,
+      description: r.description,
+      created_at: r.createdAt.toISOString(),
+    }))
+
+    return { history }
+  } catch (err) {
+    console.error("Error al obtener historial:", err)
+    return { error: "Error al obtener historial", history: [] }
+  }
 }

@@ -1,61 +1,73 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { Users, UserCheck, Building2, Tag, TrendingUp, Clock } from "lucide-react"
 
 export default async function AdminDashboardPage() {
   const [
-    usersRes,
-    coachesRes,
-    activePartnersRes,
-    availableCouponsRes,
-    assignedCouponsRes,
-    recentUsersRes,
+    usersCount,
+    coachesCount,
+    activePartnersCount,
+    availableCouponsCount,
+    assignedCouponsCount,
+    recentUsersRows,
   ] = await Promise.all([
-    supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "user"),
-    supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "coach"),
-    supabaseAdmin.from("partners").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabaseAdmin.from("coupons").select("id", { count: "exact", head: true }).eq("is_assigned", false),
-    supabaseAdmin.from("coupons").select("id", { count: "exact", head: true }).eq("is_assigned", true),
-    supabaseAdmin
-      .from("users")
-      .select("id, name, email, role, created_at")
-      .order("created_at", { ascending: false })
-      .limit(8),
+    prisma.user.count({ where: { role: "user" } }),
+    prisma.user.count({ where: { role: "coach" } }),
+    prisma.partner.count({ where: { isActive: true } }),
+    prisma.coupon.count({ where: { isAssigned: false } }),
+    prisma.coupon.count({ where: { isAssigned: true } }),
+    prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    }),
   ])
 
   const stats = [
     {
       label: "Usuarios",
-      value: usersRes.count ?? 0,
+      value: usersCount,
       icon: Users,
       color: "bg-blue-50 text-blue-600",
     },
     {
       label: "Coaches",
-      value: coachesRes.count ?? 0,
+      value: coachesCount,
       icon: UserCheck,
       color: "bg-green-50 text-green-600",
     },
     {
       label: "Marcas activas",
-      value: activePartnersRes.count ?? 0,
+      value: activePartnersCount,
       icon: Building2,
       color: "bg-purple-50 text-purple-600",
     },
     {
       label: "Cupones disponibles",
-      value: availableCouponsRes.count ?? 0,
+      value: availableCouponsCount,
       icon: Tag,
       color: "bg-amber-50 text-amber-600",
     },
     {
       label: "Cupones asignados",
-      value: assignedCouponsRes.count ?? 0,
+      value: assignedCouponsCount,
       icon: TrendingUp,
       color: "bg-rose-50 text-rose-600",
     },
   ]
 
-  const recentUsers = recentUsersRes.data ?? []
+  const recentUsers = recentUsersRows.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    created_at: u.createdAt.toISOString(),
+  }))
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">

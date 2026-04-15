@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 
 export async function assignCoupon(partnerId: string, campaignTitle?: string | null, campaignDescription?: string | null) {
@@ -13,65 +13,46 @@ export async function assignCoupon(partnerId: string, campaignTitle?: string | n
 
   try {
     // Verificar que la suscripción no esté pausada
-    const { data: userStatus } = await supabaseAdmin
-      .from("users")
-      .select("subscription_status")
-      .eq("id", session.user.id)
-      .single()
+    const userStatus = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { subscriptionStatus: true },
+    })
 
-    if (userStatus?.subscription_status === "paused") {
+    if (userStatus?.subscriptionStatus === "paused") {
       return { error: "Tu suscripción está pausada. Reactívala para redimir cupones." }
     }
 
+    // Construir filtros por campaña (title + description). `undefined` = no filtrar; `null` = filtrar por valor nulo.
+    const campaignFilter: { title?: string | null; description?: string | null } = {}
+    if (campaignTitle !== undefined) campaignFilter.title = campaignTitle
+    if (campaignDescription !== undefined) campaignFilter.description = campaignDescription
+
     // Buscar un cupón disponible para esta campaña específica
-    let query = supabaseAdmin
-      .from("coupons")
-      .select("*")
-      .eq("partner_id", partnerId)
-      .eq("is_assigned", false)
-
-    // Filtrar por campaña (title + description)
-    if (campaignTitle !== undefined) {
-      query = query.eq("title", campaignTitle)
-    }
-    if (campaignDescription !== undefined) {
-      query = query.eq("description", campaignDescription)
-    }
-
-    const { data: availableCoupon, error: fetchError } = await query
-      .limit(1)
-      .maybeSingle()
-
-    if (fetchError) {
-      console.error("Error buscando cupón:", fetchError)
-      return { error: "Error al buscar cupón disponible" }
-    }
+    const availableCoupon = await prisma.coupon.findFirst({
+      where: {
+        partnerId,
+        isAssigned: false,
+        ...campaignFilter,
+      },
+    })
 
     if (!availableCoupon) {
       return { error: "No hay cupones disponibles para esta campaña" }
     }
 
     // Verificar límite por usuario de esta campaña
-    if (availableCoupon.max_per_user !== null) {
-      // Contar cuántos cupones de esta campaña ya tiene el usuario
-      let countQuery = supabaseAdmin
-        .from("coupons")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", session.user.id)
-        .eq("partner_id", partnerId)
-        .eq("is_assigned", true)
+    if (availableCoupon.maxPerUser !== null && availableCoupon.maxPerUser !== undefined) {
+      const count = await prisma.coupon.count({
+        where: {
+          userId: session.user.id,
+          partnerId,
+          isAssigned: true,
+          ...campaignFilter,
+        },
+      })
 
-      if (campaignTitle !== undefined) {
-        countQuery = countQuery.eq("title", campaignTitle)
-      }
-      if (campaignDescription !== undefined) {
-        countQuery = countQuery.eq("description", campaignDescription)
-      }
-
-      const { count } = await countQuery
-
-      if (count !== null && count >= availableCoupon.max_per_user) {
-        return { error: `Ya obtuviste el máximo de ${availableCoupon.max_per_user} cupones de esta campaña` }
+      if (count >= availableCoupon.maxPerUser) {
+        return { error: `Ya obtuviste el máximo de ${availableCoupon.maxPerUser} cupones de esta campaña` }
       }
     }
 
@@ -79,27 +60,40 @@ export async function assignCoupon(partnerId: string, campaignTitle?: string | n
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 30) // Expira en 30 días
 
-    const { data: assignedCoupon, error: updateError } = await supabaseAdmin
-      .from("coupons")
-      .update({
-        user_id: session.user.id,
-        is_assigned: true,
-        assigned_at: new Date().toISOString(),
-        expires_at: expiresAt.toISOString(),
-      })
-      .eq("id", availableCoupon.id)
-      .select()
-      .single()
+    const updated = await prisma.coupon.update({
+      where: { id: availableCoupon.id },
+      data: {
+        userId: session.user.id,
+        isAssigned: true,
+        assignedAt: new Date(),
+        expiresAt,
+      },
+    })
 
-    if (updateError) {
-      console.error("Error asignando cupón:", updateError)
-      return { error: "Error al asignar el cupón" }
+    const assignedCoupon = {
+      id: updated.id,
+      partner_id: updated.partnerId,
+      coupon_code: updated.couponCode,
+      title: updated.title,
+      description: updated.description,
+      cover_image_url: updated.coverImageUrl,
+      max_per_user: updated.maxPerUser,
+      is_assigned: updated.isAssigned,
+      user_id: updated.userId,
+      assigned_at: updated.assignedAt ? updated.assignedAt.toISOString() : null,
+      used_at: updated.usedAt ? updated.usedAt.toISOString() : null,
+      expires_at: updated.expiresAt ? updated.expiresAt.toISOString() : null,
+      discount_percentage: updated.discountPercentage,
+      discount_description: updated.discountDescription,
+      terms_and_conditions: updated.termsAndConditions,
+      created_at: updated.createdAt.toISOString(),
+      updated_at: updated.updatedAt.toISOString(),
     }
 
     revalidatePath("/dashboard/partners")
     return { success: true, coupon: assignedCoupon }
   } catch (error) {
-    console.error("Error:", error)
+    console.error("Error asignando cupón:", error)
     return { error: "Error al asignar el cupón" }
   }
 }
@@ -112,34 +106,28 @@ export async function markCouponAsUsed(couponId: string) {
   }
 
   try {
-    const { error } = await supabaseAdmin
-      .from("coupons")
-      .update({
-        used_at: new Date().toISOString(),
-      })
-      .eq("id", couponId)
-      .eq("user_id", session.user.id)
+    const result = await prisma.coupon.updateMany({
+      where: { id: couponId, userId: session.user.id },
+      data: { usedAt: new Date() },
+    })
 
-    if (error) {
-      console.error("Error actualizando cupón:", error)
+    if (result.count === 0) {
       return { error: "Error al actualizar el cupón" }
     }
 
     revalidatePath("/dashboard/partners")
     return { success: true }
   } catch (error) {
-    console.error("Error:", error)
+    console.error("Error actualizando cupón:", error)
     return { error: "Error al actualizar el cupón" }
   }
 }
 
 // Función auxiliar para obtener cupones disponibles por marca
 export async function getAvailableCouponsCount(partnerId: string) {
-  const { count } = await supabaseAdmin
-    .from("coupons")
-    .select("*", { count: "exact", head: true })
-    .eq("partner_id", partnerId)
-    .eq("is_assigned", false)
+  const count = await prisma.coupon.count({
+    where: { partnerId, isAssigned: false },
+  })
 
-  return count || 0
+  return count
 }

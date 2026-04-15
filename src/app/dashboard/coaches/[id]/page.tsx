@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { redirect, notFound } from "next/navigation"
 import { CoachDetail } from "@/components/dashboard/coach-detail"
 import { getHealthProfile } from "@/app/dashboard/coaches/actions"
@@ -22,15 +22,32 @@ export default async function CoachDetailPage({
   }
 
   // Obtener información del coach
-  const { data: coach } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, bio, specialization, image, phone, is_coach_active")
-    .eq("id", id)
-    .eq("role", "coach")
-    .eq("is_coach_active", true)
-    .single()
+  const coachRow = await prisma.user.findFirst({
+    where: { id, role: "coach", isCoachActive: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      bio: true,
+      specialization: true,
+      image: true,
+      phone: true,
+      isCoachActive: true,
+    },
+  })
 
-  if (!coach) notFound()
+  if (!coachRow) notFound()
+
+  const coach = {
+    id: coachRow.id,
+    name: coachRow.name,
+    email: coachRow.email,
+    bio: coachRow.bio,
+    specialization: coachRow.specialization,
+    image: coachRow.image,
+    phone: coachRow.phone,
+    is_coach_active: coachRow.isCoachActive ?? false,
+  }
 
   const startDate = new Date()
   const endDate = new Date()
@@ -39,40 +56,52 @@ export default async function CoachDetailPage({
   const endStr = toLocalDateStr(endDate)
 
   // Consultas en paralelo
-  const [
-    { data: availability },
-    { data: existingAppointments },
-    { profile: healthProfile },
-    googleBlocked,
-  ] = await Promise.all([
-    supabaseAdmin
-      .from("coach_availability")
-      .select("*")
-      .eq("coach_id", id)
-      .eq("is_available", true)
-      .order("day_of_week")
-      .order("start_time"),
+  const [availabilityRows, existingAppointmentRows, healthResult, googleBlocked] =
+    await Promise.all([
+      prisma.coachAvailability.findMany({
+        where: { coachId: id, isAvailable: true },
+        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+      }),
+      prisma.appointment.findMany({
+        where: {
+          coachId: id,
+          status: "scheduled",
+          appointmentDate: {
+            gte: new Date(`${startStr}T00:00:00.000Z`),
+            lte: new Date(`${endStr}T00:00:00.000Z`),
+          },
+        },
+        select: { appointmentDate: true, appointmentTime: true },
+      }),
+      getHealthProfile(),
+      // Bloqueados por Google Calendar (falla silenciosamente si no está conectado)
+      getGoogleCalendarBlocked(id, startStr, endStr).catch(() => []),
+    ])
 
-    supabaseAdmin
-      .from("appointments")
-      .select("appointment_date, appointment_time")
-      .eq("coach_id", id)
-      .eq("status", "scheduled")
-      .gte("appointment_date", startStr)
-      .lte("appointment_date", endStr),
+  const { profile: healthProfile } = healthResult
 
-    getHealthProfile(),
+  const availability = availabilityRows.map((av) => ({
+    id: av.id,
+    coach_id: av.coachId,
+    day_of_week: av.dayOfWeek,
+    start_time: av.startTime.toISOString().slice(11, 19),
+    end_time: av.endTime.toISOString().slice(11, 19),
+    is_available: av.isAvailable ?? true,
+    slot_duration: av.slotDuration,
+    created_at: av.createdAt.toISOString(),
+  }))
 
-    // Bloqueados por Google Calendar (falla silenciosamente si no está conectado)
-    getGoogleCalendarBlocked(id, startStr, endStr).catch(() => []),
-  ])
+  const existingAppointments = existingAppointmentRows.map((a) => ({
+    appointment_date: a.appointmentDate.toISOString().slice(0, 10),
+    appointment_time: a.appointmentTime.toISOString().slice(11, 19),
+  }))
 
   return (
     <div className="max-w-4xl mx-auto">
       <CoachDetail
         coach={coach}
-        availability={availability || []}
-        existingAppointments={existingAppointments || []}
+        availability={availability}
+        existingAppointments={existingAppointments}
         externalBlocked={googleBlocked}
         userId={session.user.id}
         healthProfile={healthProfile}

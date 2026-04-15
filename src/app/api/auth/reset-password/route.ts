@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 
 export async function POST(req: NextRequest) {
   const { token, password } = await req.json()
@@ -13,31 +13,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres" }, { status: 400 })
   }
 
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("id, reset_token_expires")
-    .eq("reset_token", token)
-    .single()
+  const user = await prisma.user.findFirst({
+    where: { resetToken: token },
+    select: { id: true, resetTokenExpires: true },
+  })
 
   if (!user) {
     return NextResponse.json({ error: "El enlace no es válido o ya fue utilizado" }, { status: 400 })
   }
 
-  const expires = new Date(user.reset_token_expires)
-  if (expires < new Date()) {
+  if (!user.resetTokenExpires || user.resetTokenExpires < new Date()) {
     return NextResponse.json({ error: "El enlace ha expirado. Solicita uno nuevo." }, { status: 400 })
   }
 
   const hashedPassword = await bcrypt.hash(password, 10)
 
-  await supabaseAdmin
-    .from("users")
-    .update({
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
       password: hashedPassword,
-      reset_token: null,
-      reset_token_expires: null,
-    })
-    .eq("id", user.id)
+      resetToken: null,
+      resetTokenExpires: null,
+    },
+  })
 
   return NextResponse.json({ message: "Contraseña actualizada correctamente" })
 }

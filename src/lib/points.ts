@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
+import type { Prisma } from "@prisma/client"
 
 /** Tipos de acción que otorgan o gastan puntos */
 export const POINT_ACTIONS = {
@@ -80,9 +81,11 @@ export interface PointTransaction {
 
 /**
  * Otorga puntos a un usuario por una acción.
- * Usa la función RPC award_points en Supabase o inserta + actualiza si prefieres lógica en app.
+ * Inserta una transacción y actualiza el saldo en una transacción atómica.
  */
-export async function awardPoints(options: AwardPointsOptions): Promise<{ success: boolean; transactionId?: string; error?: string }> {
+export async function awardPoints(
+  options: AwardPointsOptions
+): Promise<{ success: boolean; transactionId?: string; error?: string }> {
   const amount = options.amount ?? POINTS_BY_ACTION[options.actionType]
   if (amount == null || amount <= 0) {
     return { success: false, error: "Puntos no configurados o inválidos para esta acción" }
@@ -90,13 +93,15 @@ export async function awardPoints(options: AwardPointsOptions): Promise<{ succes
 
   // Administradores, usuarios con suscripción pausada o cancelada no acumulan puntos
   try {
-    const { data: recipient } = await supabaseAdmin
-      .from("users")
-      .select("role, subscription_status")
-      .eq("id", options.userId)
-      .single()
+    const recipient = await prisma.user.findUnique({
+      where: { id: options.userId },
+      select: { role: true, subscriptionStatus: true },
+    })
     if (recipient?.role === "admin") return { success: true }
-    if (recipient?.subscription_status === "paused" || recipient?.subscription_status === "cancelled") {
+    if (
+      recipient?.subscriptionStatus === "paused" ||
+      recipient?.subscriptionStatus === "cancelled"
+    ) {
       return { success: true }
     }
   } catch {
@@ -104,21 +109,30 @@ export async function awardPoints(options: AwardPointsOptions): Promise<{ succes
   }
 
   try {
-    const { data, error } = await supabaseAdmin.rpc("award_points", {
-      p_user_id: options.userId,
-      p_amount: amount,
-      p_action_type: options.actionType,
-      p_description: options.description ?? null,
-      p_reference_type: options.referenceType ?? null,
-      p_reference_id: options.referenceId ?? null,
-      p_metadata: options.metadata ?? {},
+    const transactionId = await prisma.$transaction(async (tx) => {
+      const created = await tx.pointTransaction.create({
+        data: {
+          userId: options.userId,
+          amount,
+          actionType: options.actionType,
+          description: options.description ?? null,
+          referenceType: options.referenceType ?? null,
+          referenceId: options.referenceId ?? null,
+          metadata: (options.metadata ?? {}) as Prisma.InputJsonValue,
+        },
+        select: { id: true },
+      })
+
+      await tx.userPoints.upsert({
+        where: { userId: options.userId },
+        create: { userId: options.userId, totalPoints: amount },
+        update: { totalPoints: { increment: amount } },
+      })
+
+      return created.id
     })
 
-    if (error) {
-      console.error("awardPoints error:", error)
-      return { success: false, error: error.message }
-    }
-    return { success: true, transactionId: data as string }
+    return { success: true, transactionId }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al otorgar puntos"
     console.error("awardPoints exception:", err)
@@ -128,28 +142,49 @@ export async function awardPoints(options: AwardPointsOptions): Promise<{ succes
 
 /**
  * Descuenta puntos (ej. canje de recompensa).
+ * Valida saldo y aplica en transacción atómica.
  */
-export async function spendPoints(options: SpendPointsOptions): Promise<{ success: boolean; transactionId?: string; error?: string }> {
+export async function spendPoints(
+  options: SpendPointsOptions
+): Promise<{ success: boolean; transactionId?: string; error?: string }> {
   if (options.amount <= 0) {
     return { success: false, error: "El monto debe ser positivo" }
   }
 
   try {
-    const { data, error } = await supabaseAdmin.rpc("spend_points", {
-      p_user_id: options.userId,
-      p_amount: options.amount,
-      p_action_type: options.actionType,
-      p_description: options.description ?? null,
-      p_reference_type: options.referenceType ?? null,
-      p_reference_id: options.referenceId ?? null,
-      p_metadata: options.metadata ?? {},
+    const transactionId = await prisma.$transaction(async (tx) => {
+      const balance = await tx.userPoints.findUnique({
+        where: { userId: options.userId },
+        select: { totalPoints: true },
+      })
+
+      const current = balance?.totalPoints ?? 0
+      if (current < options.amount) {
+        throw new Error(`Saldo insuficiente: tiene ${current}, necesita ${options.amount}`)
+      }
+
+      const created = await tx.pointTransaction.create({
+        data: {
+          userId: options.userId,
+          amount: -options.amount,
+          actionType: options.actionType,
+          description: options.description ?? null,
+          referenceType: options.referenceType ?? null,
+          referenceId: options.referenceId ?? null,
+          metadata: (options.metadata ?? {}) as Prisma.InputJsonValue,
+        },
+        select: { id: true },
+      })
+
+      await tx.userPoints.update({
+        where: { userId: options.userId },
+        data: { totalPoints: { decrement: options.amount } },
+      })
+
+      return created.id
     })
 
-    if (error) {
-      console.error("spendPoints error:", error)
-      return { success: false, error: error.message }
-    }
-    return { success: true, transactionId: data as string }
+    return { success: true, transactionId }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al descontar puntos"
     console.error("spendPoints exception:", err)
@@ -161,34 +196,32 @@ export async function spendPoints(options: SpendPointsOptions): Promise<{ succes
  * Obtiene el saldo actual de puntos de un usuario.
  */
 export async function getPointsBalance(userId: string): Promise<number> {
-  const { data, error } = await supabaseAdmin
-    .from("user_points")
-    .select("total_points")
-    .eq("user_id", userId)
-    .single()
-
-  if (error || !data) return 0
-  return Number(data.total_points) || 0
+  const data = await prisma.userPoints.findUnique({
+    where: { userId },
+    select: { totalPoints: true },
+  })
+  return data?.totalPoints ?? 0
 }
 
 /**
  * Verifica si un usuario ya recibió puntos por una acción específica (para acciones de una sola vez).
  */
-export async function hasEarnedPoints(userId: string, actionType: PointActionType): Promise<boolean> {
-  const { count, error } = await supabaseAdmin
-    .from("point_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("action_type", actionType)
-
-  if (error) return false
-  return (count ?? 0) > 0
+export async function hasEarnedPoints(
+  userId: string,
+  actionType: PointActionType
+): Promise<boolean> {
+  const count = await prisma.pointTransaction.count({
+    where: { userId, actionType },
+  })
+  return count > 0
 }
 
 /**
  * Otorga puntos solo si el usuario aún no los recibió por esa acción (idempotente).
  */
-export async function awardPointsOnce(options: AwardPointsOptions): Promise<{ success: boolean; alreadyEarned?: boolean; error?: string }> {
+export async function awardPointsOnce(
+  options: AwardPointsOptions
+): Promise<{ success: boolean; alreadyEarned?: boolean; error?: string }> {
   const already = await hasEarnedPoints(options.userId, options.actionType)
   if (already) return { success: true, alreadyEarned: true }
   return awardPoints(options)
@@ -204,13 +237,22 @@ export async function getPointsHistory(
   const limit = options?.limit ?? 50
   const offset = options?.offset ?? 0
 
-  const { data, error } = await supabaseAdmin
-    .from("point_transactions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1)
+  const rows = await prisma.pointTransaction.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    skip: offset,
+    take: limit,
+  })
 
-  if (error) return []
-  return (data ?? []) as PointTransaction[]
+  return rows.map((r) => ({
+    id: r.id,
+    user_id: r.userId,
+    amount: r.amount,
+    action_type: r.actionType,
+    description: r.description,
+    reference_type: r.referenceType,
+    reference_id: r.referenceId,
+    metadata: (r.metadata ?? {}) as Record<string, unknown>,
+    created_at: r.createdAt.toISOString(),
+  }))
 }

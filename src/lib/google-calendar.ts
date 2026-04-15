@@ -1,5 +1,5 @@
 import { unstable_noStore as noStore } from "next/cache"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
@@ -34,35 +34,30 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
 
 /** Devuelve un access_token válido, refrescando si expiró */
 async function getValidToken(coachId: string): Promise<string | null> {
-  const { data: row, error } = await supabaseAdmin
-    .from("coach_calendar_tokens")
-    .select("*")
-    .eq("coach_id", coachId)
-    .eq("provider", "google")
-    .single()
+  const row = await prisma.coachCalendarToken.findUnique({
+    where: { coachId_provider: { coachId, provider: "google" } },
+  })
 
-  if (error || !row) return null
+  if (!row) return null
 
-  const isExpired = row.expires_at && new Date(row.expires_at) <= new Date(Date.now() + 60_000)
+  const isExpired = row.expiresAt && row.expiresAt <= new Date(Date.now() + 60_000)
 
-  if (!isExpired) return row.access_token
+  if (!isExpired) return row.accessToken
 
   // Refrescar
-  if (!row.refresh_token) return null
-  const refreshed = await refreshAccessToken(row.refresh_token)
+  if (!row.refreshToken) return null
+  const refreshed = await refreshAccessToken(row.refreshToken)
   if (!refreshed) return null
 
-  const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString()
+  const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000)
 
-  await supabaseAdmin
-    .from("coach_calendar_tokens")
-    .update({
-      access_token: refreshed.access_token,
-      expires_at: expiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("coach_id", coachId)
-    .eq("provider", "google")
+  await prisma.coachCalendarToken.update({
+    where: { coachId_provider: { coachId, provider: "google" } },
+    data: {
+      accessToken: refreshed.access_token,
+      expiresAt,
+    },
+  })
 
   return refreshed.access_token
 }
@@ -109,12 +104,11 @@ function parseGoogleEvent(event: any): BlockedSlot | null {
  * Soporta: "2026-03-17T10:00:00-03:00", "2026-03-17T10:00:00Z", "2026-03-17T10:00:00"
  */
 function extractLocalDateTime(isoString: string): { date: string; time: string } | null {
-  // "2026-03-17T10:00:00-03:00"  →  ["2026-03-17", "10:00:00-03:00"]
   const tIdx = isoString.indexOf("T")
   if (tIdx === -1) return null
-  const date = isoString.slice(0, tIdx)                 // "2026-03-17"
-  const timePart = isoString.slice(tIdx + 1)            // "10:00:00-03:00"
-  const time = timePart.slice(0, 5)                     // "10:00"
+  const date = isoString.slice(0, tIdx)
+  const timePart = isoString.slice(tIdx + 1)
+  const time = timePart.slice(0, 5)
   return { date, time }
 }
 
@@ -123,15 +117,13 @@ function extractLocalDateTime(isoString: string): { date: string; time: string }
 /** Retorna true si el coach tiene Google Calendar conectado */
 export async function isGoogleCalendarConnected(coachId: string): Promise<{ connected: boolean; email?: string }> {
   noStore()
-  const { data, error } = await supabaseAdmin
-    .from("coach_calendar_tokens")
-    .select("calendar_email")
-    .eq("coach_id", coachId)
-    .eq("provider", "google")
-    .single()
+  const data = await prisma.coachCalendarToken.findUnique({
+    where: { coachId_provider: { coachId, provider: "google" } },
+    select: { calendarEmail: true },
+  })
 
-  console.log("[isGoogleCalendarConnected] coachId:", coachId, "data:", data, "error:", error?.message)
-  return { connected: !!data, email: data?.calendar_email }
+  console.log("[isGoogleCalendarConnected] coachId:", coachId, "data:", data)
+  return { connected: !!data, email: data?.calendarEmail ?? undefined }
 }
 
 /** Obtiene los eventos del Google Calendar del coach para un rango de fechas */
@@ -299,37 +291,44 @@ export async function saveGoogleTokens({
   expiresIn: number
   calendarEmail: string
 }): Promise<{ success: boolean; error?: string }> {
-  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString()
+  const expiresAt = new Date(Date.now() + expiresIn * 1000)
 
   console.log("[saveGoogleTokens] coachId:", coachId, "email:", calendarEmail)
 
-  const { error } = await supabaseAdmin.from("coach_calendar_tokens").upsert(
-    {
-      coach_id: coachId,
-      provider: "google",
-      access_token: accessToken,
-      refresh_token: refreshToken ?? null,
-      expires_at: expiresAt,
-      calendar_email: calendarEmail,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "coach_id,provider" }
-  )
-
-  if (error) {
-    console.error("[saveGoogleTokens] upsert error:", error.message, error.details, error.hint)
-    return { success: false, error: error.message }
+  try {
+    await prisma.coachCalendarToken.upsert({
+      where: { coachId_provider: { coachId, provider: "google" } },
+      create: {
+        coachId,
+        provider: "google",
+        accessToken,
+        refreshToken: refreshToken ?? null,
+        expiresAt,
+        calendarEmail,
+      },
+      update: {
+        accessToken,
+        refreshToken: refreshToken ?? null,
+        expiresAt,
+        calendarEmail,
+      },
+    })
+    console.log("[saveGoogleTokens] saved OK for coachId:", coachId)
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error al guardar tokens"
+    console.error("[saveGoogleTokens] upsert error:", message)
+    return { success: false, error: message }
   }
-
-  console.log("[saveGoogleTokens] saved OK for coachId:", coachId)
-  return { success: true }
 }
 
 /** Elimina la conexión con Google Calendar */
 export async function disconnectGoogleCalendar(coachId: string) {
-  await supabaseAdmin
-    .from("coach_calendar_tokens")
-    .delete()
-    .eq("coach_id", coachId)
-    .eq("provider", "google")
+  try {
+    await prisma.coachCalendarToken.delete({
+      where: { coachId_provider: { coachId, provider: "google" } },
+    })
+  } catch {
+    // Si no existe, ignoramos
+  }
 }

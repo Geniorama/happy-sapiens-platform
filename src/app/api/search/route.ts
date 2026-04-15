@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(req: NextRequest) {
@@ -13,45 +13,106 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ coaches: [], partners: [], coupons: [] })
   }
 
-  const pattern = `%${q}%`
-
-  const [coachesRes, partnersRes, couponsRes] = await Promise.all([
+  const [coaches, partners, coupons] = await Promise.all([
     // Coaches activos
-    supabaseAdmin
-      .from("users")
-      .select("id, name, specialization, image")
-      .eq("role", "coach")
-      .eq("is_coach_active", true)
-      .or(`name.ilike.${pattern},specialization.ilike.${pattern},bio.ilike.${pattern}`)
-      .order("name")
-      .limit(6),
+    prisma.user.findMany({
+      where: {
+        role: "coach",
+        isCoachActive: true,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { specialization: { contains: q, mode: "insensitive" } },
+          { bio: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true, specialization: true, image: true },
+      orderBy: { name: "asc" },
+      take: 6,
+    }),
 
     // Aliados activos
-    supabaseAdmin
-      .from("partners")
-      .select("id, name, category, logo_url, discount_percentage, discount_description")
-      .eq("is_active", true)
-      .or(`name.ilike.${pattern},category.ilike.${pattern},discount_description.ilike.${pattern}`)
-      .order("name")
-      .limit(6),
+    prisma.partner.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { discountDescription: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        logoUrl: true,
+        discountPercentage: true,
+        discountDescription: true,
+      },
+      orderBy: { name: "asc" },
+      take: 6,
+    }),
 
     // Cupones disponibles
-    supabaseAdmin
-      .from("coupons")
-      .select(`
-        id, title, description, cover_image_url, discount_percentage, discount_description,
-        partner:partners!inner(id, name, logo_url, is_active)
-      `)
-      .eq("is_assigned", false)
-      .eq("partner.is_active", true)
-      .or(`title.ilike.${pattern},description.ilike.${pattern}`)
-      .order("created_at", { ascending: false })
-      .limit(6),
+    prisma.coupon.findMany({
+      where: {
+        isAssigned: false,
+        partner: { isActive: true },
+        OR: [
+          { title: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        coverImageUrl: true,
+        discountPercentage: true,
+        discountDescription: true,
+        partner: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            isActive: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+    }),
   ])
 
   return NextResponse.json({
-    coaches: coachesRes.data || [],
-    partners: partnersRes.data || [],
-    coupons: couponsRes.data || [],
+    coaches: coaches.map((c) => ({
+      id: c.id,
+      name: c.name,
+      specialization: c.specialization,
+      image: c.image,
+    })),
+    partners: partners.map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      logo_url: p.logoUrl,
+      discount_percentage: p.discountPercentage,
+      discount_description: p.discountDescription,
+    })),
+    coupons: coupons.map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      cover_image_url: c.coverImageUrl,
+      discount_percentage: c.discountPercentage,
+      discount_description: c.discountDescription,
+      partner: c.partner
+        ? {
+            id: c.partner.id,
+            name: c.partner.name,
+            logo_url: c.partner.logoUrl,
+            is_active: c.partner.isActive,
+          }
+        : null,
+    })),
   })
 }

@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 
 async function getAdminSession() {
@@ -35,23 +35,23 @@ export async function createCouponBatch(data: CouponBatchData) {
   if (trimmedCodes.length === 0) return { error: "Los códigos no pueden estar vacíos" }
 
   const rows = trimmedCodes.map((code) => ({
-    partner_id: data.partner_id,
+    partnerId: data.partner_id,
     title: data.title?.trim() || null,
     description: data.description?.trim() || null,
-    expires_at: data.expires_at || null,
-    coupon_code: code,
-    is_assigned: false,
-    max_per_user: data.max_per_user || null,
-    cover_image_url: data.cover_image_url?.trim() || null,
-    terms_and_conditions: data.terms_and_conditions?.trim() || null,
-    discount_percentage: data.discount_percentage ?? null,
-    discount_description: data.discount_description?.trim() || null,
+    expiresAt: data.expires_at ? new Date(data.expires_at) : null,
+    couponCode: code,
+    isAssigned: false,
+    maxPerUser: data.max_per_user || null,
+    coverImageUrl: data.cover_image_url?.trim() || null,
+    termsAndConditions: data.terms_and_conditions?.trim() || null,
+    discountPercentage: data.discount_percentage ?? null,
+    discountDescription: data.discount_description?.trim() || null,
   }))
 
-  const { error } = await supabaseAdmin.from("coupons").insert(rows)
-
-  if (error) {
-    console.error("Error creando cupones:", error)
+  try {
+    await prisma.coupon.createMany({ data: rows })
+  } catch (err) {
+    console.error("Error creando cupones:", err)
     return { error: "Error al crear los cupones" }
   }
 
@@ -80,32 +80,26 @@ export async function updateCouponCampaign(
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const updateFields: Record<string, unknown> = {
-    title: data.title?.trim() || null,
-    description: data.description?.trim() || null,
-    expires_at: data.expires_at || null,
-    cover_image_url: data.cover_image_url?.trim() || null,
-    terms_and_conditions: data.terms_and_conditions?.trim() || null,
-    max_per_user: data.max_per_user ?? null,
-    discount_percentage: data.discount_percentage ?? null,
-    discount_description: data.discount_description?.trim() || null,
-  }
-
-  let query = supabaseAdmin
-    .from("coupons")
-    .update(updateFields)
-    .eq("partner_id", partnerId)
-
-  if (originalTitle !== null) query = query.eq("title", originalTitle)
-  else query = query.is("title", null)
-
-  if (originalDescription !== null) query = query.eq("description", originalDescription)
-  else query = query.is("description", null)
-
-  const { error } = await query
-
-  if (error) {
-    console.error("Error actualizando campaña:", error)
+  try {
+    await prisma.coupon.updateMany({
+      where: {
+        partnerId,
+        title: originalTitle,
+        description: originalDescription,
+      },
+      data: {
+        title: data.title?.trim() || null,
+        description: data.description?.trim() || null,
+        expiresAt: data.expires_at ? new Date(data.expires_at) : null,
+        coverImageUrl: data.cover_image_url?.trim() || null,
+        termsAndConditions: data.terms_and_conditions?.trim() || null,
+        maxPerUser: data.max_per_user ?? null,
+        discountPercentage: data.discount_percentage ?? null,
+        discountDescription: data.discount_description?.trim() || null,
+      },
+    })
+  } catch (err) {
+    console.error("Error actualizando campaña:", err)
     return { error: "Error al actualizar la campaña" }
   }
 
@@ -118,13 +112,13 @@ export async function markCouponUsed(id: string, used: boolean) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  const { error } = await supabaseAdmin
-    .from("coupons")
-    .update({ used_at: used ? new Date().toISOString() : null })
-    .eq("id", id)
-
-  if (error) {
-    console.error("Error marcando cupón:", error)
+  try {
+    await prisma.coupon.update({
+      where: { id },
+      data: { usedAt: used ? new Date() : null },
+    })
+  } catch (err) {
+    console.error("Error marcando cupón:", err)
     return { error: "Error al actualizar el cupón" }
   }
 
@@ -138,20 +132,19 @@ export async function deleteCoupon(id: string) {
   if (!session) return { error: "No autorizado" }
 
   // Solo se puede eliminar si no está asignado
-  const { data: coupon } = await supabaseAdmin
-    .from("coupons")
-    .select("is_assigned")
-    .eq("id", id)
-    .single()
+  const coupon = await prisma.coupon.findUnique({
+    where: { id },
+    select: { isAssigned: true },
+  })
 
-  if (coupon?.is_assigned) {
+  if (coupon?.isAssigned) {
     return { error: "No se puede eliminar un cupón ya asignado a un usuario" }
   }
 
-  const { error } = await supabaseAdmin.from("coupons").delete().eq("id", id)
-
-  if (error) {
-    console.error("Error eliminando cupón:", error)
+  try {
+    await prisma.coupon.delete({ where: { id } })
+  } catch (err) {
+    console.error("Error eliminando cupón:", err)
     return { error: "Error al eliminar el cupón" }
   }
 
@@ -164,18 +157,16 @@ export async function deleteAllCampaignCoupons(partnerId: string, title: string 
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  let query = supabaseAdmin
-    .from("coupons")
-    .delete()
-    .eq("partner_id", partnerId)
-
-  if (title !== null) query = query.eq("title", title)
-  if (description !== null) query = query.eq("description", description)
-
-  const { error } = await query
-
-  if (error) {
-    console.error("Error eliminando campaña completa:", error)
+  try {
+    await prisma.coupon.deleteMany({
+      where: {
+        partnerId,
+        title,
+        description,
+      },
+    })
+  } catch (err) {
+    console.error("Error eliminando campaña completa:", err)
     return { error: "Error al eliminar la campaña" }
   }
 
@@ -191,21 +182,20 @@ export async function bulkDeleteCampaigns(
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  for (const c of campaigns) {
-    let query = supabaseAdmin
-      .from("coupons")
-      .delete()
-      .eq("partner_id", c.partnerId)
-
-    if (mode === "available") query = query.eq("is_assigned", false)
-    if (c.title !== null) query = query.eq("title", c.title)
-    if (c.description !== null) query = query.eq("description", c.description)
-
-    const { error } = await query
-    if (error) {
-      console.error("Error en bulk delete campaigns:", error)
-      return { error: "Error al eliminar los cupones" }
+  try {
+    for (const c of campaigns) {
+      await prisma.coupon.deleteMany({
+        where: {
+          partnerId: c.partnerId,
+          title: c.title,
+          description: c.description,
+          ...(mode === "available" ? { isAssigned: false } : {}),
+        },
+      })
     }
+  } catch (err) {
+    console.error("Error en bulk delete campaigns:", err)
+    return { error: "Error al eliminar los cupones" }
   }
 
   revalidatePath("/admin/coupons")
@@ -217,19 +207,17 @@ export async function deleteCouponCampaign(partnerId: string, title: string | nu
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  let query = supabaseAdmin
-    .from("coupons")
-    .delete()
-    .eq("partner_id", partnerId)
-    .eq("is_assigned", false)
-
-  if (title !== null) query = query.eq("title", title)
-  if (description !== null) query = query.eq("description", description)
-
-  const { error } = await query
-
-  if (error) {
-    console.error("Error eliminando campaña:", error)
+  try {
+    await prisma.coupon.deleteMany({
+      where: {
+        partnerId,
+        isAssigned: false,
+        title,
+        description,
+      },
+    })
+  } catch (err) {
+    console.error("Error eliminando campaña:", err)
     return { error: "Error al eliminar los cupones disponibles" }
   }
 

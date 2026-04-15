@@ -1,9 +1,9 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
-import { awardPoints, awardPointsOnce, spendPoints, POINT_ACTIONS, POINTS_BY_ACTION, type PointActionType } from "@/lib/points"
+import { awardPoints, awardPointsOnce, spendPoints, POINT_ACTIONS, POINTS_BY_ACTION } from "@/lib/points"
 import { createCalendarEvent, deleteCalendarEvent } from "@/lib/google-calendar"
 
 interface HealthProfileData {
@@ -55,6 +55,32 @@ interface CreateAppointmentData {
   consultation_snapshot?: Record<string, unknown> | null
 }
 
+// Helpers para campos @db.Time y @db.Date (Prisma los representa como Date)
+function parseTime(time: string): Date {
+  // time puede ser "HH:MM" o "HH:MM:SS"
+  const parts = time.split(":")
+  const h = Number(parts[0] ?? 0)
+  const m = Number(parts[1] ?? 0)
+  const s = Number(parts[2] ?? 0)
+  return new Date(Date.UTC(1970, 0, 1, h, m, s))
+}
+
+function formatTime(d: Date): string {
+  const h = String(d.getUTCHours()).padStart(2, "0")
+  const m = String(d.getUTCMinutes()).padStart(2, "0")
+  const s = String(d.getUTCSeconds()).padStart(2, "0")
+  return `${h}:${m}:${s}`
+}
+
+function parseDate(date: string): Date {
+  // date en formato "YYYY-MM-DD"
+  return new Date(`${date}T00:00:00.000Z`)
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
 export async function createAppointment(data: CreateAppointmentData) {
   try {
     const session = await auth()
@@ -64,13 +90,12 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
 
     // Verificar que la suscripción no esté pausada
-    const { data: userStatus } = await supabaseAdmin
-      .from("users")
-      .select("subscription_status")
-      .eq("id", session.user.id)
-      .single()
+    const userStatus = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { subscriptionStatus: true },
+    })
 
-    if (userStatus?.subscription_status === "paused") {
+    if (userStatus?.subscriptionStatus === "paused") {
       return { error: "Tu suscripción está pausada. Reactívala para agendar citas con coaches." }
     }
 
@@ -81,15 +106,16 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
 
     // Verificar que el coach existe y está activo (usuario con role='coach')
-    const { data: coach, error: coachError } = await supabaseAdmin
-      .from("users")
-      .select("id")
-      .eq("id", data.coachId)
-      .eq("role", "coach")
-      .eq("is_coach_active", true)
-      .single()
+    const coach = await prisma.user.findFirst({
+      where: {
+        id: data.coachId,
+        role: "coach",
+        isCoachActive: true,
+      },
+      select: { id: true },
+    })
 
-    if (coachError || !coach) {
+    if (!coach) {
       return { error: "Coach no encontrado o no disponible" }
     }
 
@@ -99,15 +125,19 @@ export async function createAppointment(data: CreateAppointmentData) {
       return { error: "No puedes agendar citas en el pasado" }
     }
 
+    const apptDate = parseDate(data.appointmentDate)
+    const apptTime = parseTime(data.appointmentTime)
+
     // Verificar que no haya una cita duplicada
-    const { data: existing } = await supabaseAdmin
-      .from("appointments")
-      .select("id")
-      .eq("coach_id", data.coachId)
-      .eq("appointment_date", data.appointmentDate)
-      .eq("appointment_time", data.appointmentTime)
-      .eq("status", "scheduled")
-      .single()
+    const existing = await prisma.appointment.findFirst({
+      where: {
+        coachId: data.coachId,
+        appointmentDate: apptDate,
+        appointmentTime: apptTime,
+        status: "scheduled",
+      },
+      select: { id: true },
+    })
 
     if (existing) {
       return { error: "Este horario ya está ocupado" }
@@ -115,12 +145,13 @@ export async function createAppointment(data: CreateAppointmentData) {
 
     // Verificar disponibilidad del coach
     const appointmentDay = appointmentDateTime.getDay()
-    const { data: availability } = await supabaseAdmin
-      .from("coach_availability")
-      .select("*")
-      .eq("coach_id", data.coachId)
-      .eq("day_of_week", appointmentDay)
-      .eq("is_available", true)
+    const availability = await prisma.coachAvailability.findMany({
+      where: {
+        coachId: data.coachId,
+        dayOfWeek: appointmentDay,
+        isAvailable: true,
+      },
+    })
 
     if (!availability || availability.length === 0) {
       return { error: "El coach no está disponible en este día" }
@@ -130,11 +161,9 @@ export async function createAppointment(data: CreateAppointmentData) {
     const [hour, minute] = data.appointmentTime.split(":").map(Number)
     const appointmentMinutes = hour * 60 + minute
     const duration = data.durationMinutes ?? 60
-    const isAvailable = availability.some(av => {
-      const [startHour, startMin] = av.start_time.split(":").map(Number)
-      const [endHour, endMin] = av.end_time.split(":").map(Number)
-      const startMinutes = startHour * 60 + startMin
-      const endMinutes = endHour * 60 + endMin
+    const isAvailable = availability.some((av) => {
+      const startMinutes = av.startTime.getUTCHours() * 60 + av.startTime.getUTCMinutes()
+      const endMinutes = av.endTime.getUTCHours() * 60 + av.endTime.getUTCMinutes()
       return appointmentMinutes >= startMinutes && appointmentMinutes + duration <= endMinutes
     })
 
@@ -143,22 +172,24 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
 
     // Crear la cita (consultation_reason obligatorio en cada agendamiento)
-    const { error: insertError } = await supabaseAdmin
-      .from("appointments")
-      .insert({
-        user_id: session.user.id,
-        coach_id: data.coachId,
-        appointment_date: data.appointmentDate,
-        appointment_time: data.appointmentTime,
-        duration_minutes: data.durationMinutes ?? 60,
-        status: "scheduled",
-        consultation_reason: data.consultation_reason,
-        notes: data.notes,
-        consultation_snapshot: data.consultation_snapshot || {},
+    let newAppt: { id: string } | null = null
+    try {
+      newAppt = await prisma.appointment.create({
+        data: {
+          userId: session.user.id,
+          coachId: data.coachId,
+          appointmentDate: apptDate,
+          appointmentTime: apptTime,
+          durationMinutes: data.durationMinutes ?? 60,
+          status: "scheduled",
+          consultationReason: data.consultation_reason,
+          notes: data.notes,
+          consultationSnapshot: (data.consultation_snapshot ?? {}) as object,
+        },
+        select: { id: true },
       })
-
-    if (insertError) {
-      console.error("Error creating appointment:", insertError)
+    } catch (err) {
+      console.error("Error creating appointment:", err)
       return { error: "Error al crear la cita. Por favor intenta de nuevo." }
     }
 
@@ -167,27 +198,19 @@ export async function createAppointment(data: CreateAppointmentData) {
 
     // Crear evento en Google Calendar del coach (silencioso si no tiene conectado)
     let meetLink: string | undefined
-    const { data: newAppt } = await supabaseAdmin
-      .from("appointments")
-      .select("id")
-      .eq("user_id", session.user.id)
-      .eq("coach_id", data.coachId)
-      .eq("appointment_date", data.appointmentDate)
-      .eq("appointment_time", data.appointmentTime)
-      .single()
 
     if (newAppt) {
-      const { data: coachUser } = await supabaseAdmin
-        .from("users")
-        .select("name")
-        .eq("id", data.coachId)
-        .single()
+      const coachUser = await prisma.user.findUnique({
+        where: { id: data.coachId },
+        select: { name: true },
+      })
 
-      const { data: clientUser } = await supabaseAdmin
-        .from("users")
-        .select("name, email")
-        .eq("id", session.user.id)
-        .single()
+      const clientUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { name: true, email: true },
+      })
+
+      void coachUser
 
       const { eventId: googleEventId, meetLink: createdMeetLink } = await createCalendarEvent({
         coachId: data.coachId,
@@ -205,13 +228,13 @@ export async function createAppointment(data: CreateAppointmentData) {
       meetLink = createdMeetLink ?? undefined
 
       if (googleEventId || createdMeetLink) {
-        await supabaseAdmin
-          .from("appointments")
-          .update({
-            ...(googleEventId ? { google_event_id: googleEventId } : {}),
-            ...(createdMeetLink ? { meeting_link: createdMeetLink } : {}),
-          })
-          .eq("id", newAppt.id)
+        await prisma.appointment.update({
+          where: { id: newAppt.id },
+          data: {
+            ...(googleEventId ? { googleEventId } : {}),
+            ...(createdMeetLink ? { meetingLink: createdMeetLink } : {}),
+          },
+        })
       }
     }
 
@@ -242,14 +265,17 @@ export async function cancelAppointment(appointmentId: string) {
     }
 
     // Verificar que la cita pertenece al usuario
-    const { data: appointment, error: fetchError } = await supabaseAdmin
-      .from("appointments")
-      .select("id, status, appointment_date, appointment_time")
-      .eq("id", appointmentId)
-      .eq("user_id", session.user.id)
-      .single()
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: appointmentId, userId: session.user.id },
+      select: {
+        id: true,
+        status: true,
+        appointmentDate: true,
+        appointmentTime: true,
+      },
+    })
 
-    if (fetchError || !appointment) {
+    if (!appointment) {
       return { error: "Cita no encontrada" }
     }
 
@@ -257,32 +283,33 @@ export async function cancelAppointment(appointmentId: string) {
       return { error: "Solo puedes cancelar citas programadas" }
     }
 
-    const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`)
+    const dateStr = formatDate(appointment.appointmentDate)
+    const timeStr = formatTime(appointment.appointmentTime)
+    const appointmentDateTime = new Date(`${dateStr}T${timeStr}`)
     const hoursUntilAppointment = (appointmentDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
     if (hoursUntilAppointment < 24) {
       return { error: "Las citas solo pueden cancelarse con al menos 24 horas de anticipación" }
     }
 
     // Cancelar la cita
-    const { data: apptFull } = await supabaseAdmin
-      .from("appointments")
-      .select("google_event_id, coach_id")
-      .eq("id", appointmentId)
-      .single()
+    const apptFull = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { googleEventId: true, coachId: true },
+    })
 
-    const { error: updateError } = await supabaseAdmin
-      .from("appointments")
-      .update({ status: "cancelled" })
-      .eq("id", appointmentId)
-
-    // Eliminar evento de Google Calendar del coach (silencioso)
-    if (apptFull?.google_event_id && apptFull.coach_id) {
-      await deleteCalendarEvent(apptFull.coach_id, apptFull.google_event_id).catch(() => {})
+    try {
+      await prisma.appointment.update({
+        where: { id: appointmentId },
+        data: { status: "cancelled" },
+      })
+    } catch (err) {
+      console.error("Error cancelling appointment:", err)
+      return { error: "Error al cancelar la cita. Por favor intenta de nuevo." }
     }
 
-    if (updateError) {
-      console.error("Error cancelling appointment:", updateError)
-      return { error: "Error al cancelar la cita. Por favor intenta de nuevo." }
+    // Eliminar evento de Google Calendar del coach (silencioso)
+    if (apptFull?.googleEventId && apptFull.coachId) {
+      await deleteCalendarEvent(apptFull.coachId, apptFull.googleEventId).catch(() => {})
     }
 
     revalidatePath("/dashboard/coaches")
@@ -318,13 +345,12 @@ export async function hasHealthProfile(): Promise<boolean> {
       return false
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("user_health_profiles")
-      .select("id, weight, height, age, gender")
-      .eq("user_id", session.user.id)
-      .single()
+    const data = await prisma.userHealthProfile.findUnique({
+      where: { userId: session.user.id },
+      select: { id: true, weight: true, height: true, age: true, gender: true },
+    })
 
-    if (error || !data) {
+    if (!data) {
       return false
     }
 
@@ -344,22 +370,52 @@ export async function getHealthProfile() {
       return { error: "No autorizado", profile: null }
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("user_health_profiles")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .single()
+    const row = await prisma.userHealthProfile.findUnique({
+      where: { userId: session.user.id },
+    })
 
-    if (error) {
-      // Si no existe el perfil, retornar null sin error
-      if (error.code === "PGRST116") {
-        return { profile: null }
-      }
-      console.error("Error fetching health profile:", error)
-      return { error: "Error al obtener el perfil de salud", profile: null }
+    if (!row) {
+      return { profile: null }
     }
 
-    return { profile: data }
+    const profile = {
+      id: row.id,
+      user_id: row.userId,
+      weight: row.weight ? Number(row.weight) : null,
+      height: row.height ? Number(row.height) : null,
+      age: row.age,
+      gender: row.gender,
+      diseases: row.diseases,
+      medications: row.medications,
+      allergies: row.allergies,
+      objectives: row.objectives,
+      activity_level: row.activityLevel,
+      current_exercise_routine: row.currentExerciseRoutine,
+      previous_injuries: row.previousInjuries,
+      dietary_restrictions: row.dietaryRestrictions,
+      additional_notes: row.additionalNotes,
+      consultation_reason: row.consultationReason,
+      occupation: row.occupation,
+      supplements: row.supplements,
+      surgeries: row.surgeries,
+      intolerances: row.intolerances,
+      family_history: row.familyHistory,
+      waist_circumference: row.waistCircumference ? Number(row.waistCircumference) : null,
+      body_fat_percent: row.bodyFatPercent ? Number(row.bodyFatPercent) : null,
+      exercise_type: row.exerciseType,
+      exercise_frequency: row.exerciseFrequency,
+      sleep_hours: row.sleepHours ? Number(row.sleepHours) : null,
+      stress_level: row.stressLevel,
+      work_type: row.workType,
+      energy_level: row.energyLevel,
+      digestion: row.digestion,
+      mood: row.mood,
+      concentration: row.concentration,
+      created_at: row.createdAt.toISOString(),
+      updated_at: row.updatedAt.toISOString(),
+    }
+
+    return { profile }
   } catch (error) {
     console.error("Error in getHealthProfile:", error)
     return { error: "Error interno del servidor", profile: null }
@@ -380,14 +436,14 @@ export async function saveHealthProfile(data: HealthProfileData) {
     }
 
     // Insertar o actualizar el perfil de salud
-    const { error: upsertError } = await supabaseAdmin
-      .from("user_health_profiles")
-      .upsert(
-        {
-          user_id: session.user.id,
+    try {
+      await prisma.userHealthProfile.upsert({
+        where: { userId: session.user.id },
+        create: {
+          userId: session.user.id,
           age: data.age,
           gender: data.gender,
-          consultation_reason: data.consultation_reason,
+          consultationReason: data.consultation_reason,
           occupation: data.occupation,
           diseases: data.diseases,
           medications: data.medications,
@@ -395,34 +451,62 @@ export async function saveHealthProfile(data: HealthProfileData) {
           surgeries: data.surgeries,
           allergies: data.allergies,
           intolerances: data.intolerances,
-          family_history: data.family_history,
+          familyHistory: data.family_history,
           weight: data.weight,
           height: data.height,
-          waist_circumference: data.waist_circumference,
-          body_fat_percent: data.body_fat_percent,
-          exercise_type: data.exercise_type,
-          exercise_frequency: data.exercise_frequency,
-          sleep_hours: data.sleep_hours,
-          stress_level: data.stress_level,
-          work_type: data.work_type,
-          energy_level: data.energy_level,
+          waistCircumference: data.waist_circumference,
+          bodyFatPercent: data.body_fat_percent,
+          exerciseType: data.exercise_type,
+          exerciseFrequency: data.exercise_frequency,
+          sleepHours: data.sleep_hours,
+          stressLevel: data.stress_level,
+          workType: data.work_type,
+          energyLevel: data.energy_level,
           digestion: data.digestion,
           mood: data.mood,
           concentration: data.concentration,
           objectives: data.objectives,
-          activity_level: data.activity_level,
-          current_exercise_routine: data.current_exercise_routine,
-          previous_injuries: data.previous_injuries,
-          dietary_restrictions: data.dietary_restrictions,
-          additional_notes: data.additional_notes,
+          activityLevel: data.activity_level,
+          currentExerciseRoutine: data.current_exercise_routine,
+          previousInjuries: data.previous_injuries,
+          dietaryRestrictions: data.dietary_restrictions,
+          additionalNotes: data.additional_notes,
         },
-        {
-          onConflict: "user_id",
-        }
-      )
-
-    if (upsertError) {
-      console.error("Error saving health profile:", upsertError)
+        update: {
+          age: data.age,
+          gender: data.gender,
+          consultationReason: data.consultation_reason,
+          occupation: data.occupation,
+          diseases: data.diseases,
+          medications: data.medications,
+          supplements: data.supplements,
+          surgeries: data.surgeries,
+          allergies: data.allergies,
+          intolerances: data.intolerances,
+          familyHistory: data.family_history,
+          weight: data.weight,
+          height: data.height,
+          waistCircumference: data.waist_circumference,
+          bodyFatPercent: data.body_fat_percent,
+          exerciseType: data.exercise_type,
+          exerciseFrequency: data.exercise_frequency,
+          sleepHours: data.sleep_hours,
+          stressLevel: data.stress_level,
+          workType: data.work_type,
+          energyLevel: data.energy_level,
+          digestion: data.digestion,
+          mood: data.mood,
+          concentration: data.concentration,
+          objectives: data.objectives,
+          activityLevel: data.activity_level,
+          currentExerciseRoutine: data.current_exercise_routine,
+          previousInjuries: data.previous_injuries,
+          dietaryRestrictions: data.dietary_restrictions,
+          additionalNotes: data.additional_notes,
+        },
+      })
+    } catch (err) {
+      console.error("Error saving health profile:", err)
       return { error: "Error al guardar el perfil de salud. Por favor intenta de nuevo." }
     }
 

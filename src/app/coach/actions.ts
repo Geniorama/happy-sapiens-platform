@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { updateCalendarEvent, deleteCalendarEvent } from "@/lib/google-calendar"
 
@@ -16,6 +16,80 @@ async function getCoachSession() {
   return session
 }
 
+function formatTime(d: Date): string {
+  const h = String(d.getUTCHours()).padStart(2, "0")
+  const m = String(d.getUTCMinutes()).padStart(2, "0")
+  const s = String(d.getUTCSeconds()).padStart(2, "0")
+  return `${h}:${m}:${s}`
+}
+
+function parseTime(time: string): Date {
+  const parts = time.split(":")
+  const h = Number(parts[0] ?? 0)
+  const m = Number(parts[1] ?? 0)
+  const s = Number(parts[2] ?? 0)
+  return new Date(Date.UTC(1970, 0, 1, h, m, s))
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+function parseDate(date: string): Date {
+  return new Date(`${date}T00:00:00.000Z`)
+}
+
+// Tipos internos que reflejan lo que devuelve Prisma en estas queries
+type AppointmentWithUser = {
+  id: string
+  userId: string
+  coachId: string
+  appointmentDate: Date
+  appointmentTime: Date
+  durationMinutes: number | null
+  status: string | null
+  notes: string | null
+  googleEventId: string | null
+  meetingLink: string | null
+  consultationReason: string | null
+  consultationSnapshot: unknown
+  createdAt: Date
+  updatedAt: Date
+  user: {
+    id: string
+    name: string | null
+    email: string | null
+    image: string | null
+  } | null
+}
+
+function mapAppointmentWithUser(a: AppointmentWithUser) {
+  return {
+    id: a.id,
+    user_id: a.userId,
+    coach_id: a.coachId,
+    appointment_date: formatDate(a.appointmentDate),
+    appointment_time: formatTime(a.appointmentTime),
+    duration_minutes: a.durationMinutes ?? 60,
+    status: a.status ?? "scheduled",
+    notes: a.notes,
+    google_event_id: a.googleEventId,
+    meeting_link: a.meetingLink,
+    consultation_reason: a.consultationReason ?? "",
+    consultation_snapshot: (a.consultationSnapshot ?? null) as Record<string, unknown> | null,
+    created_at: a.createdAt.toISOString(),
+    updated_at: a.updatedAt.toISOString(),
+    user: a.user
+      ? {
+          id: a.user.id,
+          name: a.user.name ?? undefined,
+          email: a.user.email ?? undefined,
+          image: a.user.image ?? undefined,
+        }
+      : null,
+  }
+}
+
 // ──────────────────────────────────────────
 // Citas
 // ──────────────────────────────────────────
@@ -24,41 +98,39 @@ export async function getCoachAppointments(status?: string) {
   const session = await getCoachSession()
   if (!session) return { error: "No autorizado", appointments: [] }
 
-  let query = supabaseAdmin
-    .from("appointments")
-    .select(`*, user:users!user_id(id, name, email, image)`)
-    .eq("coach_id", session.user.id)
-    .order("appointment_date", { ascending: false })
-    .order("appointment_time", { ascending: false })
+  try {
+    const data = await prisma.appointment.findMany({
+      where: {
+        coachId: session.user.id,
+        ...(status && status !== "all" ? { status } : {}),
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, image: true } },
+      },
+      orderBy: [{ appointmentDate: "desc" }, { appointmentTime: "desc" }],
+    })
 
-  if (status && status !== "all") {
-    query = query.eq("status", status)
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    console.error("Error fetching coach appointments:", error)
+    return { appointments: data.map(mapAppointmentWithUser) }
+  } catch (err) {
+    console.error("Error fetching coach appointments:", err)
     return { error: "Error al obtener citas", appointments: [] }
   }
-
-  return { appointments: data || [] }
 }
 
 export async function getAppointmentById(id: string) {
   const session = await getCoachSession()
   if (!session) return { error: "No autorizado", appointment: null }
 
-  const { data, error } = await supabaseAdmin
-    .from("appointments")
-    .select(`*, user:users!user_id(id, name, email, image)`)
-    .eq("id", id)
-    .eq("coach_id", session.user.id)
-    .single()
+  const data = await prisma.appointment.findFirst({
+    where: { id, coachId: session.user.id },
+    include: {
+      user: { select: { id: true, name: true, email: true, image: true } },
+    },
+  })
 
-  if (error || !data) return { error: "Cita no encontrada", appointment: null }
+  if (!data) return { error: "Cita no encontrada", appointment: null }
 
-  return { appointment: data }
+  return { appointment: mapAppointmentWithUser(data) }
 }
 
 export async function updateAppointment({
@@ -76,31 +148,29 @@ export async function updateAppointment({
   if (!session) return { error: "No autorizado" }
 
   // Verificar que la cita pertenece al coach
-  const { data: existing, error: fetchError } = await supabaseAdmin
-    .from("appointments")
-    .select("id, status, google_event_id")
-    .eq("id", id)
-    .eq("coach_id", session.user.id)
-    .single()
+  const existing = await prisma.appointment.findFirst({
+    where: { id, coachId: session.user.id },
+    select: { id: true, status: true, googleEventId: true },
+  })
 
-  if (fetchError || !existing) return { error: "Cita no encontrada" }
+  if (!existing) return { error: "Cita no encontrada" }
 
-  const updates: Record<string, unknown> = {}
+  const updates: { status?: string; notes?: string; meetingLink?: string } = {}
   if (status !== undefined) {
     const allowed = ["completed", "no_show", "cancelled"]
     if (!allowed.includes(status)) return { error: "Estado inválido" }
     updates.status = status
   }
   if (notes !== undefined) updates.notes = notes
-  if (meetingLink !== undefined) updates.meeting_link = meetingLink
+  if (meetingLink !== undefined) updates.meetingLink = meetingLink
 
-  const { error } = await supabaseAdmin
-    .from("appointments")
-    .update(updates)
-    .eq("id", id)
-
-  if (error) {
-    console.error("Error updating appointment:", error)
+  try {
+    await prisma.appointment.update({
+      where: { id },
+      data: updates,
+    })
+  } catch (err) {
+    console.error("Error updating appointment:", err)
     return { error: "Error al actualizar la cita" }
   }
 
@@ -108,11 +178,11 @@ export async function updateAppointment({
   revalidatePath(`/coach/appointments/${id}`)
 
   // Sincronizar con Google Calendar (silencioso)
-  if (existing.google_event_id) {
+  if (existing.googleEventId) {
     if (status === "cancelled" || status === "no_show") {
-      await deleteCalendarEvent(session.user.id, existing.google_event_id).catch(() => {})
+      await deleteCalendarEvent(session.user.id, existing.googleEventId).catch(() => {})
     } else if (status === "completed") {
-      await updateCalendarEvent(session.user.id, existing.google_event_id, {
+      await updateCalendarEvent(session.user.id, existing.googleEventId, {
         summary: "[Completada] " + (notes ? notes.slice(0, 60) : "Cita completada"),
       }).catch(() => {})
     }
@@ -141,19 +211,28 @@ export async function getCoachAvailability() {
   const session = await getCoachSession()
   if (!session) return { error: "No autorizado", availability: [] }
 
-  const { data, error } = await supabaseAdmin
-    .from("coach_availability")
-    .select("*")
-    .eq("coach_id", session.user.id)
-    .order("day_of_week")
-    .order("start_time")
+  try {
+    const rows = await prisma.coachAvailability.findMany({
+      where: { coachId: session.user.id },
+      orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+    })
 
-  if (error) {
-    console.error("Error fetching availability:", error)
+    const availability = rows.map((r) => ({
+      id: r.id,
+      coach_id: r.coachId,
+      day_of_week: r.dayOfWeek,
+      start_time: formatTime(r.startTime),
+      end_time: formatTime(r.endTime),
+      is_available: r.isAvailable,
+      slot_duration: r.slotDuration,
+      created_at: r.createdAt.toISOString(),
+    }))
+
+    return { availability }
+  } catch (err) {
+    console.error("Error fetching availability:", err)
     return { error: "Error al obtener disponibilidad", availability: [] }
   }
-
-  return { availability: data || [] }
 }
 
 export async function saveCoachAvailability(slots: AvailabilitySlot[]) {
@@ -185,13 +264,12 @@ export async function saveCoachAvailability(slots: AvailabilitySlot[]) {
   }
 
   // Eliminar y reinsertar
-  const { error: deleteError } = await supabaseAdmin
-    .from("coach_availability")
-    .delete()
-    .eq("coach_id", session.user.id)
-
-  if (deleteError) {
-    console.error("Error deleting availability:", deleteError)
+  try {
+    await prisma.coachAvailability.deleteMany({
+      where: { coachId: session.user.id },
+    })
+  } catch (err) {
+    console.error("Error deleting availability:", err)
     return { error: "Error al guardar disponibilidad" }
   }
 
@@ -199,22 +277,20 @@ export async function saveCoachAvailability(slots: AvailabilitySlot[]) {
     .filter((s) => s.is_available)
     .flatMap((s) =>
       s.blocks.map((b) => ({
-        coach_id: session.user.id,
-        day_of_week: s.day_of_week,
-        start_time: b.start_time,
-        end_time: b.end_time,
-        slot_duration: b.slot_duration ?? 60,
-        is_available: true,
+        coachId: session.user.id,
+        dayOfWeek: s.day_of_week,
+        startTime: parseTime(b.start_time),
+        endTime: parseTime(b.end_time),
+        slotDuration: b.slot_duration ?? 60,
+        isAvailable: true,
       }))
     )
 
   if (rows.length > 0) {
-    const { error: insertError } = await supabaseAdmin
-      .from("coach_availability")
-      .insert(rows)
-
-    if (insertError) {
-      console.error("Error inserting availability:", insertError)
+    try {
+      await prisma.coachAvailability.createMany({ data: rows })
+    } catch (err) {
+      console.error("Error inserting availability:", err)
       return { error: "Error al guardar disponibilidad" }
     }
   }
@@ -231,15 +307,36 @@ export async function getCoachProfile() {
   const session = await getCoachSession()
   if (!session) return { error: "No autorizado", profile: null }
 
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, image, phone, bio, specialization, is_coach_active, created_at")
-    .eq("id", session.user.id)
-    .single()
+  const data = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      phone: true,
+      bio: true,
+      specialization: true,
+      isCoachActive: true,
+      createdAt: true,
+    },
+  })
 
-  if (error || !data) return { error: "Error al obtener perfil", profile: null }
+  if (!data) return { error: "Error al obtener perfil", profile: null }
 
-  return { profile: data }
+  const profile = {
+    id: data.id,
+    name: data.name,
+    email: data.email,
+    image: data.image,
+    phone: data.phone,
+    bio: data.bio,
+    specialization: data.specialization,
+    is_coach_active: data.isCoachActive,
+    created_at: data.createdAt.toISOString(),
+  }
+
+  return { profile }
 }
 
 export async function updateCoachProfile({
@@ -260,20 +357,19 @@ export async function updateCoachProfile({
 
   if (!name?.trim()) return { error: "El nombre es requerido" }
 
-  const { error } = await supabaseAdmin
-    .from("users")
-    .update({
-      name: name.trim(),
-      phone: phone || null,
-      bio: bio || null,
-      specialization: specialization || null,
-      is_coach_active: isActive ?? true,
-      updated_at: new Date().toISOString(),
+  try {
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        name: name.trim(),
+        phone: phone || null,
+        bio: bio || null,
+        specialization: specialization || null,
+        isCoachActive: isActive ?? true,
+      },
     })
-    .eq("id", session.user.id)
-
-  if (error) {
-    console.error("Error updating coach profile:", error)
+  } catch (err) {
+    console.error("Error updating coach profile:", err)
     return { error: "Error al actualizar el perfil" }
   }
 
@@ -287,63 +383,122 @@ export async function updateCoachProfile({
 
 export async function getClientHistory(userId: string) {
   const session = await getCoachSession()
-  if (!session) return { error: "No autorizado", client: null, appointments: [] }
+  if (!session) return { error: "No autorizado", client: null, healthProfile: null, appointments: [] }
 
   // Verificar que el coach tiene al menos una cita con este usuario
-  const { data: relationship } = await supabaseAdmin
-    .from("appointments")
-    .select("id")
-    .eq("coach_id", session.user.id)
-    .eq("user_id", userId)
-    .limit(1)
-    .single()
+  const relationship = await prisma.appointment.findFirst({
+    where: { coachId: session.user.id, userId },
+    select: { id: true },
+  })
 
-  if (!relationship) return { error: "Sin acceso a este cliente", client: null, appointments: [] }
+  if (!relationship) return { error: "Sin acceso a este cliente", client: null, healthProfile: null, appointments: [] }
 
   // Datos del cliente
-  const { data: client } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, image, created_at")
-    .eq("id", userId)
-    .single()
+  const clientRow = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, image: true, createdAt: true },
+  })
+
+  const client = clientRow
+    ? {
+        id: clientRow.id,
+        name: clientRow.name,
+        email: clientRow.email,
+        image: clientRow.image,
+        created_at: clientRow.createdAt.toISOString(),
+      }
+    : null
 
   // Perfil de salud actual del cliente
-  const { data: healthProfile } = await supabaseAdmin
-    .from("user_health_profiles")
-    .select("*")
-    .eq("user_id", userId)
-    .single()
+  const healthRow = await prisma.userHealthProfile.findUnique({
+    where: { userId },
+  })
+
+  const healthProfile = healthRow
+    ? {
+        id: healthRow.id,
+        user_id: healthRow.userId,
+        weight: healthRow.weight ? Number(healthRow.weight) : null,
+        height: healthRow.height ? Number(healthRow.height) : null,
+        age: healthRow.age,
+        gender: healthRow.gender,
+        diseases: healthRow.diseases,
+        medications: healthRow.medications,
+        allergies: healthRow.allergies,
+        objectives: healthRow.objectives,
+        activity_level: healthRow.activityLevel,
+        current_exercise_routine: healthRow.currentExerciseRoutine,
+        previous_injuries: healthRow.previousInjuries,
+        dietary_restrictions: healthRow.dietaryRestrictions,
+        additional_notes: healthRow.additionalNotes,
+        consultation_reason: healthRow.consultationReason,
+        occupation: healthRow.occupation,
+        supplements: healthRow.supplements,
+        surgeries: healthRow.surgeries,
+        intolerances: healthRow.intolerances,
+        family_history: healthRow.familyHistory,
+        waist_circumference: healthRow.waistCircumference ? Number(healthRow.waistCircumference) : null,
+        body_fat_percent: healthRow.bodyFatPercent ? Number(healthRow.bodyFatPercent) : null,
+        exercise_type: healthRow.exerciseType,
+        exercise_frequency: healthRow.exerciseFrequency,
+        sleep_hours: healthRow.sleepHours ? Number(healthRow.sleepHours) : null,
+        stress_level: healthRow.stressLevel,
+        work_type: healthRow.workType,
+        energy_level: healthRow.energyLevel,
+        digestion: healthRow.digestion,
+        mood: healthRow.mood,
+        concentration: healthRow.concentration,
+        created_at: healthRow.createdAt.toISOString(),
+        updated_at: healthRow.updatedAt.toISOString(),
+      }
+    : null
 
   // Todas las citas del usuario
-  const { data: appointments, error } = await supabaseAdmin
-    .from("appointments")
-    .select("id, appointment_date, appointment_time, duration_minutes, status, consultation_reason, notes, coach_id")
-    .eq("user_id", userId)
-    .order("appointment_date", { ascending: false })
-    .order("appointment_time", { ascending: false })
-
-  if (error) {
-    console.error("Error fetching client history:", error.message, error.details, error.hint)
-    return { error: "Error al obtener el historial", client, appointments: [] }
+  let appointmentRows
+  try {
+    appointmentRows = await prisma.appointment.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        appointmentDate: true,
+        appointmentTime: true,
+        durationMinutes: true,
+        status: true,
+        consultationReason: true,
+        notes: true,
+        coachId: true,
+      },
+      orderBy: [{ appointmentDate: "desc" }, { appointmentTime: "desc" }],
+    })
+  } catch (err) {
+    console.error("Error fetching client history:", err)
+    return { error: "Error al obtener el historial", client, healthProfile, appointments: [] }
   }
 
   // Resolver datos de coaches en una sola consulta
-  const coachIds = [...new Set((appointments ?? []).map((a) => a.coach_id).filter(Boolean))]
-  const { data: coaches } = coachIds.length
-    ? await supabaseAdmin
-        .from("users")
-        .select("id, name, image, specialization")
-        .in("id", coachIds)
-    : { data: [] }
+  const coachIds = [...new Set(appointmentRows.map((a) => a.coachId).filter(Boolean))]
+  const coaches = coachIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: coachIds } },
+        select: { id: true, name: true, image: true, specialization: true },
+      })
+    : []
 
-  const coachMap = Object.fromEntries((coaches ?? []).map((c) => [c.id, c]))
+  const coachMap = Object.fromEntries(coaches.map((c) => [c.id, c]))
 
-  const normalized = (appointments ?? []).map((a) => ({
-    ...a,
-    coach: coachMap[a.coach_id] ?? null,
+  const normalized = appointmentRows.map((a) => ({
+    id: a.id,
+    appointment_date: formatDate(a.appointmentDate),
+    appointment_time: formatTime(a.appointmentTime),
+    duration_minutes: a.durationMinutes ?? 60,
+    status: a.status ?? "scheduled",
+    consultation_reason: a.consultationReason ?? "",
+    notes: a.notes,
+    coach_id: a.coachId,
+    coach: coachMap[a.coachId] ?? null,
   }))
 
-  return { client, healthProfile: healthProfile ?? null, appointments: normalized }
+  return { client, healthProfile, appointments: normalized }
 }
 
 // ──────────────────────────────────────────
@@ -354,38 +509,35 @@ export async function getCoachStats() {
   const session = await getCoachSession()
   if (!session) return { error: "No autorizado", stats: null }
 
-  const today = new Date().toISOString().split("T")[0]
+  const todayDate = parseDate(new Date().toISOString().split("T")[0])
 
-  const [todayRes, scheduledRes, completedRes, totalClientsRes] = await Promise.all([
-    supabaseAdmin
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
-      .eq("coach_id", session.user.id)
-      .eq("appointment_date", today)
-      .eq("status", "scheduled"),
-    supabaseAdmin
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
-      .eq("coach_id", session.user.id)
-      .eq("status", "scheduled"),
-    supabaseAdmin
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
-      .eq("coach_id", session.user.id)
-      .eq("status", "completed"),
-    supabaseAdmin
-      .from("appointments")
-      .select("user_id")
-      .eq("coach_id", session.user.id),
+  const [todayCount, scheduledCount, completedCount, clientsList] = await Promise.all([
+    prisma.appointment.count({
+      where: {
+        coachId: session.user.id,
+        appointmentDate: todayDate,
+        status: "scheduled",
+      },
+    }),
+    prisma.appointment.count({
+      where: { coachId: session.user.id, status: "scheduled" },
+    }),
+    prisma.appointment.count({
+      where: { coachId: session.user.id, status: "completed" },
+    }),
+    prisma.appointment.findMany({
+      where: { coachId: session.user.id },
+      select: { userId: true },
+    }),
   ])
 
-  const uniqueClients = new Set(totalClientsRes.data?.map((a) => a.user_id) ?? []).size
+  const uniqueClients = new Set(clientsList.map((a) => a.userId)).size
 
   return {
     stats: {
-      todayAppointments: todayRes.count ?? 0,
-      scheduledAppointments: scheduledRes.count ?? 0,
-      completedAppointments: completedRes.count ?? 0,
+      todayAppointments: todayCount,
+      scheduledAppointments: scheduledCount,
+      completedAppointments: completedCount,
       totalClients: uniqueClients,
     },
   }
@@ -399,15 +551,19 @@ export async function getTodayAppointments() {
   const session = await getCoachSession()
   if (!session) return { appointments: [] }
 
-  const today = new Date().toISOString().split("T")[0]
+  const todayDate = parseDate(new Date().toISOString().split("T")[0])
 
-  const { data } = await supabaseAdmin
-    .from("appointments")
-    .select(`*, user:users!user_id(id, name, email, image)`)
-    .eq("coach_id", session.user.id)
-    .eq("appointment_date", today)
-    .eq("status", "scheduled")
-    .order("appointment_time", { ascending: true })
+  const data = await prisma.appointment.findMany({
+    where: {
+      coachId: session.user.id,
+      appointmentDate: todayDate,
+      status: "scheduled",
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true, image: true } },
+    },
+    orderBy: { appointmentTime: "asc" },
+  })
 
-  return { appointments: data || [] }
+  return { appointments: data.map(mapAppointmentWithUser) }
 }

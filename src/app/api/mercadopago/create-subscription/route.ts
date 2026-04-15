@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { preApprovalClient, SUBSCRIPTION_PLANS } from '@/lib/mercadopago'
-import { supabaseAdmin } from '@/lib/supabase'
+import { prisma } from '@/lib/db'
 
 export async function POST(req: Request) {
   try {
@@ -51,16 +51,24 @@ export async function POST(req: Request) {
     const preApproval = await preApprovalClient.create({ body: preApprovalBody })
 
     // Guardar datos de facturación/envío en pending_checkout para el webhook
-    await supabaseAdmin
-      .from('pending_checkout')
-      .upsert({
+    await prisma.pendingCheckout.upsert({
+      where: { email: userEmail },
+      create: {
         email: userEmail,
         name: userName,
-        product_id: plan.id,
-        referral_code: referralCode || null,
+        productId: plan.id,
+        referralCode: referralCode || null,
         billing: billing || null,
         shipping: shipping || null,
-      }, { onConflict: 'email' })
+      },
+      update: {
+        name: userName,
+        productId: plan.id,
+        referralCode: referralCode || null,
+        billing: billing || null,
+        shipping: shipping || null,
+      },
+    })
 
     return NextResponse.json({ initPoint: preApproval.init_point })
   } catch (error: unknown) {

@@ -4,7 +4,7 @@ import Google from "next-auth/providers/google"
 import Strava, { type StravaProfile } from "next-auth/providers/strava"
 import { compare } from "bcryptjs"
 import { z } from "zod"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 
 // Extender los tipos de NextAuth
 declare module "next-auth" {
@@ -54,7 +54,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         try {
-          // Validar credenciales
           const validatedFields = loginSchema.safeParse(credentials)
 
           if (!validatedFields.success) {
@@ -63,18 +62,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const { email, password } = validatedFields.data
 
-          // Buscar usuario en Supabase
-          const { data: user, error } = await supabaseAdmin
-            .from('users')
-            .select('*')
-            .eq('email', email)
-            .single()
+          const user = await prisma.user.findUnique({
+            where: { email },
+          })
 
-          if (error || !user || !user.password) {
+          if (!user || !user.password) {
             return null
           }
 
-          // Verificar contraseña
           const isPasswordValid = await compare(password, user.password)
 
           if (!isPasswordValid) {
@@ -155,13 +150,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // 1) Si el atleta ya está vinculado a un usuario, permitir acceso.
         if (athleteId) {
-          const { data: linkedUser, error: linkedUserError } = await supabaseAdmin
-            .from("users")
-            .select("id")
-            .eq("strava_athlete_id", athleteId)
-            .single()
+          const linkedUser = await prisma.user.findFirst({
+            where: { stravaAthleteId: athleteId },
+            select: { id: true },
+          })
 
-          if (!linkedUserError && linkedUser) {
+          if (linkedUser) {
             if (authDebugEnabled) {
               console.log("[AUTH][STRAVA][signIn] atleta ya vinculado", {
                 userId: linkedUser.id,
@@ -173,24 +167,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // 2) Primer login con Strava: intentar vincular por email (si Strava lo entrega).
         if (user?.email && athleteId) {
-          const { data: userByEmail, error: userByEmailError } = await supabaseAdmin
-            .from("users")
-            .select("id, strava_athlete_id")
-            .eq("email", user.email)
-            .single()
+          const userByEmail = await prisma.user.findUnique({
+            where: { email: user.email },
+            select: { id: true, stravaAthleteId: true },
+          })
 
-          if (!userByEmailError && userByEmail) {
+          if (userByEmail) {
             // Si ya está vinculado a otro athlete_id, evitar sobrescribir silenciosamente.
-            if (userByEmail.strava_athlete_id && userByEmail.strava_athlete_id !== athleteId) {
+            if (userByEmail.stravaAthleteId && userByEmail.stravaAthleteId !== athleteId) {
               return "/auth/error?error=StravaLinkedToDifferentAthlete"
             }
 
-            const { error: updateError } = await supabaseAdmin
-              .from("users")
-              .update({ strava_athlete_id: athleteId })
-              .eq("id", userByEmail.id)
-
-            if (updateError) {
+            try {
+              await prisma.user.update({
+                where: { id: userByEmail.id },
+                data: { stravaAthleteId: athleteId },
+              })
+            } catch {
               return "/auth/error?error=StravaLinkFailed"
             }
 
@@ -211,83 +204,71 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return "/auth/error?error=StravaNotLinked"
       }
 
-      // OAuth: el usuario debe tener una suscripción existente en Supabase.
-      // No se permite crear cuentas nuevas vía OAuth sin pasar por el checkout.
-      // La verificación real del email se hace en el jwt callback (que tiene acceso al user).
       return true
     },
 
     async jwt({ token, user, account }) {
       if (user) {
-        // Para credentials, user.id ya es el ID de Supabase (retornado por authorize).
-        // Para OAuth, user.id es el ID del proveedor → buscamos por email.
-        const isOAuth = account?.provider !== "credentials"
+        // Para credentials, user.id ya es el ID de la DB (retornado por authorize).
+        // Para OAuth, user.id es el ID del proveedor → buscamos por email o stravaAthleteId.
+        const isCredentials = account?.provider === "credentials"
         const isStrava = account?.provider === "strava"
-        const lookupField = !isOAuth
-          ? "id"
-          : isStrava
-            ? "strava_athlete_id"
-            : "email"
-        const lookupValue = !isOAuth
-          ? user.id
-          : isStrava
-            ? account?.providerAccountId
-            : user.email
 
-        if (account?.provider === "strava" && authDebugEnabled) {
-          console.log("[AUTH][STRAVA][jwt] lookup inicial", {
-            lookupField,
-            lookupValue: lookupField === "email" ? maskEmail(lookupValue as string | null) : lookupValue,
-          })
-        }
+        let dbUser: { id: string; role: string | null; subscriptionStatus: string | null } | null = null
 
-        if (lookupValue) {
-          try {
-            const { data } = await supabaseAdmin
-              .from("users")
-              .select("id, role, subscription_status")
-              .eq(lookupField, lookupValue)
-              .single()
-
-            if (data) {
-              if (account?.provider === "strava" && authDebugEnabled) {
-                console.log("[AUTH][STRAVA][jwt] usuario encontrado en Supabase", {
-                  userId: data.id,
-                  role: data.role,
-                  subscriptionStatus: data.subscription_status ?? null,
-                })
-              }
-              token.id = data.id
-              token.role = data.role || "user"
-              token.subscriptionStatus = data.subscription_status ?? null
-              token.subscriptionStatusFetchedAt = Date.now()
-            } else if (isOAuth) {
-              if (account?.provider === "strava" && authDebugEnabled) {
-                console.warn("[AUTH][STRAVA][jwt] no se encontro usuario por email")
-              }
-              token.noAccount = true
-            }
-          } catch {
-            if (account?.provider === "strava" && authDebugEnabled) {
-              console.error("[AUTH][STRAVA][jwt] error consultando Supabase")
-            }
-            token.role = "user"
+        try {
+          if (isCredentials) {
+            dbUser = await prisma.user.findUnique({
+              where: { id: user.id as string },
+              select: { id: true, role: true, subscriptionStatus: true },
+            })
+          } else if (isStrava && account?.providerAccountId) {
+            dbUser = await prisma.user.findFirst({
+              where: { stravaAthleteId: account.providerAccountId },
+              select: { id: true, role: true, subscriptionStatus: true },
+            })
+          } else if (user.email) {
+            dbUser = await prisma.user.findUnique({
+              where: { email: user.email },
+              select: { id: true, role: true, subscriptionStatus: true },
+            })
           }
-        } else if (account?.provider === "strava" && authDebugEnabled) {
-          console.warn("[AUTH][STRAVA][jwt] lookupValue vacio para Strava")
+
+          if (dbUser) {
+            if (isStrava && authDebugEnabled) {
+              console.log("[AUTH][STRAVA][jwt] usuario encontrado", {
+                userId: dbUser.id,
+                role: dbUser.role,
+                subscriptionStatus: dbUser.subscriptionStatus,
+              })
+            }
+            token.id = dbUser.id
+            token.role = dbUser.role || "user"
+            token.subscriptionStatus = dbUser.subscriptionStatus ?? null
+            token.subscriptionStatusFetchedAt = Date.now()
+          } else if (!isCredentials) {
+            if (isStrava && authDebugEnabled) {
+              console.warn("[AUTH][STRAVA][jwt] no se encontro usuario")
+            }
+            token.noAccount = true
+          }
+        } catch {
+          if (isStrava && authDebugEnabled) {
+            console.error("[AUTH][STRAVA][jwt] error consultando DB")
+          }
+          token.role = "user"
         }
       } else if (token.id) {
         // Refrescar subscription_status cada 5 minutos para detectar cambios (past_due, cancelled)
         const lastFetch = token.subscriptionStatusFetchedAt as number | undefined
         if (!lastFetch || Date.now() - lastFetch > 5 * 60 * 1000) {
           try {
-            const { data } = await supabaseAdmin
-              .from("users")
-              .select("subscription_status")
-              .eq("id", token.id as string)
-              .single()
+            const data = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              select: { subscriptionStatus: true },
+            })
             if (data) {
-              token.subscriptionStatus = data.subscription_status ?? null
+              token.subscriptionStatus = data.subscriptionStatus ?? null
               token.subscriptionStatusFetchedAt = Date.now()
             }
           } catch { /* no romper el flujo */ }

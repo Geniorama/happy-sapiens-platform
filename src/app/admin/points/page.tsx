@@ -1,31 +1,39 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { PointsManager } from "@/components/admin/points-manager"
 
 export default async function AdminPointsPage() {
   // Fetch users (non-admin) with their points balance
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, role")
-    .neq("role", "admin")
-    .order("name")
+  const userRows = await prisma.user.findMany({
+    where: { role: { not: "admin" } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+    orderBy: { name: "asc" },
+  })
 
-  const userIds = (users ?? []).map((u) => u.id)
+  const userIds = userRows.map((u) => u.id)
 
   // Fetch points balances
-  const { data: pointsRows } = userIds.length
-    ? await supabaseAdmin
-        .from("user_points")
-        .select("user_id, total_points")
-        .in("user_id", userIds)
-    : { data: [] }
+  const pointsRows = userIds.length
+    ? await prisma.userPoints.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, totalPoints: true },
+      })
+    : []
 
   const pointsMap: Record<string, number> = {}
-  for (const row of pointsRows ?? []) {
-    pointsMap[row.user_id] = Number(row.total_points) || 0
+  for (const row of pointsRows) {
+    pointsMap[row.userId] = Number(row.totalPoints) || 0
   }
 
-  const usersWithPoints = (users ?? []).map((u) => ({
-    ...u,
+  const usersWithPoints = userRows.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email ?? "",
+    role: u.role ?? "user",
     total_points: pointsMap[u.id] ?? 0,
   }))
 

@@ -1,35 +1,64 @@
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { UsersManager } from "@/components/admin/users-manager"
 
 export default async function AdminUsersPage() {
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id, name, email, role, phone, birth_date, gender, subscription_status, subscription_end_date, image, created_at")
-    .order("created_at", { ascending: false })
+  const rows = await prisma.user.findMany({
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      phone: true,
+      birthDate: true,
+      gender: true,
+      subscriptionStatus: true,
+      subscriptionEndDate: true,
+      image: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+  })
 
-  const userIds = (users ?? []).map(u => u.id)
+  const userIds = rows.map((u) => u.id)
 
-  const [couponsRes, pointsRes] = await Promise.all([
+  const [couponsRows, pointsRows] = await Promise.all([
     userIds.length
-      ? supabaseAdmin.from("coupons").select("user_id").in("user_id", userIds).eq("is_assigned", true)
-      : { data: [] },
+      ? prisma.coupon.findMany({
+          where: { userId: { in: userIds }, isAssigned: true },
+          select: { userId: true },
+        })
+      : Promise.resolve([] as { userId: string | null }[]),
     userIds.length
-      ? supabaseAdmin.from("user_points").select("user_id, total_points").in("user_id", userIds)
-      : { data: [] },
+      ? prisma.userPoints.findMany({
+          where: { userId: { in: userIds } },
+          select: { userId: true, totalPoints: true },
+        })
+      : Promise.resolve([] as { userId: string; totalPoints: number }[]),
   ])
 
   const couponCounts: Record<string, number> = {}
-  for (const c of couponsRes.data ?? []) {
-    couponCounts[c.user_id] = (couponCounts[c.user_id] ?? 0) + 1
+  for (const c of couponsRows) {
+    if (!c.userId) continue
+    couponCounts[c.userId] = (couponCounts[c.userId] ?? 0) + 1
   }
 
   const pointsMap: Record<string, number> = {}
-  for (const p of pointsRes.data ?? []) {
-    pointsMap[p.user_id] = Number(p.total_points) || 0
+  for (const p of pointsRows) {
+    pointsMap[p.userId] = Number(p.totalPoints) || 0
   }
 
-  const enriched = (users ?? []).map(u => ({
-    ...u,
+  const enriched = rows.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email ?? "",
+    role: u.role ?? "user",
+    phone: u.phone,
+    birth_date: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
+    gender: u.gender,
+    subscription_status: u.subscriptionStatus,
+    subscription_end_date: u.subscriptionEndDate ? u.subscriptionEndDate.toISOString() : null,
+    image: u.image,
+    created_at: u.createdAt.toISOString(),
     coupons_count: couponCounts[u.id] ?? 0,
     total_points: pointsMap[u.id] ?? 0,
   }))

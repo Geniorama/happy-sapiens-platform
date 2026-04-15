@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { paymentClient, preApprovalClient } from '@/lib/mercadopago'
-import { supabaseAdmin } from '@/lib/supabase'
+import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { createShopifyOrder } from '@/lib/shopify'
 import { randomBytes, createHmac } from 'crypto'
 import { hash } from 'bcryptjs'
+import { Prisma } from '@prisma/client'
 
 function verifyMpSignature(req: Request, rawBody: string, dataId: string): boolean {
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
@@ -54,11 +55,13 @@ async function sendWelcomeEmail(email: string, name: string, resetToken: string)
 
 async function log(action: string, email: string, metadata: Record<string, unknown>) {
   try {
-    await supabaseAdmin.from('system_logs').insert({
-      actor_email: email,
-      action,
-      entity_type: 'subscription',
-      metadata,
+    await prisma.systemLog.create({
+      data: {
+        actorEmail: email,
+        action,
+        entityType: 'subscription',
+        metadata: metadata as Prisma.InputJsonValue,
+      },
     })
   } catch {
     // no romper el flujo si el log falla
@@ -105,115 +108,113 @@ async function handlePreApproval(preApprovalId: string) {
 
   const status = preApproval.status
 
-  const { data: existingUser } = await supabaseAdmin
-    .from('users')
-    .select('id')
-    .eq('email', email)
-    .single()
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  })
 
   if (status === 'authorized') {
     // Leer datos de facturación/envío del checkout pendiente
-    const { data: pendingCheckout } = await supabaseAdmin
-      .from('pending_checkout')
-      .select('billing, shipping, referral_code')
-      .eq('email', email)
-      .single()
+    const pendingCheckout = await prisma.pendingCheckout.findUnique({
+      where: { email },
+      select: { billing: true, shipping: true, referralCode: true },
+    })
 
     const billingData = pendingCheckout?.billing as Record<string, string> | null
     const shippingData = pendingCheckout?.shipping as Record<string, string> | null
     // Si el referralCode viene del pending_checkout, tiene prioridad
-    if (!referralCode && pendingCheckout?.referral_code) {
-      referralCode = pendingCheckout.referral_code
+    if (!referralCode && pendingCheckout?.referralCode) {
+      referralCode = pendingCheckout.referralCode
     }
 
     if (existingUser) {
-      await supabaseAdmin
-        .from('users')
-        .update({
-          subscription_status: 'active',
-          subscription_id: preApprovalId,
-          subscription_synced_at: new Date().toISOString(),
-          subscription_start_date: dateCreated ?? new Date().toISOString(),
-          subscription_end_date: nextPaymentDate ?? null,
-          subscription_product: productId,
-          subscription_variant_id: shopifyVariantId,
-          subscription_tax_exempt: taxExempt,
-          ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
-          ...(billingData && {
-            billing_document_type: billingData.documentType,
-            billing_document_number: billingData.documentNumber,
-            billing_phone: billingData.phone,
-            billing_address: billingData.address,
-            billing_city: billingData.city,
-            billing_department: billingData.department,
-          }),
-          ...(shippingData && {
-            shipping_full_name: shippingData.fullName,
-            shipping_phone: shippingData.phone,
-            shipping_address: shippingData.address,
-            shipping_city: shippingData.city,
-            shipping_department: shippingData.department,
-            shipping_same_as_billing: !pendingCheckout?.shipping || shippingData.fullName === name,
-          }),
-        })
-        .eq('id', existingUser.id)
+      const updateData: Prisma.UserUpdateInput = {
+        subscriptionStatus: 'active',
+        subscriptionId: preApprovalId,
+        subscriptionSyncedAt: new Date(),
+        subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
+        subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
+        subscriptionProduct: productId,
+        subscriptionVariantId: shopifyVariantId,
+        subscriptionTaxExempt: taxExempt,
+        ...(subscriptionPrice !== undefined && { subscriptionPrice }),
+        ...(billingData && {
+          billingDocumentType: billingData.documentType,
+          billingDocumentNumber: billingData.documentNumber,
+          billingPhone: billingData.phone,
+          billingAddress: billingData.address,
+          billingCity: billingData.city,
+          billingDepartment: billingData.department,
+        }),
+        ...(shippingData && {
+          shippingFullName: shippingData.fullName,
+          shippingPhone: shippingData.phone,
+          shippingAddress: shippingData.address,
+          shippingCity: shippingData.city,
+          shippingDepartment: shippingData.department,
+          shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
+        }),
+      }
+
+      await prisma.user.update({ where: { id: existingUser.id }, data: updateData })
 
       console.log(`Suscripción reactivada: ${email}`)
     } else {
       let referrerId: string | null = null
       if (referralCode) {
-        const { data: referrer } = await supabaseAdmin
-          .from('users')
-          .select('id')
-          .eq('referral_code', referralCode)
-          .single()
+        const referrer = await prisma.user.findUnique({
+          where: { referralCode },
+          select: { id: true },
+        })
         if (referrer) referrerId = referrer.id
       }
 
       const resetToken = randomBytes(32).toString('hex')
       const resetTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
-      const { data: newUser, error } = await supabaseAdmin
-        .from('users')
-        .insert({
-          name,
-          email,
-          role: 'user',
-          subscription_status: 'active',
-          subscription_id: preApprovalId,
-          subscription_synced_at: new Date().toISOString(),
-          subscription_start_date: dateCreated ?? new Date().toISOString(),
-          subscription_end_date: nextPaymentDate ?? null,
-          subscription_product: productId,
-          subscription_variant_id: shopifyVariantId,
-          subscription_tax_exempt: taxExempt,
-          ...(subscriptionPrice !== undefined && { subscription_price: subscriptionPrice }),
-          referred_by: referrerId,
-          reset_token: resetToken,
-          reset_token_expires: resetTokenExpires.toISOString(),
-          ...(billingData && {
-            billing_document_type: billingData.documentType,
-            billing_document_number: billingData.documentNumber,
-            billing_phone: billingData.phone,
-            billing_address: billingData.address,
-            billing_city: billingData.city,
-            billing_department: billingData.department,
-          }),
-          ...(shippingData && {
-            shipping_full_name: shippingData.fullName,
-            shipping_phone: shippingData.phone,
-            shipping_address: shippingData.address,
-            shipping_city: shippingData.city,
-            shipping_department: shippingData.department,
-            shipping_same_as_billing: !pendingCheckout?.shipping || shippingData.fullName === name,
-          }),
+      let newUser
+      try {
+        newUser = await prisma.user.create({
+          data: {
+            name,
+            email,
+            role: 'user',
+            subscriptionStatus: 'active',
+            subscriptionId: preApprovalId,
+            subscriptionSyncedAt: new Date(),
+            subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
+            subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
+            subscriptionProduct: productId,
+            subscriptionVariantId: shopifyVariantId,
+            subscriptionTaxExempt: taxExempt,
+            ...(subscriptionPrice !== undefined && { subscriptionPrice }),
+            referredBy: referrerId,
+            resetToken: resetToken,
+            resetTokenExpires: resetTokenExpires,
+            ...(billingData && {
+              billingDocumentType: billingData.documentType,
+              billingDocumentNumber: billingData.documentNumber,
+              billingPhone: billingData.phone,
+              billingAddress: billingData.address,
+              billingCity: billingData.city,
+              billingDepartment: billingData.department,
+            }),
+            ...(shippingData && {
+              shippingFullName: shippingData.fullName,
+              shippingPhone: shippingData.phone,
+              shippingAddress: shippingData.address,
+              shippingCity: shippingData.city,
+              shippingDepartment: shippingData.department,
+              shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
+            }),
+          },
+          select: { id: true },
         })
-        .select('id')
-        .single()
-
-      if (error) {
-        console.error('Error creando usuario:', error)
-        await log('webhook.preapproval.user_create_error', email, { error: error.message, code: error.code })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const code = err instanceof Prisma.PrismaClientKnownRequestError ? err.code : ''
+        console.error('Error creando usuario:', err)
+        await log('webhook.preapproval.user_create_error', email, { error: msg, code })
         return
       }
 
@@ -286,18 +287,22 @@ async function handlePreApproval(preApprovalId: string) {
     }
 
     // Limpiar el checkout pendiente
-    await supabaseAdmin.from('pending_checkout').delete().eq('email', email)
+    try {
+      await prisma.pendingCheckout.delete({ where: { email } })
+    } catch {
+      // si no existe, ignorar (P2025)
+    }
   } else if (status === 'cancelled' || status === 'paused' || status === 'past_due') {
     if (existingUser) {
-      await supabaseAdmin
-        .from('users')
-        .update({
-          subscription_status: status === 'cancelled' ? 'cancelled'
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          subscriptionStatus: status === 'cancelled' ? 'cancelled'
             : status === 'paused' ? 'paused'
             : 'past_due',
-          subscription_synced_at: new Date().toISOString(),
-        })
-        .eq('id', existingUser.id)
+          subscriptionSyncedAt: new Date(),
+        },
+      })
 
       console.log(`Suscripción ${status}: ${email}`)
     }
@@ -316,85 +321,114 @@ async function handlePayment(paymentId: string) {
 
     // Pago rechazado → marcar suscripción como past_due (no crear orden Shopify)
     if (payment.status === 'rejected' || payment.status === 'cancelled') {
-      await supabaseAdmin
-        .from('users')
-        .update({ subscription_status: 'past_due', subscription_synced_at: new Date().toISOString() })
-        .eq('email', email)
+      await prisma.user.updateMany({
+        where: { email },
+        data: { subscriptionStatus: 'past_due', subscriptionSyncedAt: new Date() },
+      })
       await log('webhook.payment.rejected', email, { paymentId, status: payment.status })
       return
     }
 
     if (payment.status !== 'approved') return
 
-    const { data: user } = await supabaseAdmin
-      .from('users')
-      .select('id, name, subscription_status, subscription_variant_id, subscription_tax_exempt, billing_phone, billing_address, billing_city, billing_department, shipping_full_name, shipping_phone, shipping_address, shipping_city, shipping_department')
-      .eq('email', email)
-      .single()
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        subscriptionStatus: true,
+        subscriptionVariantId: true,
+        subscriptionTaxExempt: true,
+        billingPhone: true,
+        billingAddress: true,
+        billingCity: true,
+        billingDepartment: true,
+        shippingFullName: true,
+        shippingPhone: true,
+        shippingAddress: true,
+        shippingCity: true,
+        shippingDepartment: true,
+      },
+    })
 
     if (user) {
       const recurringPrice = payment.transaction_amount ?? undefined
       const paymentAnyData = payment as unknown as Record<string, unknown>
       const nextDate = paymentAnyData.next_payment_date as string | undefined
 
-      await supabaseAdmin
-        .from('users')
-        .update({
-          subscription_synced_at: new Date().toISOString(),
-          ...(recurringPrice !== undefined && { subscription_price: recurringPrice }),
-          ...(nextDate && { subscription_end_date: nextDate }),
-        })
-        .eq('id', user.id)
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          subscriptionSyncedAt: new Date(),
+          ...(recurringPrice !== undefined && { subscriptionPrice: recurringPrice }),
+          ...(nextDate && { subscriptionEndDate: new Date(nextDate) }),
+        },
+      })
 
-      await supabaseAdmin.from('payment_transactions').upsert({
-        user_id: user.id,
-        mercadopago_payment_id: String(payment.id),
-        status: payment.status ?? 'approved',
-        amount: recurringPrice ?? null,
-        currency: (payment as unknown as Record<string, unknown>).currency_id as string ?? 'COP',
-        payment_method: payment.payment_type_id ?? null,
-        payment_date: payment.date_approved ?? new Date().toISOString(),
-      }, { onConflict: 'mercadopago_payment_id' })
+      const mpPaymentId = String(payment.id)
+      const currency = (payment as unknown as Record<string, unknown>).currency_id as string ?? 'COP'
+      const paymentDateVal = payment.date_approved ? new Date(payment.date_approved) : new Date()
+
+      await prisma.paymentTransaction.upsert({
+        where: { mercadopagoPaymentId: mpPaymentId },
+        create: {
+          userId: user.id,
+          mercadopagoPaymentId: mpPaymentId,
+          status: payment.status ?? 'approved',
+          amount: recurringPrice ?? null,
+          currency,
+          paymentMethod: payment.payment_type_id ?? null,
+          paymentDate: paymentDateVal,
+        },
+        update: {
+          userId: user.id,
+          status: payment.status ?? 'approved',
+          amount: recurringPrice ?? null,
+          currency,
+          paymentMethod: payment.payment_type_id ?? null,
+          paymentDate: paymentDateVal,
+        },
+      })
 
       // Si la suscripción está pausada, no despachar el producto este mes
-      if (user.subscription_status === 'paused') {
+      if (user.subscriptionStatus === 'paused') {
         await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_paused' })
         console.log(`Despacho omitido para ${email}: suscripción pausada`)
         return
       }
 
-      if (user.subscription_variant_id) {
-        const billingAddress = user.billing_address
+      if (user.subscriptionVariantId) {
+        const billingAddress = user.billingAddress
           ? {
-              phone: user.billing_phone || '',
-              address: user.billing_address,
-              city: user.billing_city || '',
-              department: user.billing_department || '',
+              phone: user.billingPhone || '',
+              address: user.billingAddress,
+              city: user.billingCity || '',
+              department: user.billingDepartment || '',
             }
           : undefined
 
-        const shippingAddress = user.shipping_address
+        const shippingAddress = user.shippingAddress
           ? {
-              fullName: user.shipping_full_name || user.name || email,
-              phone: user.shipping_phone || '',
-              address: user.shipping_address,
-              city: user.shipping_city || '',
-              department: user.shipping_department || '',
+              fullName: user.shippingFullName || user.name || email,
+              phone: user.shippingPhone || '',
+              address: user.shippingAddress,
+              city: user.shippingCity || '',
+              department: user.shippingDepartment || '',
             }
           : undefined
 
         try {
-          const paymentDate = payment.date_approved
+          const paymentDateStr = payment.date_approved
             ? new Date(payment.date_approved).toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
             : new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
-          const orderNote = `Suscripción mensual — ${paymentDate} | Pago MP #${payment.id} | Cobro automático MercadoPago`
+          const orderNote = `Suscripción mensual — ${paymentDateStr} | Pago MP #${payment.id} | Cobro automático MercadoPago`
 
           const order = await createShopifyOrder({
             email,
             name: user.name || email,
-            variantId: user.subscription_variant_id,
+            variantId: user.subscriptionVariantId,
             price: recurringPrice,
-            taxExempt: user.subscription_tax_exempt === true,
+            taxExempt: user.subscriptionTaxExempt === true,
             note: orderNote,
             billing: billingAddress,
             shipping: shippingAddress,
@@ -403,7 +437,7 @@ async function handlePayment(paymentId: string) {
           console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscription_variant_id })
+          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscriptionVariantId })
           console.error('Error creando orden en Shopify:', err)
         }
       } else {
@@ -425,28 +459,26 @@ async function handlePayment(paymentId: string) {
 
   let referrerId: string | null = null
   if (referralCode) {
-    const { data: referrer } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('referral_code', referralCode)
-      .single()
+    const referrer = await prisma.user.findUnique({
+      where: { referralCode },
+      select: { id: true },
+    })
     if (referrer) referrerId = referrer.id
   }
 
-  const { data: existingUser } = await supabaseAdmin
-    .from('users')
-    .select('id')
-    .eq('email', userEmail)
-    .single()
+  const existingUser = await prisma.user.findUnique({
+    where: { email: userEmail },
+    select: { id: true },
+  })
 
   if (existingUser) {
-    await supabaseAdmin
-      .from('users')
-      .update({
-        subscription_status: 'active',
-        subscription_synced_at: new Date().toISOString(),
-      })
-      .eq('id', existingUser.id)
+    await prisma.user.update({
+      where: { id: existingUser.id },
+      data: {
+        subscriptionStatus: 'active',
+        subscriptionSyncedAt: new Date(),
+      },
+    })
 
     await awardPoints({
       userId: existingUser.id,
@@ -456,21 +488,21 @@ async function handlePayment(paymentId: string) {
   } else {
     const hashedPassword = await hash(userPassword, 12)
 
-    const { data: newUser, error } = await supabaseAdmin
-      .from('users')
-      .insert({
-        name: userName,
-        email: userEmail,
-        password: hashedPassword,
-        subscription_status: 'active',
-        subscription_synced_at: new Date().toISOString(),
-        referred_by: referrerId,
+    let newUser
+    try {
+      newUser = await prisma.user.create({
+        data: {
+          name: userName,
+          email: userEmail,
+          password: hashedPassword,
+          subscriptionStatus: 'active',
+          subscriptionSyncedAt: new Date(),
+          referredBy: referrerId,
+        },
+        select: { id: true },
       })
-      .select('id')
-      .single()
-
-    if (error) {
-      console.error('Error creando usuario:', error)
+    } catch (err) {
+      console.error('Error creando usuario:', err)
       return
     }
 

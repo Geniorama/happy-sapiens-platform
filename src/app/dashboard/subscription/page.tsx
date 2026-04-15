@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { redirect } from "next/navigation"
 import {
   Calendar, Check, Sparkles, Package, CreditCard, RefreshCw,
@@ -43,27 +43,64 @@ export default async function SubscriptionPage() {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/login")
 
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("*")
-    .eq("id", session.user.id)
-    .single()
+  const userRow = await prisma.user.findUnique({
+    where: { id: session.user.id },
+  })
 
-  const { data: transactions } = await supabaseAdmin
-    .from("payment_transactions")
-    .select("*")
-    .eq("user_id", session.user.id)
-    .order("payment_date", { ascending: false })
-    .limit(20)
+  const user = userRow
+    ? {
+        id: userRow.id,
+        name: userRow.name,
+        email: userRow.email,
+        image: userRow.image,
+        subscription_status: userRow.subscriptionStatus,
+        subscription_id: userRow.subscriptionId,
+        subscription_start_date: userRow.subscriptionStartDate
+          ? userRow.subscriptionStartDate.toISOString()
+          : null,
+        subscription_end_date: userRow.subscriptionEndDate
+          ? userRow.subscriptionEndDate.toISOString()
+          : null,
+        subscription_price: userRow.subscriptionPrice ? Number(userRow.subscriptionPrice) : null,
+        subscription_product: userRow.subscriptionProduct,
+        subscription_pause_ends_at: userRow.subscriptionPauseEndsAt
+          ? userRow.subscriptionPauseEndsAt.toISOString()
+          : null,
+      }
+    : null
+
+  const transactionRows = await prisma.paymentTransaction.findMany({
+    where: { userId: session.user.id },
+    orderBy: { paymentDate: "desc" },
+    take: 20,
+  })
+
+  const transactions = transactionRows.map((t) => ({
+    id: t.id,
+    status: t.status,
+    amount: t.amount !== null && t.amount !== undefined ? Number(t.amount) : null,
+    currency: t.currency,
+    payment_method: t.paymentMethod,
+    payment_date: t.paymentDate ? t.paymentDate.toISOString() : null,
+    mercadopago_payment_id: t.mercadopagoPaymentId,
+    created_at: t.createdAt.toISOString(),
+  }))
 
   const shopifyOrders = user?.email ? await getShopifyOrdersByEmail(user.email) : []
 
-  const { data: cover } = await supabaseAdmin
-    .from("section_covers")
-    .select("title, subtitle, image_url, is_active")
-    .eq("section_key", "subscription")
-    .eq("is_active", true)
-    .single()
+  const coverRow = await prisma.sectionCover.findFirst({
+    where: { sectionKey: "subscription", isActive: true },
+    select: { title: true, subtitle: true, imageUrl: true, isActive: true },
+  })
+
+  const cover = coverRow
+    ? {
+        title: coverRow.title,
+        subtitle: coverRow.subtitle,
+        image_url: coverRow.imageUrl,
+        is_active: coverRow.isActive,
+      }
+    : null
 
   const subscriptionStatusLabels: Record<string, { label: string; color: string }> = {
     active: { label: "Activa", color: "bg-green-100 text-green-700" },

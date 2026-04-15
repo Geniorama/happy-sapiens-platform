@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomBytes } from "crypto"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { sendEmail } from "@/lib/email"
 
 export async function POST(req: NextRequest) {
@@ -11,24 +11,23 @@ export async function POST(req: NextRequest) {
   }
 
   // Verificar si el usuario existe (sin revelar si existe o no en el mensaje al cliente)
-  const { data: user } = await supabaseAdmin
-    .from("users")
-    .select("id, name")
-    .eq("email", email.toLowerCase())
-    .single()
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+    select: { id: true, name: true },
+  })
 
   // Si el usuario no existe, respondemos igual para no revelar información
   if (user) {
     const token = randomBytes(32).toString("hex")
     const expires = new Date(Date.now() + 60 * 60 * 1000) // 1 hora
 
-    await supabaseAdmin
-      .from("users")
-      .update({
-        reset_token: token,
-        reset_token_expires: expires.toISOString(),
-      })
-      .eq("id", user.id)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: token,
+        resetTokenExpires: expires,
+      },
+    })
 
     const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const resetUrl = `${appUrl}/auth/reset-password?token=${token}`

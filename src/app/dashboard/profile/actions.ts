@@ -1,7 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { uploadToS3, deleteFromS3, extractKeyFromUrl } from "@/lib/s3"
 import { awardPointsOnce, POINT_ACTIONS, POINTS_BY_ACTION } from "@/lib/points"
@@ -19,21 +19,15 @@ export async function updateProfile(formData: FormData) {
   const gender = formData.get("gender") as string
 
   try {
-    const { error } = await supabaseAdmin
-      .from("users")
-      .update({
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
         name: name || null,
         phone: phone || null,
-        birth_date: birthDate || null,
+        birthDate: birthDate ? new Date(birthDate) : null,
         gender: gender || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", session.user.id)
-
-    if (error) {
-      console.error("Error actualizando perfil:", error)
-      return { error: "Error al actualizar el perfil" }
-    }
+      },
+    })
 
     revalidatePath("/dashboard/profile")
 
@@ -52,7 +46,7 @@ export async function updateProfile(formData: FormData) {
 
     return { success: true, pointsEarned }
   } catch (error) {
-    console.error("Error:", error)
+    console.error("Error actualizando perfil:", error)
     return { error: "Error al actualizar el perfil" }
   }
 }
@@ -71,11 +65,10 @@ export async function uploadAvatar(formData: FormData) {
 
   try {
     // Obtener usuario actual para eliminar avatar anterior
-    const { data: user } = await supabaseAdmin
-      .from("users")
-      .select("image")
-      .eq("id", session.user.id)
-      .single()
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { image: true },
+    })
 
     // Eliminar avatar anterior de S3 si existe
     if (user?.image) {
@@ -93,7 +86,7 @@ export async function uploadAvatar(formData: FormData) {
     const fileExt = file.name.split(".").pop()
     const timestamp = Date.now()
     const key = `avatars/${session.user.id}/avatar-${timestamp}.${fileExt}`
-    
+
     // Convertir file a buffer
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
@@ -102,15 +95,12 @@ export async function uploadAvatar(formData: FormData) {
     const publicUrl = await uploadToS3(buffer, key, file.type)
 
     // Actualizar URL en la base de datos
-    const { error: updateError } = await supabaseAdmin
-      .from("users")
-      .update({
-        image: publicUrl,
-        updated_at: new Date().toISOString(),
+    try {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { image: publicUrl },
       })
-      .eq("id", session.user.id)
-
-    if (updateError) {
+    } catch (updateError) {
       console.error("Error actualizando URL:", updateError)
       // Intentar eliminar de S3 si falla la actualización de BD
       try {
@@ -149,16 +139,15 @@ export async function deleteAvatar() {
 
   try {
     // Obtener usuario actual para saber qué archivo eliminar
-    const { data: user } = await supabaseAdmin
-      .from("users")
-      .select("image")
-      .eq("id", session.user.id)
-      .single()
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { image: true },
+    })
 
     if (user?.image) {
       // Extraer la key de la URL
       const key = extractKeyFromUrl(user.image)
-      
+
       if (key) {
         try {
           // Eliminar archivo de S3
@@ -170,15 +159,12 @@ export async function deleteAvatar() {
     }
 
     // Actualizar base de datos
-    const { error: updateError } = await supabaseAdmin
-      .from("users")
-      .update({
-        image: null,
-        updated_at: new Date().toISOString(),
+    try {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { image: null },
       })
-      .eq("id", session.user.id)
-
-    if (updateError) {
+    } catch (updateError) {
       console.error("Error actualizando perfil:", updateError)
       return { error: "Error al actualizar el perfil" }
     }

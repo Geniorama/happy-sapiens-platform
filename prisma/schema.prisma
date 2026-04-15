@@ -1,0 +1,444 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified") @db.Timestamptz(6)
+  image         String?
+  password      String?
+
+  // Suscripción
+  subscriptionStatus      String?   @default("inactive") @map("subscription_status")
+  subscriptionId          String?   @map("subscription_id")
+  subscriptionStartDate   DateTime? @map("subscription_start_date") @db.Timestamptz(6)
+  subscriptionEndDate     DateTime? @map("subscription_end_date") @db.Timestamptz(6)
+  mercadopagoCustomerId   String?   @map("mercadopago_customer_id")
+  subscriptionPrice       Decimal?  @map("subscription_price") @db.Decimal
+  subscriptionProduct     String?   @map("subscription_product")
+  subscriptionVariantId   String?   @map("subscription_variant_id")
+  subscriptionPauseEndsAt DateTime? @map("subscription_pause_ends_at") @db.Timestamptz(6)
+  subscriptionTaxExempt   Boolean?  @default(false) @map("subscription_tax_exempt")
+
+  // Shopify
+  shopifyCustomerId    String?   @unique @map("shopify_customer_id")
+  subscriptionSyncedAt DateTime? @map("subscription_synced_at") @db.Timestamptz(6)
+
+  // Password reset
+  resetToken        String?   @map("reset_token")
+  resetTokenExpires DateTime? @map("reset_token_expires") @db.Timestamptz(6)
+
+  // Profile
+  birthDate DateTime? @map("birth_date") @db.Date
+  phone     String?
+  gender    String?
+
+  // Strava
+  stravaAthleteId String? @map("strava_athlete_id")
+
+  // Coach
+  role           String?  @default("user") @db.VarChar(50)
+  bio            String?
+  specialization String?  @db.VarChar(255)
+  isCoachActive  Boolean? @default(false) @map("is_coach_active")
+
+  // Referrals
+  referralCode  String? @unique @map("referral_code")
+  referredBy    String? @map("referred_by") @db.Uuid
+  referrer      User?   @relation("UserReferrals", fields: [referredBy], references: [id], onDelete: SetNull)
+  referredUsers User[]  @relation("UserReferrals")
+
+  // Billing
+  billingDocumentType   String?  @map("billing_document_type")
+  billingDocumentNumber String?  @map("billing_document_number")
+  billingPhone          String?  @map("billing_phone")
+  billingAddress        String?  @map("billing_address")
+  billingCity           String?  @map("billing_city")
+  billingDepartment     String?  @map("billing_department")
+  shippingFullName      String?  @map("shipping_full_name")
+  shippingPhone         String?  @map("shipping_phone")
+  shippingAddress       String?  @map("shipping_address")
+  shippingCity          String?  @map("shipping_city")
+  shippingDepartment    String?  @map("shipping_department")
+  shippingSameAsBilling Boolean? @default(true) @map("shipping_same_as_billing")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  accounts            Account[]
+  sessions            Session[]
+  paymentTransactions PaymentTransaction[]
+  subscriptionHistory SubscriptionHistory[]
+  coupons             Coupon[]
+  coachAvailability   CoachAvailability[]
+  userAppointments    Appointment[]         @relation("UserAppointments")
+  coachAppointments   Appointment[]         @relation("CoachAppointments")
+  healthProfile       UserHealthProfile?
+  calendarTokens      CoachCalendarToken[]
+  pointTransactions   PointTransaction[]
+  userPoints          UserPoints?
+  referralStats       ReferralStats?
+  systemLogs          SystemLog[]
+
+  @@index([email])
+  @@index([subscriptionStatus])
+  @@index([phone])
+  @@index([resetToken], map: "idx_users_reset_token")
+  @@index([role], map: "idx_users_role")
+  @@index([isCoachActive], map: "idx_users_coach_active")
+  @@index([referralCode])
+  @@index([referredBy])
+  @@index([shopifyCustomerId], map: "idx_users_shopify_customer_id")
+  @@map("users")
+}
+
+model Account {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String   @map("provider_account_id")
+  refreshToken      String?  @map("refresh_token")
+  accessToken       String?  @map("access_token")
+  expiresAt         BigInt?  @map("expires_at")
+  tokenType         String?  @map("token_type")
+  scope             String?
+  idToken           String?  @map("id_token")
+  sessionState      String?  @map("session_state")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime @db.Timestamptz(6)
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+model PaymentTransaction {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  String?   @map("user_id") @db.Uuid
+  mercadopagoPaymentId    String?   @unique @map("mercadopago_payment_id")
+  mercadopagoPreferenceId String?   @map("mercadopago_preference_id")
+  status                  String
+  amount                  Decimal?  @db.Decimal(10, 2)
+  currency                String?   @default("ARS")
+  paymentMethod           String?   @map("payment_method")
+  paymentDate             DateTime? @map("payment_date") @db.Timestamptz(6)
+  metadata                Json?
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([mercadopagoPaymentId])
+  @@map("payment_transactions")
+}
+
+model SubscriptionHistory {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  subscriptionId String?  @map("subscription_id")
+  action         String
+  previousStatus String?  @map("previous_status")
+  newStatus      String?  @map("new_status")
+  amount         Decimal? @db.Decimal(10, 2)
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("subscription_history")
+}
+
+model Partner {
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String
+  description         String?
+  logoUrl             String?  @map("logo_url")
+  coverImageUrl       String?  @map("cover_image_url")
+  websiteUrl          String?  @map("website_url")
+  category            String?
+  discountPercentage  Int?     @map("discount_percentage")
+  discountDescription String?  @map("discount_description")
+  isActive            Boolean? @default(true) @map("is_active")
+  termsAndConditions  String?  @map("terms_and_conditions")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  coupons Coupon[]
+
+  @@index([category])
+  @@index([isActive])
+  @@map("partners")
+}
+
+model Coupon {
+  id                  String    @id @default(uuid()) @db.Uuid
+  partnerId           String    @map("partner_id") @db.Uuid
+  couponCode          String    @unique @map("coupon_code")
+  title               String?
+  description         String?
+  coverImageUrl       String?   @map("cover_image_url")
+  maxPerUser          Int?      @map("max_per_user")
+  isAssigned          Boolean?  @default(false) @map("is_assigned")
+  userId              String?   @map("user_id") @db.Uuid
+  assignedAt          DateTime? @map("assigned_at") @db.Timestamptz(6)
+  usedAt              DateTime? @map("used_at") @db.Timestamptz(6)
+  expiresAt           DateTime? @map("expires_at") @db.Timestamptz(6)
+  discountPercentage  Int?      @map("discount_percentage")
+  discountDescription String?   @map("discount_description")
+  termsAndConditions  String?   @map("terms_and_conditions")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([partnerId])
+  @@index([isAssigned])
+  @@index([couponCode])
+  @@map("coupons")
+}
+
+model CoachAvailability {
+  id           String   @id @default(uuid()) @db.Uuid
+  coachId      String   @map("coach_id") @db.Uuid
+  dayOfWeek    Int      @map("day_of_week")
+  startTime    DateTime @map("start_time") @db.Time(6)
+  endTime      DateTime @map("end_time") @db.Time(6)
+  isAvailable  Boolean? @default(true) @map("is_available")
+  slotDuration Int      @default(60) @map("slot_duration")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coach User @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@unique([coachId, dayOfWeek, startTime])
+  @@index([coachId], map: "idx_coach_availability_coach")
+  @@map("coach_availability")
+}
+
+model Appointment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  coachId              String   @map("coach_id") @db.Uuid
+  appointmentDate      DateTime @map("appointment_date") @db.Date
+  appointmentTime      DateTime @map("appointment_time") @db.Time(6)
+  durationMinutes      Int?     @default(60) @map("duration_minutes")
+  status               String?  @default("scheduled") @db.VarChar(50)
+  notes                String?
+  googleEventId        String?  @map("google_event_id")
+  meetingLink          String?  @map("meeting_link")
+  consultationReason   String?  @map("consultation_reason")
+  consultationSnapshot Json?    @default("{}") @map("consultation_snapshot")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user  User @relation("UserAppointments", fields: [userId], references: [id], onDelete: Cascade)
+  coach User @relation("CoachAppointments", fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_appointments_user")
+  @@index([coachId], map: "idx_appointments_coach")
+  @@index([appointmentDate], map: "idx_appointments_date")
+  @@index([status], map: "idx_appointments_status")
+  @@map("appointments")
+}
+
+model UserHealthProfile {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  weight Decimal? @db.Decimal(5, 2)
+  height Decimal? @db.Decimal(5, 2)
+  age    Int?
+  gender String?  @db.VarChar(50)
+
+  diseases    String?
+  medications String?
+  allergies   String?
+
+  objectives             String?
+  activityLevel          String? @map("activity_level") @db.VarChar(50)
+  currentExerciseRoutine String? @map("current_exercise_routine")
+
+  previousInjuries    String? @map("previous_injuries")
+  dietaryRestrictions String? @map("dietary_restrictions")
+  additionalNotes     String? @map("additional_notes")
+
+  // Historia clínica nutricional
+  consultationReason String?  @map("consultation_reason")
+  occupation         String?
+  supplements        String?
+  surgeries          String?
+  intolerances       String?
+  familyHistory      String?  @map("family_history")
+  waistCircumference Decimal? @map("waist_circumference") @db.Decimal(5, 2)
+  bodyFatPercent     Decimal? @map("body_fat_percent") @db.Decimal(4, 2)
+  exerciseType       String?  @map("exercise_type")
+  exerciseFrequency  String?  @map("exercise_frequency")
+  sleepHours         Decimal? @map("sleep_hours") @db.Decimal(3, 1)
+  stressLevel        Int?     @map("stress_level")
+  workType           String?  @map("work_type")
+  energyLevel        Int?     @map("energy_level")
+  digestion          String?
+  mood               String?
+  concentration      String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_user_health_profiles_user")
+  @@map("user_health_profiles")
+}
+
+model CoachCalendarToken {
+  id            String    @id @default(uuid()) @db.Uuid
+  coachId       String    @map("coach_id") @db.Uuid
+  provider      String    @db.VarChar(50)
+  accessToken   String    @map("access_token")
+  refreshToken  String?   @map("refresh_token")
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz(6)
+  calendarEmail String?   @map("calendar_email") @db.VarChar(255)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  coach User @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@unique([coachId, provider])
+  @@map("coach_calendar_tokens")
+}
+
+model PointTransaction {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  amount        Int
+  actionType    String   @map("action_type")
+  description   String?
+  referenceType String?  @map("reference_type")
+  referenceId   String?  @map("reference_id") @db.Uuid
+  metadata      Json?    @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@index([actionType])
+  @@map("point_transactions")
+}
+
+model UserPoints {
+  userId      String   @id @map("user_id") @db.Uuid
+  totalPoints Int      @default(0) @map("total_points")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_points")
+}
+
+model ReferralStats {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  totalReferrals  Int?     @default(0) @map("total_referrals")
+  activeReferrals Int?     @default(0) @map("active_referrals")
+  totalEarnings   Decimal? @default(0) @map("total_earnings") @db.Decimal(10, 2)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_stats")
+}
+
+model PendingCheckout {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  productId    String?  @map("product_id")
+  referralCode String?  @map("referral_code")
+  billing      Json?
+  shipping     Json?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([email])
+  @@map("pending_checkout")
+}
+
+model SystemLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorEmail String   @map("actor_email")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
+  @@index([actorId])
+  @@index([entityType])
+  @@map("system_logs")
+}
+
+model SectionCover {
+  id         String   @id @default(uuid()) @db.Uuid
+  sectionKey String   @unique @map("section_key")
+  title      String?
+  subtitle   String?
+  imageUrl   String?  @map("image_url")
+  isActive   Boolean? @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("section_covers")
+}
+
+model PartnerCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("partner_categories")
+}
