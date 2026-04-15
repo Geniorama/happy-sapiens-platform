@@ -52,11 +52,12 @@ export function DashboardLayout({ children, userName, userEmail, subscriptionSta
     <div className="min-h-screen bg-zinc-50">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-4 z-50">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-            <span className="text-white font-bold text-sm">HS</span>
-          </div>
-          <span className="font-heading text-lg text-zinc-900">Happy Sapiens</span>
+        <Link href="/dashboard" className="flex items-center">
+          <img
+            src="https://cdn.shopify.com/s/files/1/0957/4632/6892/files/hsRecurso_1_1.png?v=1775847307"
+            alt="Happy Sapiens"
+            className="h-12 w-auto"
+          />
         </Link>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -87,16 +88,17 @@ export function DashboardLayout({ children, userName, userEmail, subscriptionSta
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-200">
-          <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-              <span className="text-white font-bold text-sm">HS</span>
-            </div>
-            <span className="font-heading text-xl text-zinc-900 hidden sm:inline">Happy Sapiens</span>
+        <div className="relative flex items-center justify-center px-6 py-6 border-b border-zinc-200">
+          <Link href="/dashboard" className="flex items-center" onClick={() => setMobileMenuOpen(false)}>
+            <img
+              src="https://cdn.shopify.com/s/files/1/0957/4632/6892/files/hsRecurso_1_1.png?v=1775847307"
+              alt="Happy Sapiens"
+              className="h-14 w-auto"
+            />
           </Link>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+            className="lg:hidden absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
             aria-label="Close menu"
           >
             <X className="w-5 h-5 text-zinc-700" />

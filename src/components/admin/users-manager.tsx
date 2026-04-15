@@ -133,15 +133,17 @@ function CreateUserForm({ onClose, onCreated }: { onClose: () => void; onCreated
             {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-zinc-700 mb-1">Suscripción</label>
-          <select value={form.subscription_status} onChange={e => set("subscription_status", e.target.value)}
-            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white">
-            <option value="active">Activa</option>
-            <option value="inactive">Inactiva</option>
-          </select>
-        </div>
-        {form.subscription_status === "active" && (
+        {form.role === "user" && (
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 mb-1">Suscripción</label>
+            <select value={form.subscription_status} onChange={e => set("subscription_status", e.target.value)}
+              className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white">
+              <option value="active">Activa</option>
+              <option value="inactive">Inactiva</option>
+            </select>
+          </div>
+        )}
+        {form.role === "user" && form.subscription_status === "active" && (
           <>
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1">Fecha de inicio *</label>

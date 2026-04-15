@@ -38,12 +38,24 @@ export async function createUser(data: {
   if (!data.password || data.password.length < 6)
     return { error: "La contraseña debe tener al menos 6 caracteres" }
 
-  if (data.subscription_status === "active") {
+  const isRegularUser = data.role === "user"
+
+  if (isRegularUser && data.subscription_status === "active") {
     if (!data.subscription_start_date) return { error: "La fecha de inicio es requerida" }
     if (!data.subscription_end_date) return { error: "La fecha de vencimiento es requerida" }
     if (new Date(data.subscription_end_date) <= new Date(data.subscription_start_date))
       return { error: "La fecha de vencimiento debe ser posterior a la de inicio" }
   }
+
+  const subscriptionStatus = isRegularUser ? data.subscription_status : "inactive"
+  const subscriptionStartDate =
+    isRegularUser && data.subscription_status === "active"
+      ? new Date(data.subscription_start_date!)
+      : null
+  const subscriptionEndDate =
+    isRegularUser && data.subscription_status === "active"
+      ? new Date(data.subscription_end_date!)
+      : null
 
   const email = data.email.trim().toLowerCase()
 
@@ -64,11 +76,9 @@ export async function createUser(data: {
         email,
         password: hashedPassword,
         role: data.role,
-        subscriptionStatus: data.subscription_status,
-        subscriptionStartDate:
-          data.subscription_status === "active" ? new Date(data.subscription_start_date!) : null,
-        subscriptionEndDate:
-          data.subscription_status === "active" ? new Date(data.subscription_end_date!) : null,
+        subscriptionStatus,
+        subscriptionStartDate,
+        subscriptionEndDate,
         isCoachActive: data.role === "coach",
       },
       select: {
@@ -100,7 +110,7 @@ export async function createUser(data: {
       target_name: data.name.trim(),
       target_email: email,
       role: data.role,
-      subscription_status: data.subscription_status,
+      subscription_status: subscriptionStatus,
     },
   })
 
