@@ -37,6 +37,7 @@ export async function POST(req: Request) {
         email: userEmail,
         productId: plan.id,
         shopifyVariantId: plan.shopifyVariantId,
+        shopifyFirstOrderVariantId: plan.shopifyFirstOrderVariantId || null,
         taxExempt: plan.taxExempt,
         referralCode: referralCode || null,
       }),

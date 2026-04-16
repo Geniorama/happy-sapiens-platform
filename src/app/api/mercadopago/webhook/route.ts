@@ -83,6 +83,7 @@ async function handlePreApproval(preApprovalId: string) {
   let referralCode: string | null = null
   let productId: string | null = null
   let shopifyVariantId: string | null = null
+  let shopifyFirstOrderVariantId: string | null = null
   let taxExempt = false
   const preApprovalAny = preApproval as unknown as Record<string, unknown>
   const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
@@ -98,6 +99,7 @@ async function handlePreApproval(preApprovalId: string) {
       referralCode = parsed.referralCode || null
       productId = parsed.productId || null
       shopifyVariantId = parsed.shopifyVariantId || null
+      shopifyFirstOrderVariantId = parsed.shopifyFirstOrderVariantId || null
       taxExempt = parsed.taxExempt === true
     } catch {
       // external_reference no es JSON, ignorar
@@ -245,8 +247,14 @@ async function handlePreApproval(preApprovalId: string) {
       await sendWelcomeEmail(email, name, resetToken)
     }
 
-    // Crear primer pedido en Shopify al activar la suscripción
-    if (shopifyVariantId) {
+    // Crear primer pedido en Shopify al activar la suscripción.
+    // Usuarios nuevos reciben el Kit de bienvenida (bundle con accesorios de obsequio)
+    // si el plan lo tiene configurado. Reactivaciones y planes sin kit usan el variant normal.
+    const isNewUser = !existingUser
+    const useWelcomeKit = isNewUser && !!shopifyFirstOrderVariantId
+    const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
+
+    if (firstOrderVariantId) {
       const billingAddress = billingData
         ? {
             phone: billingData.phone || '',
@@ -270,18 +278,25 @@ async function handlePreApproval(preApprovalId: string) {
         const order = await createShopifyOrder({
           email,
           name,
-          variantId: shopifyVariantId,
+          variantId: firstOrderVariantId,
           price: subscriptionPrice,
           taxExempt,
-          note: 'Primera entrega — suscripción activada vía MercadoPago',
+          note: useWelcomeKit
+            ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
+            : 'Primera entrega — suscripción activada vía MercadoPago',
           billing: billingAddress,
           shipping: shippingAddress,
         })
-        await log('webhook.preapproval.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
-        console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
+        await log('webhook.preapproval.shopify_order_created', email, {
+          order_number: order.order_number,
+          order_id: order.id,
+          welcomeKit: useWelcomeKit,
+          variantId: firstOrderVariantId,
+        })
+        console.log(`Orden Shopify creada: #${order.order_number} para ${email}${useWelcomeKit ? ' (Kit bienvenida)' : ''}`)
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
-        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: shopifyVariantId })
+        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: firstOrderVariantId })
         console.error('Error creando orden en Shopify:', err)
       }
     }

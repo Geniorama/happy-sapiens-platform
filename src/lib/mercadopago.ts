@@ -20,6 +20,9 @@ export type SubscriptionPlan = {
   currency: string
   taxExempt: boolean
   shopifyVariantId: string
+  // Kit de bienvenida (bundle con accesorios de obsequio) — se usa solo en la
+  // primera orden de usuarios nuevos. Si no está definido, se usa shopifyVariantId.
+  shopifyFirstOrderVariantId?: string
 }
 
 export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
@@ -31,6 +34,7 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     currency: 'COP',
     taxExempt: true,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND!,
+    shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND_KIT,
   },
   'happy-on': {
     id: 'happy-on',
@@ -40,6 +44,7 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     currency: 'COP',
     taxExempt: false,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON!,
+    shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON_KIT,
   },
   'happy-off': {
     id: 'happy-off',
@@ -49,6 +54,7 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     currency: 'COP',
     taxExempt: false,
     shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF!,
+    shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF_KIT,
   },
 }
 
