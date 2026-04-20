@@ -138,6 +138,45 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Credentials: la validación ya ocurre en authorize()
       if (account?.provider === "credentials") return true
 
+      if (account?.provider === "google") {
+        const googleId = account.providerAccountId
+
+        if (googleId) {
+          const linkedUser = await prisma.user.findFirst({
+            where: { googleId },
+            select: { id: true },
+          })
+          if (linkedUser) return true
+        }
+
+        if (user?.email && googleId) {
+          const userByEmail = await prisma.user.findUnique({
+            where: { email: user.email },
+            select: { id: true, googleId: true },
+          })
+
+          if (userByEmail) {
+            if (userByEmail.googleId && userByEmail.googleId !== googleId) {
+              return "/auth/error?error=GoogleLinkedToDifferentAccount"
+            }
+
+            if (!userByEmail.googleId) {
+              try {
+                await prisma.user.update({
+                  where: { id: userByEmail.id },
+                  data: { googleId },
+                })
+              } catch {
+                return "/auth/error?error=GoogleLinkFailed"
+              }
+            }
+            return true
+          }
+        }
+
+        return "/auth/error?error=GoogleNotLinked"
+      }
+
       if (account?.provider === "strava") {
         const athleteId = account.providerAccountId
 
@@ -213,6 +252,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Para OAuth, user.id es el ID del proveedor → buscamos por email o stravaAthleteId.
         const isCredentials = account?.provider === "credentials"
         const isStrava = account?.provider === "strava"
+        const isGoogle = account?.provider === "google"
 
         let dbUser: { id: string; role: string | null; subscriptionStatus: string | null } | null = null
 
@@ -227,6 +267,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               where: { stravaAthleteId: account.providerAccountId },
               select: { id: true, role: true, subscriptionStatus: true },
             })
+          } else if (isGoogle && account?.providerAccountId) {
+            dbUser = await prisma.user.findFirst({
+              where: { googleId: account.providerAccountId },
+              select: { id: true, role: true, subscriptionStatus: true },
+            })
+            if (!dbUser && user.email) {
+              dbUser = await prisma.user.findUnique({
+                where: { email: user.email },
+                select: { id: true, role: true, subscriptionStatus: true },
+              })
+            }
           } else if (user.email) {
             dbUser = await prisma.user.findUnique({
               where: { email: user.email },

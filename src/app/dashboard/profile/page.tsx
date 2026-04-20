@@ -7,6 +7,8 @@ import { ProfileForm } from "@/components/dashboard/profile-form"
 import { AvatarUpload } from "@/components/dashboard/avatar-upload"
 import { ReferralCode } from "@/components/dashboard/referral-code"
 import { HealthProfileForm } from "@/components/dashboard/health-profile-form"
+import { StravaLinkCard } from "@/components/dashboard/strava-link-card"
+import { GoogleLinkCard } from "@/components/dashboard/google-link-card"
 import { getHealthProfile } from "@/app/dashboard/coaches/actions"
 
 export default async function ProfilePage() {
@@ -42,9 +44,15 @@ export default async function ProfilePage() {
         gender: userRow.gender,
         image: userRow.image,
         referral_code: userRow.referralCode,
+        strava_athlete_id: userRow.stravaAthleteId,
+        google_id: userRow.googleId,
+        has_password: Boolean(userRow.password),
         created_at: userRow.createdAt.toISOString(),
       }
     : null
+
+  const role = session.user.role
+  const canLinkStrava = role === "user" || role === "coach"
 
   const referralStats = referralStatsRow
     ? {
@@ -137,6 +145,20 @@ export default async function ProfilePage() {
           userId={session.user.id}
           existingProfile={healthProfile || undefined}
         />
+
+        {/* Vincular Google */}
+        <GoogleLinkCard
+          isLinked={Boolean(user?.google_id)}
+          canUnlink={Boolean(user?.has_password) || Boolean(user?.strava_athlete_id)}
+        />
+
+        {/* Vincular Strava */}
+        {canLinkStrava && (
+          <StravaLinkCard
+            isLinked={Boolean(user?.strava_athlete_id)}
+            athleteId={user?.strava_athlete_id ?? null}
+          />
+        )}
 
         {/* Código de Referido */}
         {user?.referral_code && (

@@ -22,14 +22,14 @@ const errorMessages: Record<string, { title: string; description: string }> = {
       "Tu cuenta de Facebook o Google no está registrada en la plataforma. Para acceder necesitas una suscripción activa.",
   },
   StravaEmailRequired: {
-    title: "Email no disponible en Strava",
+    title: "No pudimos identificarte con Strava",
     description:
-      "Strava no compartio tu email con Happy Sapiens. Acepta los permisos solicitados o inicia sesion con correo y contraseña.",
+      "Strava no comparte tu email con Happy Sapiens, así que no podemos reconocerte automáticamente. Si ya tienes cuenta, inicia sesión con correo (o Google) y vincula Strava desde tu perfil. Si aún no tienes cuenta, primero necesitas una suscripción.",
   },
   StravaNotLinked: {
-    title: "Cuenta de Strava sin vincular",
+    title: "Esta cuenta de Strava no está vinculada",
     description:
-      "Tu cuenta de Strava no esta vinculada a un usuario de Happy Sapiens. Inicia sesion con Google o correo y contraseña para vincularla.",
+      "Tu Strava aún no está conectado a un usuario de Happy Sapiens. Si ya tienes cuenta, inicia sesión con correo (o Google) y vincula Strava desde tu perfil. Si aún no tienes cuenta, primero necesitas una suscripción.",
   },
   StravaLinkedToDifferentAthlete: {
     title: "Conflicto de vinculación en Strava",
@@ -40,6 +40,21 @@ const errorMessages: Record<string, { title: string; description: string }> = {
     title: "No se pudo vincular Strava",
     description:
       "Ocurrió un error al guardar la vinculación con Strava. Intenta de nuevo en unos minutos.",
+  },
+  GoogleNotLinked: {
+    title: "Esta cuenta de Google no está vinculada",
+    description:
+      "Tu cuenta de Google aún no está conectada a un usuario de Happy Sapiens. Si ya tienes cuenta, inicia sesión con correo y vincula Google desde tu perfil. Si aún no tienes cuenta, primero necesitas una suscripción.",
+  },
+  GoogleLinkedToDifferentAccount: {
+    title: "Conflicto de vinculación en Google",
+    description:
+      "Tu usuario ya está vinculado a otra cuenta de Google. Contáctanos para actualizar la vinculación de forma segura.",
+  },
+  GoogleLinkFailed: {
+    title: "No se pudo vincular Google",
+    description:
+      "Ocurrió un error al guardar la vinculación con Google. Intenta de nuevo en unos minutos.",
   },
   CredentialsSignin: {
     title: "Credenciales incorrectas",
@@ -69,6 +84,9 @@ export default async function AuthErrorPage({
   const isNoAccount =
     error === "OAuthCreateAccount" || error === "OAuthAccountNotLinked"
 
+  const isStravaNotLinked =
+    error === "StravaEmailRequired" || error === "StravaNotLinked"
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full text-center space-y-6">
@@ -92,6 +110,31 @@ export default async function AuthErrorPage({
             >
               Suscribirme
             </a>
+          ) : null}
+
+          {isStravaNotLinked ? (
+            <>
+              <div className="text-left text-sm text-gray-700 bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
+                <p className="font-medium text-gray-900">Ya tengo cuenta: ¿cómo vincular Strava?</p>
+                <ol className="list-decimal list-inside space-y-1 text-gray-600">
+                  <li>Inicia sesión con tu correo y contraseña.</li>
+                  <li>Ve a <span className="font-medium">Mi Perfil</span>.</li>
+                  <li>Pulsa <span className="font-medium">Conectar con Strava</span>.</li>
+                </ol>
+              </div>
+              <div className="text-left text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="font-medium text-gray-900">Aún no tengo cuenta</p>
+                <p className="text-gray-600">
+                  Necesitas una suscripción activa. Tu cuenta se crea automáticamente al completar el pago.
+                </p>
+                <Link
+                  href="/subscribe"
+                  className="inline-block mt-1 text-sm font-medium text-primary hover:text-primary/90"
+                >
+                  Ver planes de suscripción →
+                </Link>
+              </div>
+            </>
           ) : null}
 
           <Link
