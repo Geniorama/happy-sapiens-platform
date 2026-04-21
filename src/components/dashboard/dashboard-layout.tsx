@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
-import { User, LogOut, Handshake, Menu, X, Users, Star, CreditCard, PauseCircle } from "lucide-react"
+import { User, LogOut, Handshake, Menu, X, Users, Star, CreditCard, PauseCircle, HelpCircle } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 import { SearchBar } from "@/components/dashboard/search-bar"
 
@@ -41,6 +41,7 @@ export function DashboardLayout({ children, userName, userEmail, userImage, init
     { name: "Mis Puntos", href: "/dashboard/points", icon: Star },
     { name: "Aliados", href: "/dashboard/partners", icon: Handshake },
     { name: "Ritual Coaches", href: "/dashboard/coaches", icon: Users },
+    { name: "Ayuda", href: "/dashboard/help", icon: HelpCircle },
   ]
 
   return (
