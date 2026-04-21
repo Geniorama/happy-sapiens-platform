@@ -86,3 +86,7 @@ h1, h2, h3, h4, h5, h6 {
 .phone-input--sm .PhoneInputInput  { padding: 0.5rem 0.75rem 0.5rem 0.5rem; }   /* py-2   */
 .phone-input--md .PhoneInputInput  { padding: 0.625rem 0.75rem 0.625rem 0.5rem; } /* py-2.5 */
 .phone-input--lg .PhoneInputInput  { padding: 0.75rem 1rem 0.75rem 0.5rem; }     /* py-3   */
+
+/* Ocultar scrollbar en contenedores con overflow horizontal (tabs, etc.) */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

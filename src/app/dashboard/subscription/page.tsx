@@ -3,13 +3,14 @@ import { prisma } from "@/lib/db"
 import { redirect } from "next/navigation"
 import {
   Calendar, Check, Sparkles, Package, CreditCard, RefreshCw,
-  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Truck, Clock, Settings2, AlertTriangle,
+  BadgeCheck, Receipt, ExternalLink, ShoppingBag, Clock, Settings2, AlertTriangle,
 } from "lucide-react"
 
 import Link from "next/link"
 import { SectionCover } from "@/components/dashboard/section-cover"
 import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
 import { getShopifyOrdersByEmail } from "@/lib/shopify"
+import { OrdersList } from "@/components/dashboard/orders-list"
 
 const PRODUCT_LABELS: Record<string, string> = {
   "happy-on": "Happy On",
@@ -30,13 +31,6 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
   ticket: "Efectivo",
   account_money: "Dinero en cuenta MP",
-}
-
-const FULFILLMENT_STATUS: Record<string, { label: string; color: string; truck: boolean }> = {
-  fulfilled: { label: "Despachado", color: "bg-green-100 text-green-700", truck: true },
-  partial: { label: "Parcial", color: "bg-yellow-100 text-yellow-700", truck: true },
-  pending: { label: "Pendiente despacho", color: "bg-orange-100 text-orange-700", truck: false },
-  archived: { label: "Archivado", color: "bg-zinc-100 text-zinc-500", truck: false },
 }
 
 export default async function SubscriptionPage() {
@@ -305,38 +299,17 @@ export default async function SubscriptionPage() {
               <ShoppingBag className="w-5 h-5 text-zinc-500" strokeWidth={1.5} />
               <h2 className="text-lg sm:text-xl lg:text-2xl font-heading text-zinc-900">Mis Pedidos</h2>
             </div>
-            <div className="space-y-3">
-              {shopifyOrders.map((order) => {
-                const fulfillmentKey = order.closed_at
-                  ? "archived"
-                  : (order.fulfillment_status ?? "pending")
-                const fulfillment = FULFILLMENT_STATUS[fulfillmentKey] ?? FULFILLMENT_STATUS.pending
-                const FulfillIcon = fulfillment.truck ? Truck : Clock
-                const product = order.line_items[0]
-                const orderDate = new Date(order.created_at).toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "numeric" })
-                const amount = product
-                  ? Number(product.price).toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })
-                  : "—"
-
-                return (
-                  <div key={order.id} className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200 gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex-shrink-0 w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center">
-                        <Package className="w-4 h-4 text-primary" strokeWidth={1.5} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-zinc-900 text-sm">Pedido #{order.order_number} · {product?.title ?? "—"}</p>
-                        <p className="text-xs text-zinc-500">{orderDate} · {amount}</p>
-                      </div>
-                    </div>
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${fulfillment.color}`}>
-                      <FulfillIcon className="w-3 h-3" strokeWidth={2} />
-                      {fulfillment.label}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+            <OrdersList
+              orders={shopifyOrders.map((o) => ({
+                id: o.id,
+                order_number: o.order_number,
+                created_at: o.created_at,
+                closed_at: o.closed_at,
+                fulfillment_status: o.fulfillment_status,
+                line_items: o.line_items,
+              }))}
+              pageSize={5}
+            />
           </div>
         )}
 

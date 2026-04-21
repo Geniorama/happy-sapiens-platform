@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ReactNode, useState, useEffect } from "react"
+import { ReactNode, useState } from "react"
 import { User, LogOut, Handshake, Menu, X, Users, Star, CreditCard, PauseCircle } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 import { SearchBar } from "@/components/dashboard/search-bar"
@@ -25,20 +25,15 @@ interface DashboardLayoutProps {
   children: ReactNode
   userName?: string | null
   userEmail?: string | null
+  userImage?: string | null
+  initialPoints?: number | null
   subscriptionStatus?: string | null
 }
 
-export function DashboardLayout({ children, userName, userEmail, subscriptionStatus }: DashboardLayoutProps) {
+export function DashboardLayout({ children, userName, userEmail, userImage, initialPoints, subscriptionStatus }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [points, setPoints] = useState<number | null>(null)
-
-  useEffect(() => {
-    fetch("/api/points")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.balance != null) setPoints(data.balance) })
-      .catch(() => {})
-  }, [])
+  const points = initialPoints ?? null
 
   const navigation = [
     { name: "Mi Perfil", href: "/dashboard/profile", icon: User },
@@ -108,10 +103,18 @@ export function DashboardLayout({ children, userName, userEmail, subscriptionSta
         {/* User Info */}
         <div className="px-6 py-6 border-b border-zinc-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-primary font-semibold text-sm">
-                {userName?.charAt(0)?.toUpperCase() || "U"}
-              </span>
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+              {userImage ? (
+                <img
+                  src={userImage}
+                  alt={userName ?? "Avatar"}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-primary font-semibold text-sm">
+                  {userName?.charAt(0)?.toUpperCase() || "U"}
+                </span>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-zinc-900 truncate">

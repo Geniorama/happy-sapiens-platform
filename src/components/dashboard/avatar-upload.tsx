@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Camera, Upload, X, Loader2 } from "lucide-react"
 import { uploadAvatar, deleteAvatar } from "@/app/dashboard/profile/actions"
 import { PointsBanner } from "@/components/dashboard/points-banner"
@@ -12,6 +13,7 @@ interface AvatarUploadProps {
 }
 
 export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadProps) {
+  const router = useRouter()
   const [isUploading, setIsUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(currentImage || null)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
@@ -57,6 +59,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
       } else {
         setMessage({ type: "success", text: "Imagen actualizada correctamente" })
         if (result.pointsEarned) setPointsEarned(result.pointsEarned)
+        router.refresh()
       }
     } catch (error) {
       const is413 = error instanceof Error && (
@@ -89,6 +92,7 @@ export function AvatarUpload({ currentImage, userName, userId }: AvatarUploadPro
     } else {
       setPreview(null)
       setMessage({ type: "success", text: "Imagen eliminada correctamente" })
+      router.refresh()
     }
 
     setIsUploading(false)

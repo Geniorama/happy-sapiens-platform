@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { logAdminAction } from "@/lib/log"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
+import { ensureReferralCode } from "@/lib/referral-code"
 
 async function getAdminSession() {
   const session = await auth()
@@ -98,6 +99,12 @@ export async function createUser(data: {
   } catch (err) {
     console.error("Error creando usuario:", err)
     return { error: "Error al crear el usuario" }
+  }
+
+  try {
+    await ensureReferralCode(created.id)
+  } catch (err) {
+    console.error("Error generando código de referido:", err)
   }
 
   await logAdminAction({
