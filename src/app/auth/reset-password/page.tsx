@@ -1,13 +1,12 @@
 "use client"
 
 import { useState, Suspense } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
-  const router = useRouter()
 
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -52,7 +51,9 @@ function ResetPasswordForm() {
       }
 
       setSuccess(true)
-      setTimeout(() => router.push("/auth/login"), 3000)
+      setTimeout(() => {
+        window.location.href = "/auth/login"
+      }, 3000)
     } catch {
       setError("Ocurrió un error. Intenta de nuevo.")
     } finally {

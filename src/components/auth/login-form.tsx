@@ -2,11 +2,9 @@
 
 import { useState } from "react"
 import { signIn, getSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 
 export function LoginForm() {
-  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,23 +26,19 @@ export function LoginForm() {
 
       if (result?.error) {
         setError("Credenciales inválidas")
+        setIsLoading(false)
         return
       }
 
       const session = await getSession()
       const role = session?.user?.role
 
-      if (role === "admin") {
-        router.push("/admin")
-      } else if (role === "coach") {
-        router.push("/coach")
-      } else {
-        router.push("/dashboard")
-      }
-      router.refresh()
+      const destination =
+        role === "admin" ? "/admin" : role === "coach" ? "/coach" : "/dashboard"
+
+      window.location.href = destination
     } catch {
       setError("Ocurrió un error al iniciar sesión")
-    } finally {
       setIsLoading(false)
     }
   }
