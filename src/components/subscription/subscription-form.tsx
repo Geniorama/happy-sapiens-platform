@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { Check } from "lucide-react"
-import { SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/mercadopago"
+import type { SubscriptionPlan } from "@/lib/mercadopago"
 import { COLOMBIA_DEPARTMENTS, COLOMBIA_LOCATIONS } from "@/lib/colombia-locations"
+import { PhoneInput } from "@/components/ui/phone-input"
 
 const DOCUMENT_TYPES = [
   { value: "CC", label: "Cédula de Ciudadanía" },
@@ -45,7 +46,15 @@ const emptyAddress: AddressFields = {
   department: "",
 }
 
-export function SubscriptionForm() {
+export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
+  const plansMap = useMemo(
+    () =>
+      plans.reduce<Record<string, SubscriptionPlan>>((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {}),
+    [plans]
+  )
   const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,8 +71,8 @@ export function SubscriptionForm() {
   useEffect(() => {
     const productId = searchParams.get("product")
     const refCode = searchParams.get("ref")
-    if (productId && SUBSCRIPTION_PLANS[productId]) {
-      setPlan(SUBSCRIPTION_PLANS[productId])
+    if (productId && plansMap[productId]) {
+      setPlan(plansMap[productId])
     }
     if (refCode) {
       setReferralCode(refCode.toUpperCase())
@@ -71,7 +80,7 @@ export function SubscriptionForm() {
     if (searchParams.get("oauth") === "1") {
       setOauthNotice(true)
     }
-  }, [searchParams])
+  }, [searchParams, plansMap])
 
   const handleBilling = (field: keyof AddressFields, value: string) => {
     setBilling((prev) => ({ ...prev, [field]: value }))
@@ -85,8 +94,18 @@ export function SubscriptionForm() {
     e.preventDefault()
     if (!plan) return
 
-    setIsLoading(true)
     setError(null)
+
+    if (!billing.phone) {
+      setError("Ingresa un teléfono de facturación válido")
+      return
+    }
+    if (!sameAsBilling && !shipping.phone) {
+      setError("Ingresa un teléfono de contacto para el envío")
+      return
+    }
+
+    setIsLoading(true)
 
     const formData = new FormData(e.currentTarget)
     const name = formData.get("name") as string
@@ -136,7 +155,7 @@ export function SubscriptionForm() {
         )}
         <p className="text-zinc-600">Selecciona un producto para suscribirte:</p>
         <div className="space-y-3">
-          {Object.values(SUBSCRIPTION_PLANS).map((p) => (
+          {plans.map((p) => (
             <a
               key={p.id}
               href={`/subscribe?product=${p.id}`}
@@ -255,13 +274,11 @@ export function SubscriptionForm() {
               </div>
               <div>
                 <label className={labelClass}>Teléfono</label>
-                <input
-                  type="tel"
+                <PhoneInput
                   value={billing.phone}
-                  onChange={(e) => handleBilling("phone", e.target.value)}
-                  required
-                  className={inputClass}
-                  placeholder="3001234567"
+                  onChange={(v) => handleBilling("phone", v)}
+                  variant="primary"
+                  size="lg"
                 />
               </div>
               <div>
@@ -343,13 +360,11 @@ export function SubscriptionForm() {
                 </div>
                 <div>
                   <label className={labelClass}>Teléfono de contacto</label>
-                  <input
-                    type="tel"
+                  <PhoneInput
                     value={shipping.phone}
-                    onChange={(e) => handleShipping("phone", e.target.value)}
-                    required
-                    className={inputClass}
-                    placeholder="3001234567"
+                    onChange={(v) => handleShipping("phone", v)}
+                    variant="primary"
+                    size="lg"
                   />
                 </div>
                 <div>

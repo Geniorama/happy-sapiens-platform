@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { preApprovalClient, SUBSCRIPTION_PLANS } from '@/lib/mercadopago'
+import { preApprovalClient, getSubscriptionPlan } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
 
 export async function POST(req: Request) {
@@ -13,9 +13,15 @@ export async function POST(req: Request) {
       )
     }
 
-    const plan = SUBSCRIPTION_PLANS[productId]
+    const plan = await getSubscriptionPlan(productId)
     if (!plan) {
       return NextResponse.json({ error: 'Producto no válido' }, { status: 400 })
+    }
+    if (!plan.isActive) {
+      return NextResponse.json(
+        { error: 'Este plan no está disponible para contratar en este momento.' },
+        { status: 400 }
+      )
     }
 
     const baseUrl = (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL)?.replace(/\/$/, '')
@@ -74,9 +80,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ initPoint: preApproval.init_point })
   } catch (error: unknown) {
     console.error('Error creando suscripción:', error)
-    const errorMessage = error instanceof Error
+
+    const rawMessage = error instanceof Error
       ? error.message
-      : JSON.stringify(error)
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+      : typeof error === 'string'
+        ? error
+        : JSON.stringify(error)
+
+    if (/different countries/i.test(rawMessage)) {
+      return NextResponse.json(
+        {
+          error: 'Tu cuenta de Mercado Pago está registrada en un país distinto a Colombia y no permite suscripciones desde el exterior. Por favor usa un correo asociado a una cuenta de Mercado Pago de Colombia o crea una nueva cuenta colombiana para completar la compra.',
+        },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json({ error: rawMessage }, { status: 500 })
   }
 }

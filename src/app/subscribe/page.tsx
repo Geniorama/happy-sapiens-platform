@@ -1,7 +1,10 @@
 import { Suspense } from "react"
 import { SubscriptionForm } from "@/components/subscription/subscription-form"
+import { getActiveSubscriptionPlans } from "@/lib/mercadopago"
 
-export default function SubscribePage() {
+export default async function SubscribePage() {
+  const plans = await getActiveSubscriptionPlans()
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12">
       <Suspense fallback={
@@ -12,7 +15,7 @@ export default function SubscribePage() {
           </div>
         </div>
       }>
-        <SubscriptionForm />
+        <SubscriptionForm plans={plans} />
       </Suspense>
     </div>
   )

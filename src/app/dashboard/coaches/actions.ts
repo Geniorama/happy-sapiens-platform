@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { awardPoints, awardPointsOnce, spendPoints, POINT_ACTIONS, POINTS_BY_ACTION } from "@/lib/points"
 import { createCalendarEvent, deleteCalendarEvent } from "@/lib/google-calendar"
+import { sendAppointmentConfirmation } from "@/lib/appointment-emails"
 
 interface HealthProfileData {
   // 1. Datos básicos
@@ -119,6 +120,19 @@ export async function createAppointment(data: CreateAppointmentData) {
       return { error: "Coach no encontrado o no disponible" }
     }
 
+    // El enlace de videollamada es obligatorio: el coach debe tener su Google
+    // Calendar conectado para que podamos generarlo automáticamente al agendar.
+    const calendarToken = await prisma.coachCalendarToken.findUnique({
+      where: { coachId_provider: { coachId: data.coachId, provider: "google" } },
+      select: { id: true },
+    })
+    if (!calendarToken) {
+      return {
+        error:
+          "Este coach aún no tiene configurada la videollamada. Por favor intenta con otro coach o pídele que conecte su calendario.",
+      }
+    }
+
     // Verificar que la fecha no sea en el pasado
     const appointmentDateTime = new Date(`${data.appointmentDate}T${data.appointmentTime}`)
     if (appointmentDateTime < new Date()) {
@@ -227,15 +241,38 @@ export async function createAppointment(data: CreateAppointmentData) {
 
       meetLink = createdMeetLink ?? undefined
 
-      if (googleEventId || createdMeetLink) {
-        await prisma.appointment.update({
-          where: { id: newAppt.id },
-          data: {
-            ...(googleEventId ? { googleEventId } : {}),
-            ...(createdMeetLink ? { meetingLink: createdMeetLink } : {}),
-          },
+      if (!createdMeetLink) {
+        // Rollback: la cita no puede existir sin enlace de videollamada.
+        // Intentamos limpiar también el evento de Google si se creó sin Meet
+        // (caso raro pero posible si el calendario rechaza el conferenceData).
+        await prisma.appointment.delete({ where: { id: newAppt.id } }).catch((err) => {
+          console.error("Error rolling back appointment without meet link:", err)
         })
+        if (googleEventId) {
+          await deleteCalendarEvent(data.coachId, googleEventId).catch(() => {})
+        }
+        revalidatePath("/dashboard/coaches")
+        revalidatePath("/dashboard/coaches/appointments")
+        return {
+          error:
+            "No pudimos generar el enlace de videollamada para esta cita. Intenta de nuevo en unos minutos o contacta al coach.",
+        }
       }
+
+      await prisma.appointment.update({
+        where: { id: newAppt.id },
+        data: {
+          ...(googleEventId ? { googleEventId } : {}),
+          meetingLink: createdMeetLink,
+        },
+      })
+
+      // Notificación por email a usuario y coach.
+      // Esperamos a que termine para garantizar que ambos correos se despachen
+      // antes de que la Server Action retorne (si no, el runtime puede cortar
+      // los fetch a Zeptomail y solo se envía uno). sendAppointmentConfirmation
+      // ya traga sus propios errores, así que no rompe el booking.
+      await sendAppointmentConfirmation(newAppt.id)
     }
 
     // Puntos por reservar cita (cada vez)

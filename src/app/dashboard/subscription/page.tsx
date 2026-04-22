@@ -8,7 +8,7 @@ import {
 
 import Link from "next/link"
 import { SectionCover } from "@/components/dashboard/section-cover"
-import { SUBSCRIPTION_PLANS } from "@/lib/mercadopago"
+import { getSubscriptionPlan } from "@/lib/mercadopago"
 import { getShopifyOrdersByEmail } from "@/lib/shopify"
 import { OrdersList } from "@/components/dashboard/orders-list"
 
@@ -106,7 +106,7 @@ export default async function SubscriptionPage() {
 
   const subscriptionStatus = user?.subscription_status || "inactive"
   const statusInfo = subscriptionStatusLabels[subscriptionStatus] ?? subscriptionStatusLabels.inactive
-  const subscriptionPlan = user?.subscription_product ? SUBSCRIPTION_PLANS[user.subscription_product] : null
+  const subscriptionPlan = user?.subscription_product ? await getSubscriptionPlan(user.subscription_product) : null
   const isActive = subscriptionStatus === "active" || subscriptionStatus === "past_due"
   const isPaused = subscriptionStatus === "paused"
 

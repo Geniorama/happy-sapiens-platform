@@ -1,33 +1,52 @@
 "use client"
 
 import { useRef, useState, type ReactNode } from "react"
-import { User, Heart, Link2 } from "lucide-react"
+import { User, Heart, Link2, type LucideIcon } from "lucide-react"
 
-type TabKey = "personal" | "health" | "account"
+export type ProfileTabIcon = "user" | "heart" | "link"
 
-type Props = {
+const ICONS: Record<ProfileTabIcon, LucideIcon> = {
+  user: User,
+  heart: Heart,
+  link: Link2,
+}
+
+export type ProfileTab = {
+  key: string
+  label: string
+  icon: ProfileTabIcon
+  content: ReactNode
+}
+
+type LegacyProps = {
   personal: ReactNode
   health: ReactNode
   account: ReactNode
 }
 
-const TABS: { key: TabKey; label: string; icon: typeof User }[] = [
-  { key: "personal", label: "Perfil", icon: User },
-  { key: "health", label: "Salud", icon: Heart },
-  { key: "account", label: "Cuenta", icon: Link2 },
-]
+type ListProps = {
+  tabs: ProfileTab[]
+}
 
-export function ProfileTabs({ personal, health, account }: Props) {
-  const [active, setActive] = useState<TabKey>("personal")
+type Props = LegacyProps | ListProps
+
+function isListProps(p: Props): p is ListProps {
+  return (p as ListProps).tabs !== undefined
+}
+
+export function ProfileTabs(props: Props) {
+  const tabs: ProfileTab[] = isListProps(props)
+    ? props.tabs
+    : [
+        { key: "personal", label: "Perfil", icon: "user", content: props.personal },
+        { key: "health", label: "Salud", icon: "heart", content: props.health },
+        { key: "account", label: "Cuenta", icon: "link", content: props.account },
+      ]
+
+  const [active, setActive] = useState<string>(tabs[0]?.key ?? "")
   const anchorRef = useRef<HTMLDivElement>(null)
 
-  const panels: Record<TabKey, ReactNode> = {
-    personal,
-    health,
-    account,
-  }
-
-  const handleSelect = (key: TabKey) => {
+  const handleSelect = (key: string) => {
     setActive(key)
     const isMobile = window.matchMedia("(max-width: 1023px)").matches
     const offset = isMobile ? 64 : 68
@@ -36,6 +55,8 @@ export function ProfileTabs({ personal, health, account }: Props) {
     const top = el.getBoundingClientRect().top + window.scrollY - offset - 8
     window.scrollTo({ top, behavior: "smooth" })
   }
+
+  const activeTab = tabs.find((t) => t.key === active) ?? tabs[0]
 
   return (
     <div className="relative">
@@ -46,7 +67,8 @@ export function ProfileTabs({ personal, health, account }: Props) {
           aria-label="Secciones del perfil"
           className="flex gap-1 overflow-x-auto no-scrollbar px-3 sm:px-3 py-2"
         >
-          {TABS.map(({ key, label, icon: Icon }) => {
+          {tabs.map(({ key, label, icon }) => {
+            const Icon = ICONS[icon]
             const isActive = active === key
             return (
               <button
@@ -70,11 +92,11 @@ export function ProfileTabs({ personal, health, account }: Props) {
       </div>
 
       <div
-        id={`tab-panel-${active}`}
+        id={`tab-panel-${activeTab?.key}`}
         role="tabpanel"
         className="mt-4 sm:mt-6 space-y-4 sm:space-y-6"
       >
-        {panels[active]}
+        {activeTab?.content}
       </div>
     </div>
   )

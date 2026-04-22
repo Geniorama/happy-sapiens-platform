@@ -1,4 +1,5 @@
 import { MercadoPagoConfig, Preference, Payment, PreApproval } from 'mercadopago'
+import { prisma } from '@/lib/db'
 
 // Cliente de Mercado Pago
 const client = new MercadoPagoConfig({
@@ -19,21 +20,25 @@ export type SubscriptionPlan = {
   price: number
   currency: string
   taxExempt: boolean
+  isActive: boolean
   shopifyVariantId: string
   // Kit de bienvenida (bundle con accesorios de obsequio) — se usa solo en la
   // primera orden de usuarios nuevos. Si no está definido, se usa shopifyVariantId.
   shopifyFirstOrderVariantId?: string
 }
 
-export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
+// Fallbacks usados solo si la tabla subscription_plan_configs aún no existe
+// o no tiene registro para un slug. La fuente de verdad es la base de datos.
+const FALLBACK_PLANS: Record<string, SubscriptionPlan> = {
   'happy-blend': {
     id: 'happy-blend',
     title: 'Happy Blend',
     description: 'Suscripción mensual Happy Blend + acceso a la plataforma Happy Sapiens',
-    price: 152915,
+    price: 159800,
     currency: 'COP',
     taxExempt: true,
-    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND!,
+    isActive: true,
+    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND ?? '',
     shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_BLEND_KIT,
   },
   'happy-on': {
@@ -43,7 +48,8 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     price: 102000,
     currency: 'COP',
     taxExempt: false,
-    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON!,
+    isActive: true,
+    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON ?? '',
     shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_ON_KIT,
   },
   'happy-off': {
@@ -53,9 +59,75 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     price: 102000,
     currency: 'COP',
     taxExempt: false,
-    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF!,
+    isActive: true,
+    shopifyVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF ?? '',
     shopifyFirstOrderVariantId: process.env.SHOPIFY_VARIANT_HAPPY_OFF_KIT,
   },
+}
+
+type PlanConfigRow = {
+  slug: string
+  title: string
+  description: string
+  price: { toNumber(): number } | number
+  currency: string
+  taxExempt: boolean
+  isActive: boolean
+  shopifyVariantId: string | null
+  shopifyFirstOrderVariantId: string | null
+}
+
+function rowToPlan(row: PlanConfigRow): SubscriptionPlan {
+  const fallback = FALLBACK_PLANS[row.slug]
+  const price = typeof row.price === 'number' ? row.price : row.price.toNumber()
+  return {
+    id: row.slug,
+    title: row.title,
+    description: row.description,
+    price,
+    currency: row.currency,
+    taxExempt: row.taxExempt,
+    isActive: row.isActive,
+    shopifyVariantId: row.shopifyVariantId || fallback?.shopifyVariantId || '',
+    shopifyFirstOrderVariantId:
+      row.shopifyFirstOrderVariantId || fallback?.shopifyFirstOrderVariantId || undefined,
+  }
+}
+
+export async function getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+  try {
+    const rows = await prisma.subscriptionPlanConfig.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { slug: 'asc' }],
+    })
+    if (rows.length === 0) return Object.values(FALLBACK_PLANS)
+    return rows.map(rowToPlan)
+  } catch (err) {
+    console.error('getSubscriptionPlans: fallback to defaults', err)
+    return Object.values(FALLBACK_PLANS)
+  }
+}
+
+export async function getActiveSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+  const all = await getSubscriptionPlans()
+  return all.filter((p) => p.isActive)
+}
+
+export async function getSubscriptionPlansMap(): Promise<Record<string, SubscriptionPlan>> {
+  const list = await getSubscriptionPlans()
+  return list.reduce<Record<string, SubscriptionPlan>>((acc, plan) => {
+    acc[plan.id] = plan
+    return acc
+  }, {})
+}
+
+export async function getSubscriptionPlan(slug: string): Promise<SubscriptionPlan | null> {
+  try {
+    const row = await prisma.subscriptionPlanConfig.findUnique({ where: { slug } })
+    if (row) return rowToPlan(row)
+  } catch (err) {
+    console.error(`getSubscriptionPlan(${slug}): fallback to defaults`, err)
+  }
+  return FALLBACK_PLANS[slug] ?? null
 }
 
 // Helper para calcular fecha de expiración de suscripción
