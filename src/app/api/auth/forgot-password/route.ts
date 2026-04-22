@@ -33,13 +33,15 @@ export async function POST(req: NextRequest) {
 
     const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const resetUrl = `${appUrl}/auth/reset-password?token=${token}`
+    const logoUrl = process.env.EMAIL_LOGO_URL
+      || `${process.env.EMAIL_ASSETS_URL || appUrl}/hs-logo.png`
 
     const result = await sendEmail({
       to: email,
       subject: "Recuperación de contraseña - Happy Sapiens",
       html: `
         <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #18181b;">
-          <img src="${appUrl}/hs-logo.svg" alt="Happy Sapiens" style="width: 160px; margin-bottom: 24px;" />
+          <img src="${logoUrl}" alt="Happy Sapiens" width="160" style="width: 160px; height: auto; margin-bottom: 24px; display: block;" />
           <h2 style="margin-bottom: 8px;">Recupera tu contraseña</h2>
           <p>Hola${user.name ? ` ${user.name}` : ""},</p>
           <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta. Haz clic en el botón para continuar:</p>
@@ -57,11 +59,9 @@ export async function POST(req: NextRequest) {
 
     if (!result.success) {
       emailError = result.error
-      console.error("[forgot-password] SMTP falló", {
+      console.error("[forgot-password] envío falló", {
         to: email,
         error: result.error,
-        host: process.env.ZEPTOMAIL_SMTP_HOST,
-        port: process.env.ZEPTOMAIL_SMTP_PORT,
         from: process.env.ZEPTOMAIL_FROM_EMAIL,
       })
     }
