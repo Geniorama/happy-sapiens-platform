@@ -5,21 +5,23 @@ import { sendEmail } from "@/lib/email"
 
 export async function POST(req: NextRequest) {
   const { email } = await req.json()
+  const debug = new URL(req.url).searchParams.get("debug") === "1"
+    && process.env.ALLOW_EMAIL_DEBUG === "true"
 
   if (!email) {
     return NextResponse.json({ error: "El email es requerido" }, { status: 400 })
   }
 
-  // Verificar si el usuario existe (sin revelar si existe o no en el mensaje al cliente)
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
     select: { id: true, name: true },
   })
 
-  // Si el usuario no existe, respondemos igual para no revelar información
+  let emailError: string | undefined
+
   if (user) {
     const token = randomBytes(32).toString("hex")
-    const expires = new Date(Date.now() + 60 * 60 * 1000) // 1 hora
+    const expires = new Date(Date.now() + 60 * 60 * 1000)
 
     await prisma.user.update({
       where: { id: user.id },
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const resetUrl = `${appUrl}/auth/reset-password?token=${token}`
 
-    await sendEmail({
+    const result = await sendEmail({
       to: email,
       subject: "Recuperación de contraseña - Happy Sapiens",
       html: `
@@ -52,10 +54,21 @@ export async function POST(req: NextRequest) {
         </div>
       `,
     })
+
+    if (!result.success) {
+      emailError = result.error
+      console.error("[forgot-password] SMTP falló", {
+        to: email,
+        error: result.error,
+        host: process.env.ZEPTOMAIL_SMTP_HOST,
+        port: process.env.ZEPTOMAIL_SMTP_PORT,
+        from: process.env.ZEPTOMAIL_FROM_EMAIL,
+      })
+    }
   }
 
-  // Siempre responder con éxito
   return NextResponse.json({
     message: "Si el email está registrado, recibirás un enlace para restablecer tu contraseña.",
+    ...(debug ? { debug: { userFound: !!user, emailError: emailError ?? null } } : {}),
   })
 }
