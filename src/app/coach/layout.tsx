@@ -14,11 +14,15 @@ export default async function Layout({ children }: { children: React.ReactNode }
     redirect("/dashboard")
   }
 
-  // Obtener imagen actualizada del perfil (puede haber cambiado desde el login)
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { image: true },
-  })
+  let user: { image: string | null } | null = null
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { image: true },
+    })
+  } catch {
+    // si falla la DB, continuar con la imagen de sesión
+  }
 
   return (
     <CoachLayout

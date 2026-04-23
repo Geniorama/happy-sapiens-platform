@@ -4,7 +4,14 @@ import { prisma } from "@/lib/db"
 import { sendEmail } from "@/lib/email"
 
 export async function POST(req: NextRequest) {
-  const { email } = await req.json()
+  let email: string
+  try {
+    const body = await req.json()
+    email = body.email
+  } catch {
+    return NextResponse.json({ error: "Cuerpo de solicitud inválido" }, { status: 400 })
+  }
+
   const debug = new URL(req.url).searchParams.get("debug") === "1"
     && process.env.ALLOW_EMAIL_DEBUG === "true"
 

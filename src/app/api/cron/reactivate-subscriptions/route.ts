@@ -55,14 +55,18 @@ export async function POST(req: Request) {
 
   const markedPastDue: string[] = []
   for (const user of overdueUsers) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        subscriptionStatus: 'past_due',
-        subscriptionSyncedAt: new Date(),
-      },
-    })
-    if (user.email) markedPastDue.push(user.email)
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          subscriptionStatus: 'past_due',
+          subscriptionSyncedAt: new Date(),
+        },
+      })
+      if (user.email) markedPastDue.push(user.email)
+    } catch (err) {
+      logs.push(`Error marcando past_due ${user.email}: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
   logs.push(`Marcadas como past_due por fecha vencida: ${markedPastDue.length}`)
 

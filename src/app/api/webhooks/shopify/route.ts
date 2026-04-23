@@ -6,7 +6,8 @@ import { getShopifyCustomerById } from "@/lib/shopify"
 import { sendEmail } from "@/lib/email"
 
 function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
-  const secret = process.env.SHOPIFY_CLIENT_SECRET!
+  const secret = process.env.SHOPIFY_CLIENT_SECRET
+  if (!secret) return false
   const digest = crypto.createHmac("sha256", secret).update(body).digest("base64")
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmacHeader))
 }

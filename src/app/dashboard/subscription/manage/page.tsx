@@ -7,14 +7,19 @@ export default async function ManagePage() {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/login")
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      subscriptionStatus: true,
-      subscriptionId: true,
-      subscriptionEndDate: true,
-    },
-  })
+  let user: { subscriptionStatus: string | null; subscriptionId: string | null; subscriptionEndDate: Date | null } | null = null
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        subscriptionStatus: true,
+        subscriptionId: true,
+        subscriptionEndDate: true,
+      },
+    })
+  } catch {
+    redirect("/dashboard")
+  }
 
   if (!user?.subscriptionId) redirect("/dashboard/subscription")
 

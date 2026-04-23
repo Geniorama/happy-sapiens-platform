@@ -69,7 +69,13 @@ async function log(action: string, email: string, metadata: Record<string, unkno
 }
 
 async function handlePreApproval(preApprovalId: string) {
-  const preApproval = await preApprovalClient.get({ id: preApprovalId })
+  let preApproval: Awaited<ReturnType<typeof preApprovalClient.get>>
+  try {
+    preApproval = await preApprovalClient.get({ id: preApprovalId })
+  } catch (err) {
+    console.error('[webhook] error obteniendo preApproval:', preApprovalId, err)
+    return
+  }
 
   await log('webhook.preapproval.received', preApproval.payer_email || 'unknown', {
     preApprovalId,
@@ -325,7 +331,13 @@ async function handlePreApproval(preApprovalId: string) {
 }
 
 async function handlePayment(paymentId: string) {
-  const payment = await paymentClient.get({ id: paymentId })
+  let payment: Awaited<ReturnType<typeof paymentClient.get>>
+  try {
+    payment = await paymentClient.get({ id: paymentId })
+  } catch (err) {
+    console.error('[webhook] error obteniendo payment:', paymentId, err)
+    return
+  }
 
   // Pago de suscripción recurrente (cobro mensual automático)
   // subscription_id existe en runtime pero no está en los tipos del SDK
