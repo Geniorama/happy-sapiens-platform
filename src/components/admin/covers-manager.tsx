@@ -19,6 +19,7 @@ const SECTION_LABELS: Record<string, string> = {
   points: "Mis Puntos",
   partners: "Aliados",
   coaches: "Ritual Coaches",
+  help: "Ayuda",
 }
 
 function CoverCard({ cover }: { cover: Cover }) {

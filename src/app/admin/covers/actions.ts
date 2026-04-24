@@ -43,14 +43,16 @@ export async function updateCover(sectionKey: string, data: CoverFormData) {
   if (!session) return { error: "No autorizado" }
 
   try {
-    await prisma.sectionCover.update({
+    const payload = {
+      title: data.title?.trim() || null,
+      subtitle: data.subtitle?.trim() || null,
+      imageUrl: data.image_url?.trim() || null,
+      isActive: data.is_active ?? true,
+    }
+    await prisma.sectionCover.upsert({
       where: { sectionKey },
-      data: {
-        title: data.title?.trim() || null,
-        subtitle: data.subtitle?.trim() || null,
-        imageUrl: data.image_url?.trim() || null,
-        isActive: data.is_active ?? true,
-      },
+      update: payload,
+      create: { sectionKey, ...payload },
     })
   } catch (err) {
     console.error("Error actualizando portada:", err)
@@ -64,5 +66,6 @@ export async function updateCover(sectionKey: string, data: CoverFormData) {
   revalidatePath("/dashboard/points")
   revalidatePath("/dashboard/partners")
   revalidatePath("/dashboard/coaches")
+  revalidatePath("/dashboard/help")
   return { success: true }
 }

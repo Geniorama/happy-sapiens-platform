@@ -3,11 +3,23 @@ import { prisma } from "@/lib/db"
 import { redirect } from "next/navigation"
 import { CoversManager } from "@/components/admin/covers-manager"
 
+const EXPECTED_SECTIONS = ["profile", "subscription", "points", "partners", "coaches", "help"]
+
 export default async function CoversPage() {
   const session = await auth()
 
   if (!session?.user?.id || session.user.role !== "admin") {
     redirect("/auth/login")
+  }
+
+  const existing = await prisma.sectionCover.findMany({ select: { sectionKey: true } })
+  const existingKeys = new Set(existing.map((c) => c.sectionKey))
+  const missing = EXPECTED_SECTIONS.filter((k) => !existingKeys.has(k))
+  if (missing.length > 0) {
+    await prisma.sectionCover.createMany({
+      data: missing.map((sectionKey) => ({ sectionKey, isActive: true })),
+      skipDuplicates: true,
+    })
   }
 
   const rows = await prisma.sectionCover.findMany({
