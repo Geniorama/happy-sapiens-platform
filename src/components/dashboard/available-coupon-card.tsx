@@ -239,6 +239,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
                     day: "numeric",
                     month: "short",
                     year: "numeric",
+                    timeZone: "UTC",
                   })}
                 </p>
               )}

@@ -594,7 +594,7 @@ export function CouponsManager({
                               <div>
                                 <p className="text-zinc-400 font-medium uppercase tracking-wide text-[10px] mb-0.5">Expira</p>
                                 <p>{c.expires_at
-                                  ? new Date(c.expires_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
+                                  ? new Date(c.expires_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
                                   : "Sin fecha"}</p>
                               </div>
                               <div>

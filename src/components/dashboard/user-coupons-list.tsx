@@ -50,10 +50,19 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
     setIsMarkingUsed(null)
   }
 
-  const getStatusInfo = (usedAt: string | null, expiresAt: string | null) => {
-    const now = new Date()
-    const expires = expiresAt ? new Date(expiresAt) : null
+  const isExpired = (expiresAt: string | null) => {
+    if (!expiresAt) return false
+    const expires = new Date(expiresAt)
+    // El cupón vence al final del día (UTC) indicado, no al inicio
+    const expiresEndOfDay = Date.UTC(
+      expires.getUTCFullYear(),
+      expires.getUTCMonth(),
+      expires.getUTCDate() + 1,
+    )
+    return Date.now() >= expiresEndOfDay
+  }
 
+  const getStatusInfo = (usedAt: string | null, expiresAt: string | null) => {
     if (usedAt) {
       return {
         label: "Usado",
@@ -62,7 +71,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
       }
     }
 
-    if (expires && expires < now) {
+    if (isExpired(expiresAt)) {
       return {
         label: "Expirado",
         color: "bg-red-100 text-red-700",
@@ -82,8 +91,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
       {coupons.map((coupon) => {
         const statusInfo = getStatusInfo(coupon.used_at, coupon.expires_at)
         const StatusIcon = statusInfo.icon
-        const isActive = !coupon.used_at && 
-          (!coupon.expires_at || new Date(coupon.expires_at) > new Date())
+        const isActive = !coupon.used_at && !isExpired(coupon.expires_at)
         
         // Usar imagen del cupón, si no existe usar la de la marca
         const coverImage = coupon.cover_image_url || coupon.partner.cover_image_url
@@ -222,6 +230,7 @@ export function UserCouponsList({ coupons }: UserCouponsListProps) {
                       year: "numeric",
                       month: "short",
                       day: "numeric",
+                      timeZone: "UTC",
                     })}
                   </span>
                 </div>
