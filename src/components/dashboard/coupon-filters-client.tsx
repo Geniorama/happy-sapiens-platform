@@ -203,17 +203,21 @@ export function CouponFiltersClient({ partners, campaigns: initialCampaigns, use
           </div>
           
           {/* Observer target para infinite scroll */}
-          <div ref={observerTarget} className="h-10 flex items-center justify-center">
+          <div ref={observerTarget} className="mt-6 flex items-center justify-center">
             {isLoading && (
-              <div className="flex items-center gap-2 text-zinc-600">
+              <div className="flex items-center gap-2 text-zinc-600 py-4">
                 <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                 <span className="text-sm">Cargando más cupones...</span>
               </div>
             )}
-            {!hasMore && filteredCampaigns.length > 0 && (
-              <p className="text-sm text-zinc-500 text-center py-4">
-                No hay más cupones disponibles
-              </p>
+            {!isLoading && !hasMore && filteredCampaigns.length > 0 && (
+              <div className="w-full flex items-center gap-3 text-zinc-400">
+                <span className="flex-1 h-px bg-zinc-200" />
+                <span className="text-xs uppercase tracking-wide">
+                  No hay más cupones disponibles
+                </span>
+                <span className="flex-1 h-px bg-zinc-200" />
+              </div>
             )}
           </div>
         </>
