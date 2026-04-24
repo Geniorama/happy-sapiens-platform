@@ -1,9 +1,14 @@
 import type { NextConfig } from "next";
 import path from "path";
+import { version as appVersion } from "./package.json";
 
 const nextConfig: NextConfig = {
   // Configuración para Netlify
   output: 'standalone',
+
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   
   // Especificar el directorio raíz del proyecto para evitar warnings de múltiples lockfiles
   outputFileTracingRoot: path.join(__dirname),

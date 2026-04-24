@@ -177,6 +177,9 @@ export function DashboardLayout({ children, userName, userEmail, userImage, init
         {/* Logout */}
         <div className="p-3 border-t border-zinc-200">
           <LogoutButton />
+          <p className="mt-2 text-center text-[10px] text-zinc-400">
+            v{process.env.NEXT_PUBLIC_APP_VERSION}
+          </p>
         </div>
       </aside>
 
