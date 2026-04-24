@@ -4,18 +4,20 @@ import { useState, useTransition } from "react"
 import {
   Search, Users, Plus, X, ChevronDown, ChevronRight,
   Pencil, Shield, CreditCard, KeyRound, Trash2, Check, Loader2,
-  ToggleLeft, ToggleRight,
+  ToggleLeft, ToggleRight, Mail,
 } from "lucide-react"
 import {
   createUser, updateUser, changeUserRole,
   setSubscription, resetPassword, deleteUser,
-  bulkDeleteUsers, bulkSetSubscription,
+  bulkDeleteUsers, bulkSetSubscription, resendSetPasswordInvite,
 } from "@/app/admin/users/actions"
 import { PhoneInput } from "@/components/ui/phone-input"
 
 interface User {
   id: string
   name: string | null
+  first_name: string | null
+  last_name: string | null
   email: string
   role: string
   phone: string | null
@@ -74,23 +76,34 @@ function CreateUserForm({ onClose, onCreated }: { onClose: () => void; onCreated
   const defaultEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
 
   const [form, setForm] = useState({
-    name: "", email: "", password: "",
+    first_name: "", last_name: "", email: "",
     role: "user" as "user" | "coach" | "admin",
     subscription_status: "active" as "active" | "inactive",
     subscription_start_date: today,
     subscription_end_date: defaultEnd,
   })
   const [error, setError] = useState<string | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }))
 
   const handleSubmit = () => {
     setError(null)
+    setWarning(null)
     startTransition(async () => {
       const result = await createUser(form)
-      if (result.error) setError(result.error)
-      else { onCreated(result.user as User); onClose() }
+      if (result.error) { setError(result.error); return }
+      onCreated(result.user as User)
+      if (result.inviteSent) {
+        onClose()
+      } else {
+        setWarning(
+          `Usuario creado, pero no se pudo enviar el correo de invitación${
+            result.inviteError ? ` (${result.inviteError})` : ""
+          }. Podrás reenviarlo desde el panel del usuario.`
+        )
+      }
     })
   }
 
@@ -103,27 +116,34 @@ function CreateUserForm({ onClose, onCreated }: { onClose: () => void; onCreated
         </button>
       </div>
 
+      <p className="text-xs text-zinc-500">
+        Al crear el usuario, se enviará un correo a su email para que establezca su contraseña. El enlace es válido por 7 días.
+      </p>
+
       {error && (
         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+      )}
+      {warning && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{warning}</p>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-700 mb-1">Nombre *</label>
-          <input type="text" value={form.name} onChange={e => set("name", e.target.value)}
-            placeholder="Juan Pérez"
+          <input type="text" value={form.first_name} onChange={e => set("first_name", e.target.value)}
+            placeholder="Juan"
+            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-700 mb-1">Apellido *</label>
+          <input type="text" value={form.last_name} onChange={e => set("last_name", e.target.value)}
+            placeholder="Pérez"
             className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-700 mb-1">Email *</label>
           <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
             placeholder="juan@email.com"
-            className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-zinc-700 mb-1">Contraseña *</label>
-          <input type="password" value={form.password} onChange={e => set("password", e.target.value)}
-            placeholder="mínimo 6 caracteres"
             className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
         </div>
         <div>
@@ -197,8 +217,18 @@ function UserDetailPanel({
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   // Datos
+  const splitName = (() => {
+    if (user.first_name || user.last_name) {
+      return { first: user.first_name || "", last: user.last_name || "" }
+    }
+    const parts = (user.name || "").trim().split(/\s+/)
+    if (parts.length <= 1) return { first: parts[0] || "", last: "" }
+    return { first: parts[0], last: parts.slice(1).join(" ") }
+  })()
   const [dataForm, setDataForm] = useState({
-    name: user.name || "", email: user.email,
+    first_name: splitName.first,
+    last_name: splitName.last,
+    email: user.email,
     phone: user.phone || "", birth_date: user.birth_date || "", gender: user.gender || "",
   })
   // Rol
@@ -268,8 +298,14 @@ function UserDetailPanel({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-zinc-700 mb-1">Nombre *</label>
-                <input type="text" value={dataForm.name}
-                  onChange={e => setDataForm(p => ({ ...p, name: e.target.value }))}
+                <input type="text" value={dataForm.first_name}
+                  onChange={e => setDataForm(p => ({ ...p, first_name: e.target.value }))}
+                  className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">Apellido *</label>
+                <input type="text" value={dataForm.last_name}
+                  onChange={e => setDataForm(p => ({ ...p, last_name: e.target.value }))}
                   className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
               </div>
               <div>
@@ -309,7 +345,19 @@ function UserDetailPanel({
                 startTransition(async () => {
                   const r = await updateUser(user.id, dataForm)
                   if (r.error) setError(r.error)
-                  else { onUpdated({ name: dataForm.name, email: dataForm.email, phone: dataForm.phone || null, birth_date: dataForm.birth_date || null, gender: dataForm.gender || null }); flash("Datos actualizados") }
+                  else {
+                    const fullName = `${dataForm.first_name.trim()} ${dataForm.last_name.trim()}`.trim()
+                    onUpdated({
+                      name: fullName,
+                      first_name: dataForm.first_name.trim(),
+                      last_name: dataForm.last_name.trim(),
+                      email: dataForm.email,
+                      phone: dataForm.phone || null,
+                      birth_date: dataForm.birth_date || null,
+                      gender: dataForm.gender || null,
+                    })
+                    flash("Datos actualizados")
+                  }
                 })
               }} disabled={isPending}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors cursor-pointer">
@@ -404,27 +452,47 @@ function UserDetailPanel({
 
         {/* ── Contraseña ── */}
         {tab === "password" && (
-          <div className="space-y-3 max-w-sm">
-            <p className="text-xs text-zinc-500">Establece una nueva contraseña para este usuario.</p>
-            <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">Nueva contraseña *</label>
-              <input type="password" value={newPwd} onChange={e => { setNewPwd(e.target.value); setConfirmPwd(false) }}
-                placeholder="mínimo 6 caracteres"
-                className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+          <div className="space-y-5 max-w-sm">
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-500">
+                Envía al usuario un correo con un enlace para que establezca su contraseña (válido por 7 días). Útil si nunca llegó el correo de invitación o si expiró.
+              </p>
+              <button onClick={() => {
+                setError(null)
+                startTransition(async () => {
+                  const r = await resendSetPasswordInvite(user.id)
+                  if (r.error) setError(r.error)
+                  else flash("Correo de invitación enviado")
+                })
+              }} disabled={isPending}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 disabled:opacity-50 transition-colors cursor-pointer">
+                {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                Reenviar correo de invitación
+              </button>
             </div>
-            <button onClick={() => {
-              if (!confirmPwd) { setConfirmPwd(true); return }
-              setError(null)
-              startTransition(async () => {
-                const r = await resetPassword(user.id, newPwd)
-                if (r.error) setError(r.error)
-                else { setNewPwd(""); setConfirmPwd(false); flash("Contraseña actualizada") }
-              })
-            }} disabled={isPending || newPwd.length < 6}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors cursor-pointer">
-              {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
-              {confirmPwd ? "Confirmar cambio" : "Cambiar contraseña"}
-            </button>
+
+            <div className="border-t border-zinc-200 pt-4 space-y-3">
+              <p className="text-xs text-zinc-500">O establece manualmente una nueva contraseña para este usuario.</p>
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">Nueva contraseña *</label>
+                <input type="password" value={newPwd} onChange={e => { setNewPwd(e.target.value); setConfirmPwd(false) }}
+                  placeholder="mínimo 6 caracteres"
+                  className="w-full text-sm border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+              </div>
+              <button onClick={() => {
+                if (!confirmPwd) { setConfirmPwd(true); return }
+                setError(null)
+                startTransition(async () => {
+                  const r = await resetPassword(user.id, newPwd)
+                  if (r.error) setError(r.error)
+                  else { setNewPwd(""); setConfirmPwd(false); flash("Contraseña actualizada") }
+                })
+              }} disabled={isPending || newPwd.length < 6}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors cursor-pointer">
+                {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                {confirmPwd ? "Confirmar cambio" : "Cambiar contraseña"}
+              </button>
+            </div>
           </div>
         )}
 

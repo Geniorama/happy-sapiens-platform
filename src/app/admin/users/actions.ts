@@ -6,6 +6,7 @@ import { logAdminAction } from "@/lib/log"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
 import { ensureReferralCode } from "@/lib/referral-code"
+import { sendSetPasswordInvite } from "@/lib/set-password-invite"
 
 async function getAdminSession() {
   const session = await auth()
@@ -23,9 +24,9 @@ async function getUserEmail(userId: string): Promise<string | null> {
 }
 
 export async function createUser(data: {
-  name: string
+  first_name: string
+  last_name: string
   email: string
-  password: string
   role: "user" | "coach" | "admin"
   subscription_status: "active" | "inactive"
   subscription_start_date?: string
@@ -34,10 +35,14 @@ export async function createUser(data: {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  if (!data.name?.trim()) return { error: "El nombre es requerido" }
+  const firstName = data.first_name?.trim()
+  const lastName = data.last_name?.trim()
+
+  if (!firstName) return { error: "El nombre es requerido" }
+  if (!lastName) return { error: "El apellido es requerido" }
   if (!data.email?.trim()) return { error: "El email es requerido" }
-  if (!data.password || data.password.length < 6)
-    return { error: "La contraseña debe tener al menos 6 caracteres" }
+
+  const fullName = `${firstName} ${lastName}`.trim()
 
   const isRegularUser = data.role === "user"
 
@@ -67,15 +72,15 @@ export async function createUser(data: {
 
   if (existing) return { error: "Ya existe un usuario con ese email" }
 
-  const hashedPassword = await hash(data.password, 10)
-
   let created
   try {
     created = await prisma.user.create({
       data: {
-        name: data.name.trim(),
+        name: fullName,
+        firstName,
+        lastName,
         email,
-        password: hashedPassword,
+        password: null,
         role: data.role,
         subscriptionStatus,
         subscriptionStartDate,
@@ -85,6 +90,8 @@ export async function createUser(data: {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         role: true,
         phone: true,
@@ -107,6 +114,12 @@ export async function createUser(data: {
     console.error("Error generando código de referido:", err)
   }
 
+  const inviteResult = await sendSetPasswordInvite({
+    userId: created.id,
+    email: created.email!,
+    name: created.firstName ?? created.name,
+  })
+
   await logAdminAction({
     actorId: session.user.id,
     actorEmail: session.user.email!,
@@ -114,16 +127,20 @@ export async function createUser(data: {
     entityType: "user",
     entityId: created.id,
     metadata: {
-      target_name: data.name.trim(),
+      target_name: fullName,
       target_email: email,
       role: data.role,
       subscription_status: subscriptionStatus,
+      invite_sent: inviteResult.success,
+      invite_error: inviteResult.success ? null : inviteResult.error ?? null,
     },
   })
 
   const userPayload = {
     id: created.id,
     name: created.name,
+    first_name: created.firstName,
+    last_name: created.lastName,
     email: created.email,
     role: created.role,
     phone: created.phone,
@@ -140,13 +157,19 @@ export async function createUser(data: {
   }
 
   revalidatePath("/admin/users")
-  return { success: true, user: userPayload }
+  return {
+    success: true,
+    user: userPayload,
+    inviteSent: inviteResult.success,
+    inviteError: inviteResult.success ? undefined : inviteResult.error,
+  }
 }
 
 export async function updateUser(
   userId: string,
   data: {
-    name: string
+    first_name: string
+    last_name: string
     email: string
     phone?: string
     birth_date?: string
@@ -156,10 +179,15 @@ export async function updateUser(
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
-  if (!data.name?.trim()) return { error: "El nombre es requerido" }
+  const firstName = data.first_name?.trim()
+  const lastName = data.last_name?.trim()
+
+  if (!firstName) return { error: "El nombre es requerido" }
+  if (!lastName) return { error: "El apellido es requerido" }
   if (!data.email?.trim()) return { error: "El email es requerido" }
 
   const email = data.email.trim().toLowerCase()
+  const fullName = `${firstName} ${lastName}`.trim()
 
   const existing = await prisma.user.findFirst({
     where: { email, NOT: { id: userId } },
@@ -172,7 +200,9 @@ export async function updateUser(
     await prisma.user.update({
       where: { id: userId },
       data: {
-        name: data.name.trim(),
+        name: fullName,
+        firstName,
+        lastName,
         email,
         phone: data.phone?.trim() || null,
         birthDate: data.birth_date ? new Date(data.birth_date) : null,
@@ -379,6 +409,39 @@ export async function bulkSetSubscription(ids: string[], status: "active" | "ina
   })
 
   revalidatePath("/admin/users")
+  return { success: true }
+}
+
+export async function resendSetPasswordInvite(userId: string) {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, firstName: true, email: true },
+  })
+
+  if (!target?.email) return { error: "El usuario no tiene email registrado" }
+
+  const result = await sendSetPasswordInvite({
+    userId: target.id,
+    email: target.email,
+    name: target.firstName ?? target.name,
+  })
+
+  if (!result.success) {
+    return { error: result.error || "No se pudo enviar el correo" }
+  }
+
+  await logAdminAction({
+    actorId: session.user.id,
+    actorEmail: session.user.email!,
+    action: "user.invite_resent",
+    entityType: "user",
+    entityId: userId,
+    metadata: { target_email: target.email },
+  })
+
   return { success: true }
 }
 

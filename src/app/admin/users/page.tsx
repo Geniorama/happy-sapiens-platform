@@ -6,6 +6,8 @@ export default async function AdminUsersPage() {
     select: {
       id: true,
       name: true,
+      firstName: true,
+      lastName: true,
       email: true,
       role: true,
       phone: true,
@@ -50,6 +52,8 @@ export default async function AdminUsersPage() {
   const enriched = rows.map((u) => ({
     id: u.id,
     name: u.name,
+    first_name: u.firstName,
+    last_name: u.lastName,
     email: u.email ?? "",
     role: u.role ?? "user",
     phone: u.phone,
