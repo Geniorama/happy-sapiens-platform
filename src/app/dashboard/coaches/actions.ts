@@ -550,12 +550,12 @@ export async function saveHealthProfile(data: HealthProfileData) {
     revalidatePath("/dashboard/profile")
     revalidatePath("/dashboard/coaches")
 
-    // Puntos por completar historia clínica (solo la primera vez)
+    // Puntos por completar perfil de salud (solo la primera vez)
     let pointsEarned: number | undefined
     const pts = await awardPointsOnce({
       userId: session.user.id,
       actionType: POINT_ACTIONS.COMPLETE_HEALTH_PROFILE,
-      description: "Historia clínica completada",
+      description: "Perfil de salud completado",
     })
     if (pts.success && !pts.alreadyEarned) {
       pointsEarned = POINTS_BY_ACTION[POINT_ACTIONS.COMPLETE_HEALTH_PROFILE]

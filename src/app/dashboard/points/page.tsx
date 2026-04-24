@@ -9,7 +9,7 @@ import { Star, TrendingUp, Gift, Zap } from "lucide-react"
 const ACTION_LABELS: Record<string, string> = {
   signup: "Registro en la plataforma",
   complete_profile: "Perfil completado",
-  complete_health_profile: "Historia clínica completada",
+  complete_health_profile: "Perfil de salud completado",
   upload_avatar: "Foto de perfil subida",
   first_login: "Primer inicio de sesión",
   book_appointment: "Cita reservada",
@@ -88,7 +88,7 @@ export default async function PointsPage() {
         <div className="grid sm:grid-cols-2 gap-2">
           {[
             { action: "Completar tu perfil", pts: 30 },
-            { action: "Completar historia clínica", pts: 40 },
+            { action: "Completar perfil de salud", pts: 40 },
             { action: "Registrarte en la plataforma", pts: 50 },
             { action: "Activar tu suscripción", pts: 50 },
             { action: "Reservar una cita", pts: 15 },

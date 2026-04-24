@@ -7,7 +7,7 @@ import { Star, TrendingUp, Gift, Zap } from "lucide-react"
 const ACTION_LABELS: Record<string, string> = {
   signup: "Registro en la plataforma",
   complete_profile: "Perfil completado",
-  complete_health_profile: "Historia clínica completada",
+  complete_health_profile: "Perfil de salud completado",
   upload_avatar: "Foto de perfil subida",
   first_login: "Primer inicio de sesión",
   book_appointment: "Cita reservada",
