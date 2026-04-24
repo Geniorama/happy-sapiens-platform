@@ -9,13 +9,21 @@ import { Prisma } from "@prisma/client"
 async function getAdminSession() {
   const session = await auth()
   if (!session?.user?.id) return null
-  if (session.user.role !== "admin") return null
+  if (session.user.role === "admin") return session
+
+  // Fallback: el JWT puede estar desactualizado (rol promovido tras iniciar sesión).
+  // Revalidar contra la DB antes de rechazar.
+  const dbUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  })
+  if (dbUser?.role !== "admin") return null
   return session
 }
 
 export async function uploadPartnerImage(formData: FormData): Promise<{ url?: string; error?: string }> {
-  const session = await auth()
-  if (!session?.user?.id || session.user.role !== "admin") return { error: "No autorizado" }
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
 
   const file = formData.get("file") as File
   if (!file) return { error: "No se recibió ningún archivo" }
