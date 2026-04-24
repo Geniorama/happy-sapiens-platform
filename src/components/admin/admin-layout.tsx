@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
-import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon, CreditCard, BarChart3 } from "lucide-react"
+import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon, CreditCard, BarChart3, ShoppingBag, ExternalLink } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 
 function LogoutButton() {
@@ -159,6 +159,17 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
               </Link>
             )
           })}
+          <a
+            href="https://happysapiens.co"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer"
+          >
+            <ShoppingBag className="w-4 h-4" strokeWidth={1.5} />
+            <span className="flex-1">Tienda</span>
+            <ExternalLink className="w-3 h-3 text-zinc-400" strokeWidth={1.5} />
+          </a>
         </nav>
 
         {/* Logout */}
