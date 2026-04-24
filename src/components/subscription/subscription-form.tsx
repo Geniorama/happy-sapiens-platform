@@ -62,8 +62,10 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
   const [plan, setPlan] = useState<SubscriptionPlan | null>(null)
   const [oauthNotice, setOauthNotice] = useState(false)
 
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [billing, setBilling] = useState<AddressFields>(emptyAddress)
-  const [shipping, setShipping] = useState({ fullName: "", ...emptyAddress })
+  const [shipping, setShipping] = useState({ firstName: "", lastName: "", ...emptyAddress })
   const [sameAsBilling, setSameAsBilling] = useState(true)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [acceptedDataPolicy, setAcceptedDataPolicy] = useState(false)
@@ -105,16 +107,30 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
       return
     }
 
+    const name = `${firstName.trim()} ${lastName.trim()}`.trim()
+    if (!name) {
+      setError("Ingresa tu nombre y apellido")
+      return
+    }
+
     setIsLoading(true)
 
     const formData = new FormData(e.currentTarget)
-    const name = formData.get("name") as string
     const email = formData.get("email") as string
     const refCode = formData.get("referralCode") as string
 
+    const shippingFullName = `${shipping.firstName.trim()} ${shipping.lastName.trim()}`.trim()
     const shippingData = sameAsBilling
       ? { fullName: name, ...billing }
-      : shipping
+      : {
+          fullName: shippingFullName,
+          phone: shipping.phone,
+          address: shipping.address,
+          city: shipping.city,
+          department: shipping.department,
+          documentType: shipping.documentType,
+          documentNumber: shipping.documentNumber,
+        }
 
     try {
       const response = await fetch("/api/mercadopago/create-subscription", {
@@ -122,11 +138,19 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userName: name,
+          userFirstName: firstName.trim(),
+          userLastName: lastName.trim(),
           userEmail: email,
           productId: plan.id,
           referralCode: refCode || null,
           billing,
-          shipping: shippingData,
+          shipping: sameAsBilling
+            ? shippingData
+            : {
+                ...shippingData,
+                firstName: shipping.firstName.trim(),
+                lastName: shipping.lastName.trim(),
+              },
         }),
       })
 
@@ -214,19 +238,36 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
             <SectionTitle>Datos personales</SectionTitle>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="name" className={labelClass}>
-                  Nombre completo
+                <label htmlFor="firstName" className={labelClass}>
+                  Nombre
                 </label>
                 <input
-                  id="name"
-                  name="name"
+                  id="firstName"
+                  name="firstName"
                   type="text"
                   required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
                   className={inputClass}
-                  placeholder="Juan Pérez"
+                  placeholder="Juan"
                 />
               </div>
               <div>
+                <label htmlFor="lastName" className={labelClass}>
+                  Apellido
+                </label>
+                <input
+                  id="lastName"
+                  name="lastName"
+                  type="text"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className={inputClass}
+                  placeholder="Pérez"
+                />
+              </div>
+              <div className="sm:col-span-2">
                 <label htmlFor="email" className={labelClass}>
                   Correo electrónico
                 </label>
@@ -347,15 +388,26 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
 
             {!sameAsBilling && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
+                <div>
                   <label className={labelClass}>Nombre del destinatario</label>
                   <input
                     type="text"
-                    value={shipping.fullName}
-                    onChange={(e) => handleShipping("fullName", e.target.value)}
+                    value={shipping.firstName}
+                    onChange={(e) => handleShipping("firstName", e.target.value)}
                     required
                     className={inputClass}
-                    placeholder="Nombre de quien recibe"
+                    placeholder="Nombre"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Apellido del destinatario</label>
+                  <input
+                    type="text"
+                    value={shipping.lastName}
+                    onChange={(e) => handleShipping("lastName", e.target.value)}
+                    required
+                    className={inputClass}
+                    placeholder="Apellido"
                   />
                 </div>
                 <div>

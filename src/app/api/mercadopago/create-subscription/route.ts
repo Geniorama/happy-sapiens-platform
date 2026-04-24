@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 
 export async function POST(req: Request) {
   try {
-    const { userEmail, userName, productId, referralCode, billing, shipping } = await req.json()
+    const { userEmail, userName, userFirstName, userLastName, productId, referralCode, billing, shipping } = await req.json()
 
     if (!userEmail || !userName || !productId) {
       return NextResponse.json(
@@ -40,6 +40,8 @@ export async function POST(req: Request) {
       reason: `${plan.title} - Happy Sapiens`,
       external_reference: JSON.stringify({
         name: userName,
+        firstName: userFirstName || null,
+        lastName: userLastName || null,
         email: userEmail,
         productId: plan.id,
         shopifyVariantId: plan.shopifyVariantId,
@@ -63,6 +65,8 @@ export async function POST(req: Request) {
       create: {
         email: userEmail,
         name: userName,
+        firstName: userFirstName || null,
+        lastName: userLastName || null,
         productId: plan.id,
         referralCode: referralCode || null,
         billing: billing || null,
@@ -70,6 +74,8 @@ export async function POST(req: Request) {
       },
       update: {
         name: userName,
+        firstName: userFirstName || null,
+        lastName: userLastName || null,
         productId: plan.id,
         referralCode: referralCode || null,
         billing: billing || null,

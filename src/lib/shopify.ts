@@ -78,11 +78,15 @@ export async function getShopifyCustomerById(numericId: number) {
 export async function createShopifyOrder(params: {
   email: string
   name: string
+  firstName?: string
+  lastName?: string
   variantId: string
   price?: number
   taxExempt?: boolean
   note?: string
   billing?: {
+    firstName?: string
+    lastName?: string
     fullName?: string
     phone: string
     address: string
@@ -90,6 +94,8 @@ export async function createShopifyOrder(params: {
     department: string
   }
   shipping?: {
+    firstName?: string
+    lastName?: string
     fullName: string
     phone: string
     address: string
@@ -99,22 +105,50 @@ export async function createShopifyOrder(params: {
 }) {
   const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json`
 
-  const buildAddress = (data: { fullName?: string; phone: string; address: string; city: string; department: string }, fallbackName: string) => ({
-    name: data.fullName || fallbackName,
-    address1: data.address,
-    city: data.city,
-    province: data.department,
-    country: 'Colombia',
-    country_code: 'CO',
-    phone: data.phone,
-  })
+  const splitName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/)
+    return {
+      first_name: parts[0] || fullName,
+      last_name: parts.slice(1).join(' ') || '',
+    }
+  }
+
+  const buildAddress = (
+    data: { firstName?: string; lastName?: string; fullName?: string; phone: string; address: string; city: string; department: string },
+    fallback: { firstName?: string; lastName?: string; fullName: string }
+  ) => {
+    const hasExplicit = !!(data.firstName || data.lastName)
+    const first_name = hasExplicit
+      ? (data.firstName || '')
+      : (fallback.firstName || splitName(data.fullName || fallback.fullName).first_name)
+    const last_name = hasExplicit
+      ? (data.lastName || '')
+      : (fallback.lastName || splitName(data.fullName || fallback.fullName).last_name)
+    const fullName = data.fullName || [first_name, last_name].filter(Boolean).join(' ') || fallback.fullName
+
+    return {
+      first_name,
+      last_name,
+      name: fullName,
+      address1: data.address,
+      city: data.city,
+      province: data.department,
+      country: 'Colombia',
+      country_code: 'CO',
+      phone: data.phone,
+    }
+  }
+
+  const fallbackName = { firstName: params.firstName, lastName: params.lastName, fullName: params.name }
+  const customerFirstName = params.firstName || splitName(params.name).first_name
+  const customerLastName = params.lastName || splitName(params.name).last_name
 
   const shippingAddress = params.shipping
-    ? buildAddress(params.shipping, params.name)
+    ? buildAddress(params.shipping, fallbackName)
     : undefined
 
   const billingAddress = params.billing
-    ? buildAddress(params.billing, params.name)
+    ? buildAddress(params.billing, fallbackName)
     : shippingAddress
 
   const response = await fetch(restUrl, {
@@ -138,7 +172,11 @@ export async function createShopifyOrder(params: {
             ? [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }]
             : [],
         }],
-        customer: { email: params.email },
+        customer: {
+          email: params.email,
+          first_name: customerFirstName,
+          last_name: customerLastName,
+        },
         note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
         tags: 'subscription,auto',
         ...(billingAddress && { billing_address: billingAddress }),

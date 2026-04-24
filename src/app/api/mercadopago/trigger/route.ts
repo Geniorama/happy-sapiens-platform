@@ -81,6 +81,8 @@ export async function POST(req: Request) {
         select: {
           id: true,
           name: true,
+          firstName: true,
+          lastName: true,
           subscriptionVariantId: true,
           subscriptionPrice: true,
           subscriptionTaxExempt: true,
@@ -89,6 +91,8 @@ export async function POST(req: Request) {
           billingCity: true,
           billingDepartment: true,
           shippingFullName: true,
+          shippingFirstName: true,
+          shippingLastName: true,
           shippingPhone: true,
           shippingAddress: true,
           shippingCity: true,
@@ -104,6 +108,8 @@ export async function POST(req: Request) {
       }
 
       const billingAddress = user.billingAddress ? {
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
         phone: user.billingPhone || '',
         address: user.billingAddress,
         city: user.billingCity || '',
@@ -111,6 +117,8 @@ export async function POST(req: Request) {
       } : undefined
 
       const shippingAddress = user.shippingAddress ? {
+        firstName: user.shippingFirstName || user.firstName || undefined,
+        lastName: user.shippingLastName || user.lastName || undefined,
         fullName: user.shippingFullName || user.name || bodyEmail,
         phone: user.shippingPhone || '',
         address: user.shippingAddress,
@@ -121,6 +129,8 @@ export async function POST(req: Request) {
       const order = await createShopifyOrder({
         email: bodyEmail,
         name: user.name || bodyEmail,
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
         variantId: user.subscriptionVariantId,
         price: user.subscriptionPrice ? Number(user.subscriptionPrice) : undefined,
         taxExempt: user.subscriptionTaxExempt === true,
@@ -137,6 +147,8 @@ export async function POST(req: Request) {
 
       let email = preApproval.payer_email || ''
       let name = email
+      let firstName: string | null = null
+      let lastName: string | null = null
       let productId: string | null = null
       let shopifyVariantId: string | null = null
       let taxExempt = false
@@ -153,6 +165,8 @@ export async function POST(req: Request) {
           const parsed = JSON.parse(preApproval.external_reference)
           if (!email && parsed.email) email = parsed.email
           name = parsed.name || email
+          firstName = parsed.firstName || null
+          lastName = parsed.lastName || null
           productId = parsed.productId || null
           shopifyVariantId = parsed.shopifyVariantId || null
           taxExempt = parsed.taxExempt === true
@@ -171,11 +185,13 @@ export async function POST(req: Request) {
 
       const pendingCheckout = await prisma.pendingCheckout.findUnique({
         where: { email },
-        select: { billing: true, shipping: true, referralCode: true },
+        select: { billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
       })
 
       logs.push(`pending_checkout: ${pendingCheckout ? 'encontrado' : 'no encontrado'}`)
       if (!referralCode && pendingCheckout?.referralCode) referralCode = pendingCheckout.referralCode
+      if (!firstName && pendingCheckout?.firstName) firstName = pendingCheckout.firstName
+      if (!lastName && pendingCheckout?.lastName) lastName = pendingCheckout.lastName
 
       const billingData = pendingCheckout?.billing as Record<string, string> | null
       const shippingData = pendingCheckout?.shipping as Record<string, string> | null
@@ -196,6 +212,8 @@ export async function POST(req: Request) {
           subscriptionVariantId: shopifyVariantId,
           subscriptionTaxExempt: taxExempt,
           ...(subscriptionPrice !== undefined && { subscriptionPrice }),
+          ...(firstName && { firstName }),
+          ...(lastName && { lastName }),
           ...(billingData && {
             billingDocumentType: billingData.documentType,
             billingDocumentNumber: billingData.documentNumber,
@@ -206,6 +224,8 @@ export async function POST(req: Request) {
           }),
           ...(shippingData && {
             shippingFullName: shippingData.fullName,
+            shippingFirstName: shippingData.firstName || null,
+            shippingLastName: shippingData.lastName || null,
             shippingPhone: shippingData.phone,
             shippingAddress: shippingData.address,
             shippingCity: shippingData.city,
@@ -234,6 +254,8 @@ export async function POST(req: Request) {
           newUser = await prisma.user.create({
             data: {
               name,
+              firstName,
+              lastName,
               email,
               role: 'user',
               subscriptionStatus: 'active',
@@ -258,6 +280,8 @@ export async function POST(req: Request) {
               }),
               ...(shippingData && {
                 shippingFullName: shippingData.fullName,
+                shippingFirstName: shippingData.firstName || null,
+                shippingLastName: shippingData.lastName || null,
                 shippingPhone: shippingData.phone,
                 shippingAddress: shippingData.address,
                 shippingCity: shippingData.city,
@@ -307,6 +331,8 @@ export async function POST(req: Request) {
 
       if (shopifyVariantId) {
         const billingAddress = billingData ? {
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
           phone: billingData.phone || '',
           address: billingData.address,
           city: billingData.city || '',
@@ -314,6 +340,8 @@ export async function POST(req: Request) {
         } : undefined
 
         const shippingAddress = shippingData ? {
+          firstName: shippingData.firstName || firstName || undefined,
+          lastName: shippingData.lastName || lastName || undefined,
           fullName: shippingData.fullName || name,
           phone: shippingData.phone || '',
           address: shippingData.address,
@@ -325,6 +353,8 @@ export async function POST(req: Request) {
           const order = await createShopifyOrder({
             email,
             name,
+            firstName: firstName || undefined,
+            lastName: lastName || undefined,
             variantId: shopifyVariantId,
             price: subscriptionPrice,
             taxExempt,
@@ -357,6 +387,8 @@ export async function POST(req: Request) {
         select: {
           id: true,
           name: true,
+          firstName: true,
+          lastName: true,
           subscriptionVariantId: true,
           subscriptionTaxExempt: true,
           billingPhone: true,
@@ -364,6 +396,8 @@ export async function POST(req: Request) {
           billingCity: true,
           billingDepartment: true,
           shippingFullName: true,
+          shippingFirstName: true,
+          shippingLastName: true,
           shippingPhone: true,
           shippingAddress: true,
           shippingCity: true,
@@ -387,6 +421,8 @@ export async function POST(req: Request) {
 
       if (user.subscriptionVariantId) {
         const billingAddress = user.billingAddress ? {
+          firstName: user.firstName || undefined,
+          lastName: user.lastName || undefined,
           phone: user.billingPhone || '',
           address: user.billingAddress,
           city: user.billingCity || '',
@@ -394,6 +430,8 @@ export async function POST(req: Request) {
         } : undefined
 
         const shippingAddress = user.shippingAddress ? {
+          firstName: user.shippingFirstName || user.firstName || undefined,
+          lastName: user.shippingLastName || user.lastName || undefined,
           fullName: user.shippingFullName || user.name || email,
           phone: user.shippingPhone || '',
           address: user.shippingAddress,
@@ -402,7 +440,7 @@ export async function POST(req: Request) {
         } : undefined
 
         try {
-          const order = await createShopifyOrder({ email, name: user.name || email, variantId: user.subscriptionVariantId, price: recurringPrice, taxExempt: user.subscriptionTaxExempt === true, billing: billingAddress, shipping: shippingAddress })
+          const order = await createShopifyOrder({ email, name: user.name || email, firstName: user.firstName || undefined, lastName: user.lastName || undefined, variantId: user.subscriptionVariantId, price: recurringPrice, taxExempt: user.subscriptionTaxExempt === true, billing: billingAddress, shipping: shippingAddress })
           logs.push(`Orden Shopify creada: #${order.order_number}`)
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)

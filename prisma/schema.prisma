@@ -11,6 +11,8 @@ datasource db {
 model User {
   id            String    @id @default(uuid()) @db.Uuid
   name          String?
+  firstName     String?   @map("first_name")
+  lastName      String?   @map("last_name")
   email         String?   @unique
   emailVerified DateTime? @map("email_verified") @db.Timestamptz(6)
   image         String?
@@ -67,6 +69,8 @@ model User {
   billingCity           String?  @map("billing_city")
   billingDepartment     String?  @map("billing_department")
   shippingFullName      String?  @map("shipping_full_name")
+  shippingFirstName     String?  @map("shipping_first_name")
+  shippingLastName      String?  @map("shipping_last_name")
   shippingPhone         String?  @map("shipping_phone")
   shippingAddress       String?  @map("shipping_address")
   shippingCity          String?  @map("shipping_city")
@@ -397,6 +401,8 @@ model PendingCheckout {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
   name         String
+  firstName    String?  @map("first_name")
+  lastName     String?  @map("last_name")
   productId    String?  @map("product_id")
   referralCode String?  @map("referral_code")
   billing      Json?

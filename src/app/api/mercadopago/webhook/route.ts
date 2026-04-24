@@ -86,6 +86,8 @@ async function handlePreApproval(preApprovalId: string) {
 
   let email = preApproval.payer_email || ''
   let name = email
+  let firstName: string | null = null
+  let lastName: string | null = null
   let referralCode: string | null = null
   let productId: string | null = null
   let shopifyVariantId: string | null = null
@@ -102,6 +104,8 @@ async function handlePreApproval(preApprovalId: string) {
       // payer_email no siempre viene en el response del SDK — usar external_reference como fuente
       if (!email && parsed.email) email = parsed.email
       name = parsed.name || email
+      firstName = parsed.firstName || null
+      lastName = parsed.lastName || null
       referralCode = parsed.referralCode || null
       productId = parsed.productId || null
       shopifyVariantId = parsed.shopifyVariantId || null
@@ -125,7 +129,7 @@ async function handlePreApproval(preApprovalId: string) {
     // Leer datos de facturación/envío del checkout pendiente
     const pendingCheckout = await prisma.pendingCheckout.findUnique({
       where: { email },
-      select: { billing: true, shipping: true, referralCode: true },
+      select: { billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
     })
 
     const billingData = pendingCheckout?.billing as Record<string, string> | null
@@ -134,6 +138,8 @@ async function handlePreApproval(preApprovalId: string) {
     if (!referralCode && pendingCheckout?.referralCode) {
       referralCode = pendingCheckout.referralCode
     }
+    if (!firstName && pendingCheckout?.firstName) firstName = pendingCheckout.firstName
+    if (!lastName && pendingCheckout?.lastName) lastName = pendingCheckout.lastName
 
     if (existingUser) {
       const updateData: Prisma.UserUpdateInput = {
@@ -146,6 +152,8 @@ async function handlePreApproval(preApprovalId: string) {
         subscriptionVariantId: shopifyVariantId,
         subscriptionTaxExempt: taxExempt,
         ...(subscriptionPrice !== undefined && { subscriptionPrice }),
+        ...(firstName && { firstName }),
+        ...(lastName && { lastName }),
         ...(billingData && {
           billingDocumentType: billingData.documentType,
           billingDocumentNumber: billingData.documentNumber,
@@ -156,6 +164,8 @@ async function handlePreApproval(preApprovalId: string) {
         }),
         ...(shippingData && {
           shippingFullName: shippingData.fullName,
+          shippingFirstName: shippingData.firstName || null,
+          shippingLastName: shippingData.lastName || null,
           shippingPhone: shippingData.phone,
           shippingAddress: shippingData.address,
           shippingCity: shippingData.city,
@@ -185,6 +195,8 @@ async function handlePreApproval(preApprovalId: string) {
         newUser = await prisma.user.create({
           data: {
             name,
+            firstName,
+            lastName,
             email,
             role: 'user',
             subscriptionStatus: 'active',
@@ -209,6 +221,8 @@ async function handlePreApproval(preApprovalId: string) {
             }),
             ...(shippingData && {
               shippingFullName: shippingData.fullName,
+              shippingFirstName: shippingData.firstName || null,
+              shippingLastName: shippingData.lastName || null,
               shippingPhone: shippingData.phone,
               shippingAddress: shippingData.address,
               shippingCity: shippingData.city,
@@ -263,6 +277,8 @@ async function handlePreApproval(preApprovalId: string) {
     if (firstOrderVariantId) {
       const billingAddress = billingData
         ? {
+            firstName: firstName || undefined,
+            lastName: lastName || undefined,
             phone: billingData.phone || '',
             address: billingData.address,
             city: billingData.city || '',
@@ -272,6 +288,8 @@ async function handlePreApproval(preApprovalId: string) {
 
       const shippingAddress = shippingData
         ? {
+            firstName: shippingData.firstName || firstName || undefined,
+            lastName: shippingData.lastName || lastName || undefined,
             fullName: shippingData.fullName || name,
             phone: shippingData.phone || '',
             address: shippingData.address,
@@ -284,6 +302,8 @@ async function handlePreApproval(preApprovalId: string) {
         const order = await createShopifyOrder({
           email,
           name,
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
           variantId: firstOrderVariantId,
           price: subscriptionPrice,
           taxExempt,
@@ -363,6 +383,8 @@ async function handlePayment(paymentId: string) {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
         subscriptionStatus: true,
         subscriptionVariantId: true,
         subscriptionTaxExempt: true,
@@ -371,6 +393,8 @@ async function handlePayment(paymentId: string) {
         billingCity: true,
         billingDepartment: true,
         shippingFullName: true,
+        shippingFirstName: true,
+        shippingLastName: true,
         shippingPhone: true,
         shippingAddress: true,
         shippingCity: true,
@@ -427,6 +451,8 @@ async function handlePayment(paymentId: string) {
       if (user.subscriptionVariantId) {
         const billingAddress = user.billingAddress
           ? {
+              firstName: user.firstName || undefined,
+              lastName: user.lastName || undefined,
               phone: user.billingPhone || '',
               address: user.billingAddress,
               city: user.billingCity || '',
@@ -436,6 +462,8 @@ async function handlePayment(paymentId: string) {
 
         const shippingAddress = user.shippingAddress
           ? {
+              firstName: user.shippingFirstName || user.firstName || undefined,
+              lastName: user.shippingLastName || user.lastName || undefined,
               fullName: user.shippingFullName || user.name || email,
               phone: user.shippingPhone || '',
               address: user.shippingAddress,
@@ -453,6 +481,8 @@ async function handlePayment(paymentId: string) {
           const order = await createShopifyOrder({
             email,
             name: user.name || email,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
             variantId: user.subscriptionVariantId,
             price: recurringPrice,
             taxExempt: user.subscriptionTaxExempt === true,
