@@ -27,17 +27,23 @@ export async function assignCoupon(partnerId: string, campaignTitle?: string | n
     if (campaignTitle !== undefined) campaignFilter.title = campaignTitle
     if (campaignDescription !== undefined) campaignFilter.description = campaignDescription
 
-    // Buscar un cupón disponible para esta campaña específica
+    // Buscar un cupón disponible para esta campaña específica (excluyendo expirados)
+    const now = new Date()
     const availableCoupon = await prisma.coupon.findFirst({
       where: {
         partnerId,
         isAssigned: false,
+        OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
         ...campaignFilter,
       },
     })
 
     if (!availableCoupon) {
       return { error: "No hay cupones disponibles para esta campaña" }
+    }
+
+    if (availableCoupon.expiresAt && availableCoupon.expiresAt < now) {
+      return { error: "Esta campaña ya expiró" }
     }
 
     // Verificar límite por usuario de esta campaña

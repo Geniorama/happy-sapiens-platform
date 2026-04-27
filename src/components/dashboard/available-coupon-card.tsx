@@ -43,14 +43,17 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
   const [localUserCount, setLocalUserCount] = useState(userObtainedCount)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   
+  const isExpired = !!coupon.expires_at && new Date(coupon.expires_at) < new Date()
   const hasReachedLimit = maxPerUser !== null && localUserCount >= maxPerUser
   const remainingQuota = maxPerUser !== null ? Math.max(0, maxPerUser - localUserCount) : Infinity
   const displayCount = maxPerUser !== null ? Math.min(localCount, remainingQuota) : localCount
-  const canObtain = localCount > 0 && !hasReachedLimit
+  const canObtain = localCount > 0 && !hasReachedLimit && !isExpired
 
   const handleAssignCoupon = async () => {
     if (!canObtain) {
-      if (hasReachedLimit) {
+      if (isExpired) {
+        setMessage({ type: "error", text: "Esta campaña ya expiró" })
+      } else if (hasReachedLimit) {
         setMessage({ type: "error", text: `Ya obtuviste el máximo de ${maxPerUser} cupones de esta campaña` })
       } else {
         setMessage({ type: "error", text: "No hay cupones disponibles" })
@@ -93,7 +96,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
   const couponDescription = coupon.description || coupon.partner.discount_description
   const discountPercentage = coupon.discount_percentage ?? coupon.partner.discount_percentage
   const discountDescriptionText = coupon.discount_description || coupon.partner.discount_description
-  const isExpiringSoon = coupon.expires_at && new Date(coupon.expires_at) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  const isExpiringSoon = !isExpired && coupon.expires_at && new Date(coupon.expires_at) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   return (
     <div className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-zinc-200 flex flex-col hover:shadow-md transition-shadow">
@@ -115,6 +118,12 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(coupon.partner.category)} backdrop-blur-sm`}>
                   <Tag className="w-3 h-3" strokeWidth={2} />
                   {coupon.partner.category}
+                </span>
+              )}
+              {isExpired && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-zinc-700 text-white backdrop-blur-sm">
+                  <Calendar className="w-3 h-3" strokeWidth={2} />
+                  Expirado
                 </span>
               )}
               {isExpiringSoon && (
@@ -332,6 +341,7 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
           >
             <Ticket className="w-4 h-4" strokeWidth={1.5} />
             {isAssigning ? "Obteniendo..." :
+             isExpired ? "Expirado" :
              hasReachedLimit ? "Límite alcanzado" :
              localCount <= 0 ? "Agotado" :
              "Obtener Cupón"}
