@@ -310,15 +310,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.role = "user"
         }
       } else if (token.id) {
-        // Refrescar subscription_status cada 5 minutos para detectar cambios (past_due, cancelled)
+        // Refrescar role y subscription_status cada 5 minutos para detectar cambios
         const lastFetch = token.subscriptionStatusFetchedAt as number | undefined
         if (!lastFetch || Date.now() - lastFetch > 5 * 60 * 1000) {
           try {
             const data = await prisma.user.findUnique({
               where: { id: token.id as string },
-              select: { subscriptionStatus: true },
+              select: { role: true, subscriptionStatus: true },
             })
             if (data) {
+              token.role = data.role || "user"
               token.subscriptionStatus = data.subscriptionStatus ?? null
               token.subscriptionStatusFetchedAt = Date.now()
             }

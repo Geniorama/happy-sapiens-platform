@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { signIn, getSession } from "next-auth/react"
+import { signIn, signOut, getSession } from "next-auth/react"
 import Link from "next/link"
 
 export function LoginForm() {
@@ -18,6 +18,11 @@ export function LoginForm() {
     const password = formData.get("password") as string
 
     try {
+      const existing = await getSession()
+      if (existing?.user) {
+        await signOut({ redirect: false })
+      }
+
       const result = await signIn("credentials", {
         email,
         password,
@@ -30,13 +35,7 @@ export function LoginForm() {
         return
       }
 
-      const session = await getSession()
-      const role = session?.user?.role
-
-      const destination =
-        role === "admin" ? "/admin" : role === "coach" ? "/coach" : "/dashboard"
-
-      window.location.href = destination
+      window.location.href = "/"
     } catch {
       setError("Ocurrió un error al iniciar sesión")
       setIsLoading(false)
@@ -46,7 +45,11 @@ export function LoginForm() {
   const handleOAuthSignIn = async (provider: string) => {
     setIsLoading(true)
     try {
-      await signIn(provider, { callbackUrl: "/dashboard" })
+      const existing = await getSession()
+      if (existing?.user) {
+        await signOut({ redirect: false })
+      }
+      await signIn(provider, { callbackUrl: "/" })
     } catch {
       setError(`Error al iniciar sesión con ${provider}`)
       setIsLoading(false)
