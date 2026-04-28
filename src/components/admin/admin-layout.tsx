@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
 import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon, CreditCard, BarChart3, ShoppingBag, ExternalLink } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
+import { ScrollableNav } from "@/components/ui/scrollable-nav"
 
 function LogoutButton() {
   return (
@@ -87,7 +88,7 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
         `}
       >
         {/* Logo */}
-        <div className="relative flex items-center justify-center px-6 py-6 border-b border-zinc-200">
+        <div className="relative flex items-center justify-center px-6 py-6 border-b border-zinc-200 shrink-0">
           <Link
             href="/admin"
             className="flex items-center"
@@ -109,7 +110,7 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
         </div>
 
         {/* User Info */}
-        <div className="px-6 py-6 border-b border-zinc-200">
+        <div className="px-6 py-6 border-b border-zinc-200 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center overflow-hidden shrink-0">
               {userImage ? (
@@ -134,7 +135,7 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-6 space-y-1">
+        <ScrollableNav className="px-3 py-6 space-y-1">
           {navigation.map((item) => {
             const isActive = item.exact
               ? pathname === item.href
@@ -170,10 +171,10 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
             <span className="flex-1">Tienda</span>
             <ExternalLink className="w-3 h-3 text-zinc-400" strokeWidth={1.5} />
           </a>
-        </nav>
+        </ScrollableNav>
 
         {/* Logout */}
-        <div className="p-3 border-t border-zinc-200">
+        <div className="p-3 border-t border-zinc-200 shrink-0">
           <LogoutButton />
           <p className="mt-2 text-center text-[10px] text-zinc-400">
             v{process.env.NEXT_PUBLIC_APP_VERSION}
