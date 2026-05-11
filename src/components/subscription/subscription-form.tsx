@@ -6,6 +6,7 @@ import { Check } from "lucide-react"
 import type { SubscriptionPlan } from "@/lib/mercadopago"
 import { COLOMBIA_DEPARTMENTS, COLOMBIA_LOCATIONS } from "@/lib/colombia-locations"
 import { PhoneInput } from "@/components/ui/phone-input"
+import { isValidPhoneNumber } from "react-phone-number-input"
 
 const DOCUMENT_TYPES = [
   { value: "CC", label: "Cédula de Ciudadanía" },
@@ -98,12 +99,12 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
 
     setError(null)
 
-    if (!billing.phone) {
-      setError("Ingresa un teléfono de facturación válido")
+    if (!billing.phone || !isValidPhoneNumber(billing.phone)) {
+      setError("Ingresa un teléfono de facturación válido (con prefijo de país y número completo)")
       return
     }
-    if (!sameAsBilling && !shipping.phone) {
-      setError("Ingresa un teléfono de contacto para el envío")
+    if (!sameAsBilling && (!shipping.phone || !isValidPhoneNumber(shipping.phone))) {
+      setError("Ingresa un teléfono de contacto para el envío válido")
       return
     }
 

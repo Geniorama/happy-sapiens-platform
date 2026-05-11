@@ -5,6 +5,7 @@ import { User, Phone, Calendar, Users } from "lucide-react"
 import { updateProfile } from "@/app/dashboard/profile/actions"
 import { PointsBanner } from "@/components/dashboard/points-banner"
 import { PhoneInput } from "@/components/ui/phone-input"
+import { isValidPhoneNumber } from "react-phone-number-input"
 
 interface ProfileFormProps {
   user: {
@@ -25,6 +26,12 @@ export function ProfileForm({ user }: ProfileFormProps) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+
+    if (phone && !isValidPhoneNumber(phone)) {
+      setMessage({ type: "error", text: "El teléfono ingresado no es válido (debe incluir el número completo, no solo el prefijo de país)" })
+      return
+    }
+
     setIsLoading(true)
     setMessage(null)
     setPointsEarned(undefined)

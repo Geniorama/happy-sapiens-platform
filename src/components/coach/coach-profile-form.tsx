@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { Loader2, Save } from "lucide-react"
 import { updateCoachProfile } from "@/app/coach/actions"
 import { PhoneInput } from "@/components/ui/phone-input"
+import { isValidPhoneNumber } from "react-phone-number-input"
 
 interface CoachProfileFormProps {
   profile: {
@@ -30,6 +31,12 @@ export function CoachProfileForm({ profile }: CoachProfileFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (phone && !isValidPhoneNumber(phone)) {
+      setMessage({ type: "error", text: "El teléfono ingresado no es válido (debe incluir el número completo, no solo el prefijo de país)" })
+      return
+    }
+
     startTransition(async () => {
       setMessage(null)
       const result = await updateCoachProfile({

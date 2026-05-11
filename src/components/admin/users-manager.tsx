@@ -12,6 +12,7 @@ import {
   bulkDeleteUsers, bulkSetSubscription, resendSetPasswordInvite,
 } from "@/app/admin/users/actions"
 import { PhoneInput } from "@/components/ui/phone-input"
+import { isValidPhoneNumber } from "react-phone-number-input"
 
 interface User {
   id: string
@@ -342,6 +343,10 @@ function UserDetailPanel({
             <div className="flex justify-end">
               <button onClick={() => {
                 setError(null)
+                if (dataForm.phone && !isValidPhoneNumber(dataForm.phone)) {
+                  setError("El teléfono ingresado no es válido (debe incluir el número completo, no solo el prefijo de país)")
+                  return
+                }
                 startTransition(async () => {
                   const r = await updateUser(user.id, dataForm)
                   if (r.error) setError(r.error)

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { Save, Loader2, KeyRound, Check } from "lucide-react"
 import { updateAdminProfile, updateAdminPassword } from "@/app/admin/profile/actions"
 import { PhoneInput } from "@/components/ui/phone-input"
+import { isValidPhoneNumber } from "react-phone-number-input"
 
 interface AdminProfileFormProps {
   profile: {
@@ -31,6 +32,12 @@ export function AdminProfileForm({ profile }: AdminProfileFormProps) {
 
   const handleProfileSave = () => {
     setProfileMsg(null)
+
+    if (phone && !isValidPhoneNumber(phone)) {
+      setProfileMsg({ type: "error", text: "El teléfono ingresado no es válido (debe incluir el número completo, no solo el prefijo de país)" })
+      return
+    }
+
     startProfileTransition(async () => {
       const result = await updateAdminProfile({ name, phone })
       if (result.error) {
