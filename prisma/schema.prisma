@@ -432,6 +432,22 @@ model SystemLog {
   @@map("system_logs")
 }
 
+model ShopifyOrderDispatch {
+  id                 String   @id @default(uuid()) @db.Uuid
+  idempotencyKey     String   @unique @map("idempotency_key")
+  userId             String?  @map("user_id") @db.Uuid
+  email              String
+  status             String   @default("pending")
+  shopifyOrderId     String?  @map("shopify_order_id")
+  shopifyOrderNumber Int?     @map("shopify_order_number")
+  errorMessage       String?  @map("error_message")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([email])
+  @@map("shopify_order_dispatches")
+}
+
 model SectionCover {
   id         String   @id @default(uuid()) @db.Uuid
   sectionKey String   @unique @map("section_key")

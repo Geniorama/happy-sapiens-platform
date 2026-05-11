@@ -3,7 +3,7 @@ import { paymentClient, preApprovalClient } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
-import { createShopifyOrder } from '@/lib/shopify'
+import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
 import { randomBytes, createHmac } from 'crypto'
 import { hash } from 'bcryptjs'
 import { Prisma } from '@prisma/client'
@@ -275,54 +275,82 @@ async function handlePreApproval(preApprovalId: string) {
     const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
 
     if (firstOrderVariantId) {
-      const billingAddress = billingData
+      // Releer el User: pending_checkout se borra al final del handler, así que
+      // en reentregas la única fuente confiable de direcciones es la fila users.
+      const userForOrder = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          firstName: true, lastName: true,
+          billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
+          shippingFullName: true, shippingFirstName: true, shippingLastName: true,
+          shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
+        },
+      })
+
+      const billingAddress = userForOrder?.billingAddress
         ? {
-            firstName: firstName || undefined,
-            lastName: lastName || undefined,
-            phone: billingData.phone || '',
-            address: billingData.address,
-            city: billingData.city || '',
-            department: billingData.department || '',
+            firstName: userForOrder.firstName || undefined,
+            lastName: userForOrder.lastName || undefined,
+            phone: userForOrder.billingPhone || '',
+            address: userForOrder.billingAddress,
+            city: userForOrder.billingCity || '',
+            department: userForOrder.billingDepartment || '',
           }
         : undefined
 
-      const shippingAddress = shippingData
+      const shippingAddress = userForOrder?.shippingAddress
         ? {
-            firstName: shippingData.firstName || firstName || undefined,
-            lastName: shippingData.lastName || lastName || undefined,
-            fullName: shippingData.fullName || name,
-            phone: shippingData.phone || '',
-            address: shippingData.address,
-            city: shippingData.city || '',
-            department: shippingData.department || '',
+            firstName: userForOrder.shippingFirstName || userForOrder.firstName || undefined,
+            lastName: userForOrder.shippingLastName || userForOrder.lastName || undefined,
+            fullName: userForOrder.shippingFullName || name,
+            phone: userForOrder.shippingPhone || '',
+            address: userForOrder.shippingAddress,
+            city: userForOrder.shippingCity || '',
+            department: userForOrder.shippingDepartment || '',
           }
         : undefined
 
       try {
-        const order = await createShopifyOrder({
+        const result = await dispatchShopifyOrder({
+          idempotencyKey: `preapproval:${preApprovalId}`,
           email,
-          name,
-          firstName: firstName || undefined,
-          lastName: lastName || undefined,
-          variantId: firstOrderVariantId,
-          price: subscriptionPrice,
-          taxExempt,
-          note: useWelcomeKit
-            ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
-            : 'Primera entrega — suscripción activada vía MercadoPago',
-          billing: billingAddress,
-          shipping: shippingAddress,
+          userId: userForOrder?.id ?? null,
+          params: {
+            email,
+            name,
+            firstName: userForOrder?.firstName || firstName || undefined,
+            lastName: userForOrder?.lastName || lastName || undefined,
+            variantId: firstOrderVariantId,
+            price: subscriptionPrice,
+            taxExempt,
+            note: useWelcomeKit
+              ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
+              : 'Primera entrega — suscripción activada vía MercadoPago',
+            billing: billingAddress,
+            shipping: shippingAddress,
+          },
         })
-        await log('webhook.preapproval.shopify_order_created', email, {
-          order_number: order.order_number,
-          order_id: order.id,
-          welcomeKit: useWelcomeKit,
-          variantId: firstOrderVariantId,
-        })
-        console.log(`Orden Shopify creada: #${order.order_number} para ${email}${useWelcomeKit ? ' (Kit bienvenida)' : ''}`)
+        if (result.status === 'created') {
+          await log('webhook.preapproval.shopify_order_created', email, {
+            order_number: result.order.order_number,
+            order_id: result.order.id,
+            welcomeKit: useWelcomeKit,
+            variantId: firstOrderVariantId,
+            preApprovalId,
+          })
+          console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}${useWelcomeKit ? ' (Kit bienvenida)' : ''}`)
+        } else {
+          await log('webhook.preapproval.shopify_order_skipped', email, {
+            reason: 'duplicate_dispatch',
+            preApprovalId,
+            existing: result.existing,
+          })
+          console.log(`Orden Shopify omitida (idempotencia) para ${email}: ya existe dispatch ${result.existing.status}`)
+        }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
-        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: firstOrderVariantId })
+        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: firstOrderVariantId, preApprovalId })
         console.error('Error creando orden en Shopify:', err)
       }
     }
@@ -478,23 +506,41 @@ async function handlePayment(paymentId: string) {
             : new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
           const orderNote = `Suscripción mensual — ${paymentDateStr} | Pago MP #${payment.id} | Cobro automático MercadoPago`
 
-          const order = await createShopifyOrder({
+          const result = await dispatchShopifyOrder({
+            idempotencyKey: `payment:${mpPaymentId}`,
             email,
-            name: user.name || email,
-            firstName: user.firstName || undefined,
-            lastName: user.lastName || undefined,
-            variantId: user.subscriptionVariantId,
-            price: recurringPrice,
-            taxExempt: user.subscriptionTaxExempt === true,
-            note: orderNote,
-            billing: billingAddress,
-            shipping: shippingAddress,
+            userId: user.id,
+            params: {
+              email,
+              name: user.name || email,
+              firstName: user.firstName || undefined,
+              lastName: user.lastName || undefined,
+              variantId: user.subscriptionVariantId,
+              price: recurringPrice,
+              taxExempt: user.subscriptionTaxExempt === true,
+              note: orderNote,
+              billing: billingAddress,
+              shipping: shippingAddress,
+            },
           })
-          await log('webhook.payment.shopify_order_created', email, { order_number: order.order_number, order_id: order.id })
-          console.log(`Orden Shopify creada: #${order.order_number} para ${email}`)
+          if (result.status === 'created') {
+            await log('webhook.payment.shopify_order_created', email, {
+              order_number: result.order.order_number,
+              order_id: result.order.id,
+              paymentId: mpPaymentId,
+            })
+            console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}`)
+          } else {
+            await log('webhook.payment.shopify_order_skipped', email, {
+              reason: 'duplicate_dispatch',
+              paymentId: mpPaymentId,
+              existing: result.existing,
+            })
+            console.log(`Orden Shopify omitida (idempotencia) para ${email}: ya existe dispatch ${result.existing.status}`)
+          }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscriptionVariantId })
+          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscriptionVariantId, paymentId: mpPaymentId })
           console.error('Error creando orden en Shopify:', err)
         }
       } else {

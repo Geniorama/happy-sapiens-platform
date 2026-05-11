@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { createShopifyOrder } from '@/lib/shopify'
+import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
 import { randomBytes } from 'crypto'
 import { Prisma } from '@prisma/client'
 
@@ -330,39 +331,61 @@ export async function POST(req: Request) {
       }
 
       if (shopifyVariantId) {
-        const billingAddress = billingData ? {
-          firstName: firstName || undefined,
-          lastName: lastName || undefined,
-          phone: billingData.phone || '',
-          address: billingData.address,
-          city: billingData.city || '',
-          department: billingData.department || '',
+        // Releer el User: pending_checkout pudo borrarse en una corrida previa;
+        // las direcciones definitivas están en users.
+        const userForOrder = await prisma.user.findUnique({
+          where: { email },
+          select: {
+            id: true,
+            firstName: true, lastName: true,
+            billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
+            shippingFullName: true, shippingFirstName: true, shippingLastName: true,
+            shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
+          },
+        })
+
+        const billingAddress = userForOrder?.billingAddress ? {
+          firstName: userForOrder.firstName || undefined,
+          lastName: userForOrder.lastName || undefined,
+          phone: userForOrder.billingPhone || '',
+          address: userForOrder.billingAddress,
+          city: userForOrder.billingCity || '',
+          department: userForOrder.billingDepartment || '',
         } : undefined
 
-        const shippingAddress = shippingData ? {
-          firstName: shippingData.firstName || firstName || undefined,
-          lastName: shippingData.lastName || lastName || undefined,
-          fullName: shippingData.fullName || name,
-          phone: shippingData.phone || '',
-          address: shippingData.address,
-          city: shippingData.city || '',
-          department: shippingData.department || '',
+        const shippingAddress = userForOrder?.shippingAddress ? {
+          firstName: userForOrder.shippingFirstName || userForOrder.firstName || undefined,
+          lastName: userForOrder.shippingLastName || userForOrder.lastName || undefined,
+          fullName: userForOrder.shippingFullName || name,
+          phone: userForOrder.shippingPhone || '',
+          address: userForOrder.shippingAddress,
+          city: userForOrder.shippingCity || '',
+          department: userForOrder.shippingDepartment || '',
         } : undefined
 
         try {
-          const order = await createShopifyOrder({
+          const result = await dispatchShopifyOrder({
+            idempotencyKey: `preapproval:${id}`,
             email,
-            name,
-            firstName: firstName || undefined,
-            lastName: lastName || undefined,
-            variantId: shopifyVariantId,
-            price: subscriptionPrice,
-            taxExempt,
-            note: 'Primera entrega — suscripción activada vía MercadoPago',
-            billing: billingAddress,
-            shipping: shippingAddress,
+            userId: userForOrder?.id ?? null,
+            params: {
+              email,
+              name,
+              firstName: userForOrder?.firstName || firstName || undefined,
+              lastName: userForOrder?.lastName || lastName || undefined,
+              variantId: shopifyVariantId,
+              price: subscriptionPrice,
+              taxExempt,
+              note: 'Primera entrega — suscripción activada vía MercadoPago',
+              billing: billingAddress,
+              shipping: shippingAddress,
+            },
           })
-          logs.push(`Orden Shopify creada: #${order.order_number} (id: ${order.id})`)
+          if (result.status === 'created') {
+            logs.push(`Orden Shopify creada: #${result.order.order_number} (id: ${result.order.id})`)
+          } else {
+            logs.push(`Orden Shopify omitida (idempotencia): dispatch ${result.existing.status} ya existe (orden #${result.existing.shopifyOrderNumber ?? 'n/a'})`)
+          }
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -440,8 +463,27 @@ export async function POST(req: Request) {
         } : undefined
 
         try {
-          const order = await createShopifyOrder({ email, name: user.name || email, firstName: user.firstName || undefined, lastName: user.lastName || undefined, variantId: user.subscriptionVariantId, price: recurringPrice, taxExempt: user.subscriptionTaxExempt === true, billing: billingAddress, shipping: shippingAddress })
-          logs.push(`Orden Shopify creada: #${order.order_number}`)
+          const result = await dispatchShopifyOrder({
+            idempotencyKey: `payment:${id}`,
+            email,
+            userId: user.id,
+            params: {
+              email,
+              name: user.name || email,
+              firstName: user.firstName || undefined,
+              lastName: user.lastName || undefined,
+              variantId: user.subscriptionVariantId,
+              price: recurringPrice,
+              taxExempt: user.subscriptionTaxExempt === true,
+              billing: billingAddress,
+              shipping: shippingAddress,
+            },
+          })
+          if (result.status === 'created') {
+            logs.push(`Orden Shopify creada: #${result.order.order_number}`)
+          } else {
+            logs.push(`Orden Shopify omitida (idempotencia): dispatch ${result.existing.status} ya existe (orden #${result.existing.shopifyOrderNumber ?? 'n/a'})`)
+          }
         } catch (err) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)
         }
