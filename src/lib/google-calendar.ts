@@ -221,8 +221,41 @@ export async function createCalendarEvent(
 
     const data = await res.json()
     const eventId: string | null = data.id ?? null
-    const meetLink: string | null =
+    let meetLink: string | null =
       data.conferenceData?.entryPoints?.find((e: { entryPointType: string }) => e.entryPointType === "video")?.uri ?? null
+
+    // Google puede devolver conferenceData en estado "pending": el enlace de
+    // Meet se provisiona de forma asíncrona, así que volvemos a leer el evento
+    // con backoff corto hasta obtenerlo. Sin esto, las citas se cancelan por
+    // un Meet que en realidad sí termina creándose unos segundos después.
+    const initialStatus: string | undefined =
+      data.conferenceData?.createRequest?.status?.statusCode
+    if (!meetLink && eventId && initialStatus !== "failure") {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+        const refreshRes = await fetch(
+          `${GOOGLE_EVENTS_URL}/${eventId}?conferenceDataVersion=1`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        )
+        if (!refreshRes.ok) continue
+        const refreshed = await refreshRes.json()
+        meetLink =
+          refreshed.conferenceData?.entryPoints?.find(
+            (e: { entryPointType: string }) => e.entryPointType === "video"
+          )?.uri ?? null
+        const status: string | undefined =
+          refreshed.conferenceData?.createRequest?.status?.statusCode
+        if (meetLink || status === "failure") break
+      }
+    }
+
+    if (!meetLink) {
+      console.error("Google Calendar createEvent: no meet link generated", {
+        eventId,
+        initialStatus,
+        conferenceData: data.conferenceData,
+      })
+    }
 
     return { eventId, meetLink }
   } catch (err) {
