@@ -178,12 +178,34 @@ export interface CalendarEventInput {
   meetingLink?: string
 }
 
+export type CalendarEventFailReason =
+  | "no_token"
+  | "api_error"
+  | "meet_failure"
+  | "meet_pending"
+  | "exception"
+
+export interface CalendarEventResult {
+  eventId: string | null
+  meetLink: string | null
+  failReason?: CalendarEventFailReason
+  failDetail?: string
+}
+
 /** Crea un evento en el Google Calendar del coach con Google Meet incluido */
 export async function createCalendarEvent(
   input: CalendarEventInput
-): Promise<{ eventId: string | null; meetLink: string | null }> {
+): Promise<CalendarEventResult> {
   const token = await getValidToken(input.coachId)
-  if (!token) return { eventId: null, meetLink: null }
+  if (!token) {
+    console.error("[createCalendarEvent] no_token for coachId:", input.coachId)
+    return {
+      eventId: null,
+      meetLink: null,
+      failReason: "no_token",
+      failDetail: "Token de Google Calendar no disponible o no se pudo refrescar",
+    }
+  }
 
   try {
     const startDt = new Date(`${input.date}T${input.startTime}:00`)
@@ -215,8 +237,14 @@ export async function createCalendarEvent(
     })
 
     if (!res.ok) {
-      console.error("Google Calendar createEvent error:", await res.text())
-      return { eventId: null, meetLink: null }
+      const errorText = await res.text()
+      console.error("[createCalendarEvent] api_error", res.status, errorText)
+      return {
+        eventId: null,
+        meetLink: null,
+        failReason: "api_error",
+        failDetail: `HTTP ${res.status}: ${errorText.slice(0, 500)}`,
+      }
     }
 
     const data = await res.json()
@@ -228,9 +256,9 @@ export async function createCalendarEvent(
     // Meet se provisiona de forma asíncrona, así que volvemos a leer el evento
     // con backoff corto hasta obtenerlo. Sin esto, las citas se cancelan por
     // un Meet que en realidad sí termina creándose unos segundos después.
-    const initialStatus: string | undefined =
+    let lastStatus: string | undefined =
       data.conferenceData?.createRequest?.status?.statusCode
-    if (!meetLink && eventId && initialStatus !== "failure") {
+    if (!meetLink && eventId && lastStatus !== "failure") {
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
         const refreshRes = await fetch(
@@ -243,24 +271,37 @@ export async function createCalendarEvent(
           refreshed.conferenceData?.entryPoints?.find(
             (e: { entryPointType: string }) => e.entryPointType === "video"
           )?.uri ?? null
-        const status: string | undefined =
-          refreshed.conferenceData?.createRequest?.status?.statusCode
-        if (meetLink || status === "failure") break
+        lastStatus = refreshed.conferenceData?.createRequest?.status?.statusCode
+        if (meetLink || lastStatus === "failure") break
       }
     }
 
     if (!meetLink) {
-      console.error("Google Calendar createEvent: no meet link generated", {
+      const reason: CalendarEventFailReason =
+        lastStatus === "failure" ? "meet_failure" : "meet_pending"
+      console.error("[createCalendarEvent] no meet link", {
         eventId,
-        initialStatus,
+        lastStatus,
         conferenceData: data.conferenceData,
       })
+      return {
+        eventId,
+        meetLink: null,
+        failReason: reason,
+        failDetail: `statusCode=${lastStatus ?? "undefined"}`,
+      }
     }
 
     return { eventId, meetLink }
   } catch (err) {
-    console.error("Google Calendar createEvent exception:", err)
-    return { eventId: null, meetLink: null }
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error("[createCalendarEvent] exception:", msg)
+    return {
+      eventId: null,
+      meetLink: null,
+      failReason: "exception",
+      failDetail: msg,
+    }
   }
 }
 

@@ -226,7 +226,7 @@ export async function createAppointment(data: CreateAppointmentData) {
 
       void coachUser
 
-      const { eventId: googleEventId, meetLink: createdMeetLink } = await createCalendarEvent({
+      const calendarResult = await createCalendarEvent({
         coachId: data.coachId,
         appointmentId: newAppt.id,
         title: `Cita con ${clientUser?.name ?? "cliente"}`,
@@ -239,9 +239,17 @@ export async function createAppointment(data: CreateAppointmentData) {
         ].filter(Boolean).join("\n"),
       })
 
+      const { eventId: googleEventId, meetLink: createdMeetLink } = calendarResult
       meetLink = createdMeetLink ?? undefined
 
       if (!createdMeetLink) {
+        console.error("[createAppointment] meet link missing", {
+          appointmentId: newAppt.id,
+          coachId: data.coachId,
+          failReason: calendarResult.failReason,
+          failDetail: calendarResult.failDetail,
+        })
+
         // Rollback: la cita no puede existir sin enlace de videollamada.
         // Intentamos limpiar también el evento de Google si se creó sin Meet
         // (caso raro pero posible si el calendario rechaza el conferenceData).
@@ -253,10 +261,16 @@ export async function createAppointment(data: CreateAppointmentData) {
         }
         revalidatePath("/dashboard/coaches")
         revalidatePath("/dashboard/coaches/appointments")
-        return {
-          error:
-            "No pudimos generar el enlace de videollamada para esta cita. Intenta de nuevo en unos minutos o contacta al coach.",
-        }
+
+        const userMessage =
+          calendarResult.failReason === "no_token"
+            ? "El coach no tiene su Google Calendar conectado correctamente. Pídele que vuelva a conectarlo desde su panel."
+            : calendarResult.failReason === "api_error"
+            ? "Google rechazó la creación del evento. Pide al coach reconectar su calendario."
+            : calendarResult.failReason === "meet_failure"
+            ? "Google Meet no pudo crearse para esta cita. Verifica que la cuenta del coach tenga Meet habilitado."
+            : "No pudimos generar el enlace de videollamada para esta cita. Intenta de nuevo en unos minutos."
+        return { error: userMessage }
       }
 
       await prisma.appointment.update({
