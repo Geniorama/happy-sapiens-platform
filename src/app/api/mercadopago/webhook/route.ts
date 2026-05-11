@@ -268,10 +268,23 @@ async function handlePreApproval(preApprovalId: string) {
     }
 
     // Crear primer pedido en Shopify al activar la suscripción.
-    // Usuarios nuevos reciben el Kit de bienvenida (bundle con accesorios de obsequio)
-    // si el plan lo tiene configurado. Reactivaciones y planes sin kit usan el variant normal.
-    const isNewUser = !existingUser
-    const useWelcomeKit = isNewUser && !!shopifyFirstOrderVariantId
+    //
+    // Kit de bienvenida: se entrega solo si el usuario nunca ha recibido un primer
+    // despacho exitoso antes. Consultamos shopify_order_dispatches en vez de usar
+    // `!existingUser` porque las reentregas del webhook crean al user en la primera
+    // pasada y, sin este check, la reentrega caería al variant regular y se perdería
+    // el kit (que fue lo que pasó con joh.berrio antes del fix de Draft Orders).
+    const priorFirstOrder = shopifyFirstOrderVariantId
+      ? await prisma.shopifyOrderDispatch.findFirst({
+          where: {
+            email,
+            idempotencyKey: { startsWith: 'preapproval:' },
+            status: 'created',
+          },
+          select: { id: true },
+        })
+      : null
+    const useWelcomeKit = !!shopifyFirstOrderVariantId && !priorFirstOrder
     const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
 
     if (firstOrderVariantId) {

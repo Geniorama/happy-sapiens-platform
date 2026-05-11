@@ -74,7 +74,14 @@ export async function getShopifyCustomerById(numericId: number) {
   return data.customer
 }
 
-// Crear una orden en Shopify (para cobros recurrentes de suscripción)
+// Crear una orden en Shopify para una suscripción (primer despacho o cobro recurrente).
+//
+// Usamos el flujo de Draft Orders en vez de Orders directos porque la REST Orders API
+// rechaza variants con `components` (bundles de Shopify) con 422. Los Welcome Kits
+// están configurados como bundles, así que Orders directos imposibilita despacharlos.
+// Draft Orders sí los acepta — Shopify expande el bundle internamente al completar.
+//
+// Flujo: POST /draft_orders → PUT /draft_orders/{id}/complete?payment_pending=false → GET /orders/{order_id}.
 export async function createShopifyOrder(params: {
   email: string
   name: string
@@ -103,8 +110,6 @@ export async function createShopifyOrder(params: {
     department: string
   }
 }) {
-  const restUrl = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders.json`
-
   const splitName = (fullName: string) => {
     const parts = fullName.trim().split(/\s+/)
     return {
@@ -151,51 +156,88 @@ export async function createShopifyOrder(params: {
     ? buildAddress(params.billing, fallbackName)
     : shippingAddress
 
-  const response = await fetch(restUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-    },
-    body: JSON.stringify({
-      order: {
-        email: params.email,
-        financial_status: 'paid',
-        taxes_included: true,
-        send_receipt: false,
-        send_fulfillment_receipt: true,
-        line_items: [{
-          variant_id: parseInt(params.variantId, 10),
-          quantity: 1,
-          ...(params.price !== undefined && { price: params.price.toFixed(2) }),
-          tax_lines: (params.price !== undefined && !params.taxExempt)
-            ? [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }]
-            : [],
-        }],
-        customer: {
-          email: params.email,
-          first_name: customerFirstName,
-          last_name: customerLastName,
-        },
-        note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
-        tags: 'subscription,auto',
-        ...(billingAddress && { billing_address: billingAddress }),
-        ...(shippingAddress && {
-          shipping_address: shippingAddress,
-          shipping_lines: [{ title: 'Envío estándar', price: '0.00', code: 'standard' }],
-        }),
-      },
-    }),
-    cache: 'no-store',
-  })
-
-  if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`Shopify order error: ${response.status} ${errorBody}`)
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': SHOPIFY_TOKEN,
   }
 
-  const { order } = await response.json()
-  return order as { id: number; order_number: number }
+  // 1. Crear el draft order
+  const draftRes = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders.json`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        draft_order: {
+          email: params.email,
+          tax_exempt: params.taxExempt === true,
+          taxes_included: true,
+          use_customer_default_address: false,
+          line_items: [{
+            variant_id: parseInt(params.variantId, 10),
+            quantity: 1,
+            ...(params.price !== undefined && { price: params.price.toFixed(2) }),
+            ...((params.price !== undefined && !params.taxExempt) && {
+              tax_lines: [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }],
+            }),
+          }],
+          customer: {
+            email: params.email,
+            first_name: customerFirstName,
+            last_name: customerLastName,
+          },
+          note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
+          tags: 'subscription,auto',
+          ...(billingAddress && { billing_address: billingAddress }),
+          ...(shippingAddress && {
+            shipping_address: shippingAddress,
+            shipping_line: { title: 'Envío estándar', price: '0.00', custom: true },
+          }),
+        },
+      }),
+      cache: 'no-store',
+    }
+  )
+
+  if (!draftRes.ok) {
+    const errorBody = await draftRes.text()
+    throw new Error(`Shopify draft_order create error: ${draftRes.status} ${errorBody}`)
+  }
+
+  const { draft_order } = await draftRes.json()
+  const draftId = draft_order.id as number
+
+  // 2. Completar el draft order — payment_pending=false marca financial_status='paid'.
+  const completeRes = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders/${draftId}/complete.json?payment_pending=false`,
+    {
+      method: 'PUT',
+      headers,
+      cache: 'no-store',
+    }
+  )
+
+  if (!completeRes.ok) {
+    const errorBody = await completeRes.text()
+    throw new Error(`Shopify draft_order complete error: ${completeRes.status} ${errorBody}`)
+  }
+
+  const { draft_order: completed } = await completeRes.json()
+  const orderId = completed.order_id as number
+
+  // 3. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
+  const orderRes = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number`,
+    { headers, cache: 'no-store' }
+  )
+
+  if (!orderRes.ok) {
+    const errorBody = await orderRes.text()
+    throw new Error(`Shopify order fetch error: ${orderRes.status} ${errorBody}`)
+  }
+
+  const { order } = await orderRes.json()
+  return { id: order.id as number, order_number: order.order_number as number }
 }
 
 export interface ShopifyOrder {
