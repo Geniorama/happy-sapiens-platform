@@ -12,7 +12,11 @@ SaaS de bienestar con modelo de suscripción. Los usuarios deben suscribirse ant
 - **Storage**: AWS S3 + CloudFront CDN
 - **Validación**: Zod
 - **Package manager**: npm (`legacy-peer-deps=true` en `.npmrc`)
-- **Deploy**: Netlify (`output: 'standalone'` en `next.config.ts`)
+- **Deploy**:
+  - Rama `develop` → **Netlify** (staging). Usa `netlify.toml` y `netlify/functions/`.
+  - Rama `main` → **AWS EC2** Ubuntu (producción). Variables en `.env` del servidor.
+  - `output: 'standalone'` en `next.config.ts` aplica a ambos.
+  - Ambos servidores corren en **UTC**. La lógica TZ-dependiente debe usar los helpers de `src/lib/timezone.ts` (las citas se interpretan como wall-clock Colombia, UTC-5).
 
 ## Comandos
 
@@ -80,6 +84,7 @@ Configurar en `.env.local`. Ver `COMO_CONFIGURAR_ENV.md` para la lista completa.
 Todos los módulos tienen documentación en español en archivos `.md` en la raíz:
 - `RESUMEN_PROYECTO.md` — visión general del proyecto
 - `MODULO_RITUAL_COACHES.md` — sistema de reserva de coaches
+- `MODULO_RECORDATORIOS.md` — recordatorios configurables de citas + setup cron-job.org
 - `MODULO_ALIADOS.md` — módulo de partners
 - `MERCADOPAGO_CONFIG.md` — integración de pagos
 - `AWS_S3_CLOUDFRONT_SETUP.md` — configuración de storage

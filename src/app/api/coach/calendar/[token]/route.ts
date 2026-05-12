@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCalendarToken } from "@/lib/coach-utils"
+import { combineAppointmentDateTime } from "@/lib/timezone"
 
 function escapeIcal(str: string): string {
   return str
@@ -10,20 +11,8 @@ function escapeIcal(str: string): string {
     .replace(/\n/g, "\\n")
 }
 
-function toIcalDate(date: string, time: string): string {
-  // date: "YYYY-MM-DD", time: "HH:MM:SS"
-  const dt = new Date(`${date}T${time}Z`)
-  return dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
-}
-
-// Formatea un Prisma Date (@db.Date) a "YYYY-MM-DD" en UTC
-function dateToYmd(d: Date): string {
-  return d.toISOString().slice(0, 10)
-}
-
-// Formatea un Prisma Time (@db.Time) a "HH:MM:SS" en UTC
-function timeToHms(d: Date): string {
-  return d.toISOString().slice(11, 19)
+function toIcalUtc(d: Date): string {
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
 }
 
 export async function GET(
@@ -66,19 +55,15 @@ export async function GET(
     "VERSION:2.0",
     "PRODID:-//Happy Sapiens//Coach Calendar//ES",
     `X-WR-CALNAME:Citas - ${escapeIcal(coach.name || "Coach")}`,
-    "X-WR-TIMEZONE:America/Argentina/Buenos_Aires",
+    "X-WR-TIMEZONE:America/Bogota",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
   ]
 
   for (const apt of appointments) {
-    const dateStr = dateToYmd(apt.appointmentDate)
-    const timeStr = timeToHms(apt.appointmentTime) || "00:00:00"
-    const startDt = toIcalDate(dateStr, timeStr)
-    // End = start + duration_minutes
-    const startMs = new Date(`${dateStr}T${timeStr}Z`).getTime()
-    const endMs = startMs + (apt.durationMinutes || 60) * 60 * 1000
-    const endDt = new Date(endMs).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
+    // Momento real de la cita interpretando date+time como wall-clock Colombia.
+    const start = combineAppointmentDateTime(apt.appointmentDate, apt.appointmentTime)
+    const end = new Date(start.getTime() + (apt.durationMinutes || 60) * 60_000)
 
     const summary = escapeIcal(`HS - Cita con ${apt.user?.name || "Cliente"}`)
     const description = escapeIcal(apt.consultationReason || "")
@@ -87,9 +72,9 @@ export async function GET(
     lines.push(
       "BEGIN:VEVENT",
       `UID:appointment-${apt.id}@happy-sapiens`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`,
-      `DTSTART:${startDt}`,
-      `DTEND:${endDt}`,
+      `DTSTAMP:${toIcalUtc(new Date())}`,
+      `DTSTART:${toIcalUtc(start)}`,
+      `DTEND:${toIcalUtc(end)}`,
       `SUMMARY:${summary}`,
       description ? `DESCRIPTION:${description}` : "",
       location ? `LOCATION:${location}` : "",
