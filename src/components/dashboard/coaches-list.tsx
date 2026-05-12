@@ -102,7 +102,7 @@ export function CoachesList({ coaches, userAppointments, userId, isPaused = fals
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" strokeWidth={1.5} />
                     <span>
-                      {new Date(appointment.appointment_date).toLocaleDateString("es-ES", {
+                      {new Date(`${appointment.appointment_date}T${appointment.appointment_time}`).toLocaleDateString("es-ES", {
                         weekday: "long",
                         year: "numeric",
                         month: "long",
@@ -113,7 +113,7 @@ export function CoachesList({ coaches, userAppointments, userId, isPaused = fals
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" strokeWidth={1.5} />
                     <span>
-                      {new Date(`2000-01-01T${appointment.appointment_time}`).toLocaleTimeString("es-ES", {
+                      {new Date(`${appointment.appointment_date}T${appointment.appointment_time}`).toLocaleTimeString("es-ES", {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
