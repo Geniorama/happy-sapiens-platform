@@ -1,19 +1,9 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { sendReminderFromRule } from "@/lib/appointment-emails"
+import { combineAppointmentDateTime } from "@/lib/timezone"
 
 const SECRET = process.env.WEBHOOK_TRIGGER_SECRET
-
-function combineDateTime(date: Date, time: Date): Date {
-  const year = date.getUTCFullYear()
-  const month = date.getUTCMonth()
-  const day = date.getUTCDate()
-  const hours = time.getUTCHours()
-  const minutes = time.getUTCMinutes()
-  const seconds = time.getUTCSeconds()
-  // Misma convención que usa createAppointment al combinar @db.Date + @db.Time
-  return new Date(year, month, day, hours, minutes, seconds)
-}
 
 export async function POST(req: Request) {
   const authHeader = req.headers.get("x-cron-secret")
@@ -39,16 +29,21 @@ export async function POST(req: Request) {
   const maxHoursBefore = Math.max(...rules.map((r) => Number(r.hoursBefore)))
   const maxDaysAhead = Math.ceil(maxHoursBefore / 24) + 1
 
+  // Rango: arrancamos 1 día atrás para no perder citas en el borde de la
+  // medianoche UTC (una cita "23:00 Colombia de ayer" tiene appointmentDate
+  // de ayer pero el momento real puede ser dentro de unas horas).
   const todayStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
   )
+  const rangeStart = new Date(todayStart)
+  rangeStart.setUTCDate(todayStart.getUTCDate() - 1)
   const rangeEnd = new Date(todayStart)
   rangeEnd.setUTCDate(todayStart.getUTCDate() + maxDaysAhead)
 
   const candidates = await prisma.appointment.findMany({
     where: {
       status: "scheduled",
-      appointmentDate: { gte: todayStart, lte: rangeEnd },
+      appointmentDate: { gte: rangeStart, lte: rangeEnd },
     },
     select: {
       id: true,
@@ -62,7 +57,7 @@ export async function POST(req: Request) {
   const logs: string[] = []
 
   for (const appt of candidates) {
-    const target = combineDateTime(appt.appointmentDate, appt.appointmentTime)
+    const target = combineAppointmentDateTime(appt.appointmentDate, appt.appointmentTime)
     const hoursUntil = (target.getTime() - now.getTime()) / (1000 * 60 * 60)
     const sentRuleIds = new Set(appt.remindersSent.map((r) => r.ruleId))
 

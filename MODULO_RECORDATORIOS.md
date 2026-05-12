@@ -111,8 +111,30 @@ sobradas para no perder citas. Si cambias a cadencia más baja (ej. cada 30 min)
 WEBHOOK_TRIGGER_SECRET=<un secreto largo aleatorio>
 ```
 
-Ya está configurada en Netlify si el cron de reactivación de suscripciones funciona — usa la
-misma variable.
+Configurada en el `.env` del servidor EC2 (mismo lugar donde están `DATABASE_URL`,
+`NEXTAUTH_SECRET`, etc.). Si necesitas verificarla por SSH:
+
+```bash
+grep WEBHOOK_TRIGGER_SECRET /ruta/a/.env
+# o, si el proceso ya está corriendo
+ps eww <PID> | grep WEBHOOK_TRIGGER_SECRET
+```
+
+Reusa la misma variable que ya emplea el endpoint de reactivación de suscripciones
+(`/api/cron/reactivate-subscriptions`) — no hace falta generar otra.
+
+## Manejo de zona horaria
+
+Las citas se almacenan como `@db.Date` + `@db.Time` (sin TZ) en Postgres. La convención del
+proyecto es tratar siempre esos valores como **wall-clock de Colombia (UTC-5)**, sin importar
+el TZ del SO del servidor donde corra Next.js.
+
+El helper `combineAppointmentDateTime()` en `src/lib/timezone.ts` hace esa conversión. El cron
+lo usa para calcular el momento real de cada cita y compararlo contra `new Date()`. Así, aunque
+el EC2 esté en UTC o en `America/Bogota`, el cálculo de `hoursUntil` siempre es correcto.
+
+Si en el futuro hay usuarios fuera de Colombia, habría que reconsiderar este diseño (almacenar
+TIMESTAMPTZ o un campo de TZ por cita).
 
 ## Endpoint manual (debugging)
 

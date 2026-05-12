@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { awardPoints, awardPointsOnce, spendPoints, POINT_ACTIONS, POINTS_BY_ACTION } from "@/lib/points"
 import { createCalendarEvent, deleteCalendarEvent } from "@/lib/google-calendar"
 import { sendAppointmentConfirmation } from "@/lib/appointment-emails"
+import { appointmentDateTimeFromStrings, combineAppointmentDateTime, dayOfWeekFromDateStr } from "@/lib/timezone"
 
 interface HealthProfileData {
   // 1. Datos básicos
@@ -133,8 +134,12 @@ export async function createAppointment(data: CreateAppointmentData) {
       }
     }
 
-    // Verificar que la fecha no sea en el pasado
-    const appointmentDateTime = new Date(`${data.appointmentDate}T${data.appointmentTime}`)
+    // Verificar que la fecha no sea en el pasado. La hora ingresada se trata
+    // como wall-clock Colombia (UTC-5) para no depender del TZ del servidor.
+    const appointmentDateTime = appointmentDateTimeFromStrings(
+      data.appointmentDate,
+      data.appointmentTime
+    )
     if (appointmentDateTime < new Date()) {
       return { error: "No puedes agendar citas en el pasado" }
     }
@@ -157,8 +162,9 @@ export async function createAppointment(data: CreateAppointmentData) {
       return { error: "Este horario ya está ocupado" }
     }
 
-    // Verificar disponibilidad del coach
-    const appointmentDay = appointmentDateTime.getDay()
+    // Verificar disponibilidad del coach. day-of-week derivado del string de
+    // la fecha para que no dependa del TZ del servidor (.getDay() lo haría).
+    const appointmentDay = dayOfWeekFromDateStr(data.appointmentDate)
     const availability = await prisma.coachAvailability.findMany({
       where: {
         coachId: data.coachId,
@@ -334,9 +340,12 @@ export async function cancelAppointment(appointmentId: string) {
       return { error: "Solo puedes cancelar citas programadas" }
     }
 
-    const dateStr = formatDate(appointment.appointmentDate)
-    const timeStr = formatTime(appointment.appointmentTime)
-    const appointmentDateTime = new Date(`${dateStr}T${timeStr}`)
+    // El momento real de la cita se calcula tratando la hora almacenada como
+    // wall-clock Colombia, independiente del TZ del servidor.
+    const appointmentDateTime = combineAppointmentDateTime(
+      appointment.appointmentDate,
+      appointment.appointmentTime
+    )
     const hoursUntilAppointment = (appointmentDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
     if (hoursUntilAppointment < 24) {
       return { error: "Las citas solo pueden cancelarse con al menos 24 horas de anticipación" }
