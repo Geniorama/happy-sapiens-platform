@@ -229,7 +229,7 @@ export async function createAppointment(data: CreateAppointmentData) {
       const calendarResult = await createCalendarEvent({
         coachId: data.coachId,
         appointmentId: newAppt.id,
-        title: `Cita con ${clientUser?.name ?? "cliente"}`,
+        title: `HS - Cita con ${clientUser?.name ?? "cliente"}`,
         date: data.appointmentDate,
         startTime: data.appointmentTime.slice(0, 5),
         durationMinutes: data.durationMinutes ?? 60,

@@ -50,7 +50,7 @@ export function AddToCalendarButton({
   const endDate = new Date(startDate.getTime() + duration * 60 * 1000)
 
   const event: CalendarEvent = {
-    title: `Sesión con ${appointment.coach.name || "Coach"} - Happy Sapiens`,
+    title: `HS - Sesión con ${appointment.coach.name || "Coach"}`,
     startDate,
     endDate,
     description: appointment.coach.specialization

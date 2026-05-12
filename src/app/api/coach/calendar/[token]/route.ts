@@ -80,7 +80,7 @@ export async function GET(
     const endMs = startMs + (apt.durationMinutes || 60) * 60 * 1000
     const endDt = new Date(endMs).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
 
-    const summary = escapeIcal(`Cita con ${apt.user?.name || "Cliente"}`)
+    const summary = escapeIcal(`HS - Cita con ${apt.user?.name || "Cliente"}`)
     const description = escapeIcal(apt.consultationReason || "")
     const location = escapeIcal(apt.meetingLink || "")
 

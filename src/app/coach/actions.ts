@@ -183,7 +183,7 @@ export async function updateAppointment({
       await deleteCalendarEvent(session.user.id, existing.googleEventId).catch(() => {})
     } else if (status === "completed") {
       await updateCalendarEvent(session.user.id, existing.googleEventId, {
-        summary: "[Completada] " + (notes ? notes.slice(0, 60) : "Cita completada"),
+        summary: "HS - [Completada] " + (notes ? notes.slice(0, 60) : "Cita completada"),
       }).catch(() => {})
     }
   }

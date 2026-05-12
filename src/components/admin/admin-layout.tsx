@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ReactNode, useState } from "react"
-import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon, CreditCard, BarChart3, ShoppingBag, ExternalLink } from "lucide-react"
+import { LayoutDashboard, Building2, Tag, UserCheck, Users, Star, User, LogOut, Menu, X, ScrollText, ImageIcon, CreditCard, BarChart3, ShoppingBag, ExternalLink, Bell } from "lucide-react"
 import { handleSignOut } from "@/app/dashboard/actions"
 import { ScrollableNav } from "@/components/ui/scrollable-nav"
 
@@ -37,6 +37,7 @@ export function AdminLayout({ children, userName, userEmail, userImage }: AdminL
     { name: "Marcas", href: "/admin/partners", icon: Building2, exact: false },
     { name: "Cupones", href: "/admin/coupons", icon: Tag, exact: false },
     { name: "Coaches", href: "/admin/coaches", icon: UserCheck, exact: false },
+    { name: "Recordatorios", href: "/admin/reminders", icon: Bell, exact: false },
     { name: "Usuarios", href: "/admin/users", icon: Users, exact: false },
     { name: "Estadísticas", href: "/admin/stats", icon: BarChart3, exact: false },
     { name: "Planes", href: "/admin/plans", icon: CreditCard, exact: false },

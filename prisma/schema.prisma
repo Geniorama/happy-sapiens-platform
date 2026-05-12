@@ -272,19 +272,55 @@ model Appointment {
   meetingLink          String?  @map("meeting_link")
   consultationReason   String?  @map("consultation_reason")
   consultationSnapshot Json?    @default("{}") @map("consultation_snapshot")
-  reminder24hSentAt    DateTime? @map("reminder_24h_sent_at") @db.Timestamptz(6)
-  reminder1hSentAt     DateTime? @map("reminder_1h_sent_at") @db.Timestamptz(6)
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user  User @relation("UserAppointments", fields: [userId], references: [id], onDelete: Cascade)
-  coach User @relation("CoachAppointments", fields: [coachId], references: [id], onDelete: Cascade)
+  user           User                       @relation("UserAppointments", fields: [userId], references: [id], onDelete: Cascade)
+  coach          User                       @relation("CoachAppointments", fields: [coachId], references: [id], onDelete: Cascade)
+  remindersSent  AppointmentReminderSent[]
 
   @@index([userId], map: "idx_appointments_user")
   @@index([coachId], map: "idx_appointments_coach")
   @@index([appointmentDate], map: "idx_appointments_date")
   @@index([status], map: "idx_appointments_status")
   @@map("appointments")
+}
+
+model AppointmentReminderRule {
+  id             String   @id @default(uuid()) @db.Uuid
+  key            String   @unique @db.VarChar(100)
+  name           String
+  hoursBefore    Decimal  @map("hours_before") @db.Decimal(6, 2)
+  windowMinutes  Int      @default(30) @map("window_minutes")
+  isActive       Boolean  @default(true) @map("is_active")
+  sendToUser     Boolean  @default(true) @map("send_to_user")
+  sendToCoach    Boolean  @default(true) @map("send_to_coach")
+  subjectUser    String   @map("subject_user")
+  bodyUser       String   @map("body_user")
+  subjectCoach   String   @map("subject_coach")
+  bodyCoach      String   @map("body_coach")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sends AppointmentReminderSent[]
+
+  @@index([isActive], map: "idx_appointment_reminder_rules_active")
+  @@map("appointment_reminder_rules")
+}
+
+model AppointmentReminderSent {
+  id            String   @id @default(uuid()) @db.Uuid
+  appointmentId String   @map("appointment_id") @db.Uuid
+  ruleId        String   @map("rule_id") @db.Uuid
+  sentAt        DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+
+  appointment Appointment             @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  rule        AppointmentReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, ruleId])
+  @@index([appointmentId], map: "idx_appointment_reminder_sent_appt")
+  @@index([ruleId], map: "idx_appointment_reminder_sent_rule")
+  @@map("appointment_reminder_sent")
 }
 
 model UserHealthProfile {
