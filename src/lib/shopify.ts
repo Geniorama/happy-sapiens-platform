@@ -180,6 +180,10 @@ export async function createShopifyOrder(params: {
       body: JSON.stringify({
         draft_order: {
           email: params.email,
+          // Canal/atribución de venta en Shopify. Coincide con el nombre exacto
+          // de la Custom App registrada en Shopify para que las ventas se asocien
+          // a ese canal en el admin.
+          source_name: 'Happy Sapiens Suscriptions',
           tax_exempt: params.taxExempt === true,
           taxes_included: true,
           use_customer_default_address: false,
