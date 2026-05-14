@@ -295,6 +295,7 @@ async function handlePreApproval(preApprovalId: string) {
         select: {
           id: true,
           firstName: true, lastName: true,
+          billingDocumentType: true, billingDocumentNumber: true,
           billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
           shippingFullName: true, shippingFirstName: true, shippingLastName: true,
           shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
@@ -335,8 +336,9 @@ async function handlePreApproval(preApprovalId: string) {
             firstName: userForOrder?.firstName || firstName || undefined,
             lastName: userForOrder?.lastName || lastName || undefined,
             variantId: firstOrderVariantId,
-            price: subscriptionPrice,
             taxExempt,
+            documentType: userForOrder?.billingDocumentType ?? null,
+            documentNumber: userForOrder?.billingDocumentNumber ?? null,
             note: useWelcomeKit
               ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
               : 'Primera entrega — suscripción activada vía MercadoPago',
@@ -429,6 +431,8 @@ async function handlePayment(paymentId: string) {
         subscriptionStatus: true,
         subscriptionVariantId: true,
         subscriptionTaxExempt: true,
+        billingDocumentType: true,
+        billingDocumentNumber: true,
         billingPhone: true,
         billingAddress: true,
         billingCity: true,
@@ -529,8 +533,9 @@ async function handlePayment(paymentId: string) {
               firstName: user.firstName || undefined,
               lastName: user.lastName || undefined,
               variantId: user.subscriptionVariantId,
-              price: recurringPrice,
               taxExempt: user.subscriptionTaxExempt === true,
+              documentType: user.billingDocumentType,
+              documentNumber: user.billingDocumentNumber,
               note: orderNote,
               billing: billingAddress,
               shipping: shippingAddress,

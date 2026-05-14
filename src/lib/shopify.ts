@@ -81,6 +81,10 @@ export async function getShopifyCustomerById(numericId: number) {
 // están configurados como bundles, así que Orders directos imposibilita despacharlos.
 // Draft Orders sí los acepta — Shopify expande el bundle internamente al completar.
 //
+// Precio: el variant en Shopify ya está creado con el precio de suscripción, así que
+// no aplicamos descuento ni sobrescribimos el price del line item. Shopify calcula
+// IVA con la configuración del variant; respetamos tax_exempt cuando aplica.
+//
 // Flujo: POST /draft_orders → PUT /draft_orders/{id}/complete?payment_pending=false → GET /orders/{order_id}.
 export async function createShopifyOrder(params: {
   email: string
@@ -88,9 +92,10 @@ export async function createShopifyOrder(params: {
   firstName?: string
   lastName?: string
   variantId: string
-  price?: number
   taxExempt?: boolean
   note?: string
+  documentType?: string | null
+  documentNumber?: string | null
   billing?: {
     firstName?: string
     lastName?: string
@@ -161,6 +166,11 @@ export async function createShopifyOrder(params: {
     'X-Shopify-Access-Token': SHOPIFY_TOKEN,
   }
 
+  // note_attributes: Siigo/Moship leen tipo y número de documento desde aquí para la FE.
+  const noteAttributes: { name: string; value: string }[] = []
+  if (params.documentType) noteAttributes.push({ name: 'Tipo de documento', value: params.documentType })
+  if (params.documentNumber) noteAttributes.push({ name: 'Número de documento', value: params.documentNumber })
+
   // 1. Crear el draft order
   const draftRes = await fetch(
     `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders.json`,
@@ -176,10 +186,6 @@ export async function createShopifyOrder(params: {
           line_items: [{
             variant_id: parseInt(params.variantId, 10),
             quantity: 1,
-            ...(params.price !== undefined && { price: params.price.toFixed(2) }),
-            ...((params.price !== undefined && !params.taxExempt) && {
-              tax_lines: [{ title: 'IVA', rate: 0.19, price: (params.price * 19 / 119).toFixed(2) }],
-            }),
           }],
           customer: {
             email: params.email,
@@ -187,6 +193,7 @@ export async function createShopifyOrder(params: {
             last_name: customerLastName,
           },
           note: params.note ?? 'Suscripción mensual — cobro automático MercadoPago',
+          ...(noteAttributes.length > 0 && { note_attributes: noteAttributes }),
           tags: 'subscription,auto',
           ...(billingAddress && { billing_address: billingAddress }),
           ...(shippingAddress && {

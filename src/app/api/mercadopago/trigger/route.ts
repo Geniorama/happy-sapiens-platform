@@ -87,6 +87,8 @@ export async function POST(req: Request) {
           subscriptionVariantId: true,
           subscriptionPrice: true,
           subscriptionTaxExempt: true,
+          billingDocumentType: true,
+          billingDocumentNumber: true,
           billingPhone: true,
           billingAddress: true,
           billingCity: true,
@@ -133,8 +135,9 @@ export async function POST(req: Request) {
         firstName: user.firstName || undefined,
         lastName: user.lastName || undefined,
         variantId: user.subscriptionVariantId,
-        price: user.subscriptionPrice ? Number(user.subscriptionPrice) : undefined,
         taxExempt: user.subscriptionTaxExempt === true,
+        documentType: user.billingDocumentType,
+        documentNumber: user.billingDocumentNumber,
         billing: billingAddress,
         shipping: shippingAddress,
       })
@@ -152,6 +155,7 @@ export async function POST(req: Request) {
       let lastName: string | null = null
       let productId: string | null = null
       let shopifyVariantId: string | null = null
+      let shopifyFirstOrderVariantId: string | null = null
       let taxExempt = false
       let referralCode: string | null = null
       const preApprovalAny = preApproval as unknown as Record<string, unknown>
@@ -170,6 +174,7 @@ export async function POST(req: Request) {
           lastName = parsed.lastName || null
           productId = parsed.productId || null
           shopifyVariantId = parsed.shopifyVariantId || null
+          shopifyFirstOrderVariantId = parsed.shopifyFirstOrderVariantId || null
           taxExempt = parsed.taxExempt === true
           referralCode = parsed.referralCode || null
           logs.push(`external_reference: ${JSON.stringify(parsed)}`)
@@ -330,7 +335,22 @@ export async function POST(req: Request) {
         logs.push('pending_checkout no existía')
       }
 
-      if (shopifyVariantId) {
+      // Kit de bienvenida: solo si nunca hubo un primer despacho exitoso (mirror del webhook).
+      const priorFirstOrder = shopifyFirstOrderVariantId
+        ? await prisma.shopifyOrderDispatch.findFirst({
+            where: {
+              email,
+              idempotencyKey: { startsWith: 'preapproval:' },
+              status: 'created',
+            },
+            select: { id: true },
+          })
+        : null
+      const useWelcomeKit = !!shopifyFirstOrderVariantId && !priorFirstOrder
+      const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
+      logs.push(`Kit de bienvenida: ${useWelcomeKit ? 'sí' : 'no'} (variant: ${firstOrderVariantId})`)
+
+      if (firstOrderVariantId) {
         // Releer el User: pending_checkout pudo borrarse en una corrida previa;
         // las direcciones definitivas están en users.
         const userForOrder = await prisma.user.findUnique({
@@ -338,6 +358,7 @@ export async function POST(req: Request) {
           select: {
             id: true,
             firstName: true, lastName: true,
+            billingDocumentType: true, billingDocumentNumber: true,
             billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
             shippingFullName: true, shippingFirstName: true, shippingLastName: true,
             shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
@@ -373,10 +394,13 @@ export async function POST(req: Request) {
               name,
               firstName: userForOrder?.firstName || firstName || undefined,
               lastName: userForOrder?.lastName || lastName || undefined,
-              variantId: shopifyVariantId,
-              price: subscriptionPrice,
+              variantId: firstOrderVariantId,
               taxExempt,
-              note: 'Primera entrega — suscripción activada vía MercadoPago',
+              documentType: userForOrder?.billingDocumentType ?? null,
+              documentNumber: userForOrder?.billingDocumentNumber ?? null,
+              note: useWelcomeKit
+                ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
+                : 'Primera entrega — suscripción activada vía MercadoPago',
               billing: billingAddress,
               shipping: shippingAddress,
             },
@@ -390,7 +414,7 @@ export async function POST(req: Request) {
           logs.push(`ERROR Shopify: ${err instanceof Error ? err.message : String(err)}`)
         }
       } else {
-        logs.push('shopifyVariantId es null — no se crea orden Shopify')
+        logs.push('No hay variant configurado — no se crea orden Shopify')
       }
 
     } else if (type === 'subscription_authorized_payment') {
@@ -414,6 +438,8 @@ export async function POST(req: Request) {
           lastName: true,
           subscriptionVariantId: true,
           subscriptionTaxExempt: true,
+          billingDocumentType: true,
+          billingDocumentNumber: true,
           billingPhone: true,
           billingAddress: true,
           billingCity: true,
@@ -473,8 +499,9 @@ export async function POST(req: Request) {
               firstName: user.firstName || undefined,
               lastName: user.lastName || undefined,
               variantId: user.subscriptionVariantId,
-              price: recurringPrice,
               taxExempt: user.subscriptionTaxExempt === true,
+              documentType: user.billingDocumentType,
+              documentNumber: user.billingDocumentNumber,
               billing: billingAddress,
               shipping: shippingAddress,
             },
