@@ -32,35 +32,12 @@ export async function POST(req: Request) {
       )
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const preApprovalBody: any = {
-      payer_email: userEmail,
-      back_url: `${baseUrl}/subscribe/success`,
-      notification_url: `${baseUrl}/api/mercadopago/webhook`,
-      reason: `${plan.title} - Happy Sapiens`,
-      external_reference: JSON.stringify({
-        name: userName,
-        firstName: userFirstName || null,
-        lastName: userLastName || null,
-        email: userEmail,
-        productId: plan.id,
-        shopifyVariantId: plan.shopifyVariantId,
-        shopifyFirstOrderVariantId: plan.shopifyFirstOrderVariantId || null,
-        taxExempt: plan.taxExempt,
-        referralCode: referralCode || null,
-      }),
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: 'months',
-        transaction_amount: plan.price,
-        currency_id: plan.currency,
-      },
-    }
-
-    const preApproval = await preApprovalClient.create({ body: preApprovalBody })
-
-    // Guardar datos de facturación/envío en pending_checkout para el webhook
-    await prisma.pendingCheckout.upsert({
+    // Guardar datos del checkout ANTES de crear el preapproval: su id se usa como
+    // external_reference (identificador opaco sin PII). MercadoPago modera el contenido
+    // de external_reference y rechaza emails/PII embebidos (error invalid_field_content),
+    // por eso ya no serializamos los datos del usuario ahí — el webhook los recupera
+    // desde pending_checkout (por este id) y desde la fila users (eventos posteriores).
+    const pendingCheckout = await prisma.pendingCheckout.upsert({
       where: { email: userEmail },
       create: {
         email: userEmail,
@@ -82,6 +59,23 @@ export async function POST(req: Request) {
         shipping: shipping || null,
       },
     })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const preApprovalBody: any = {
+      payer_email: userEmail,
+      back_url: `${baseUrl}/subscribe/success`,
+      notification_url: `${baseUrl}/api/mercadopago/webhook`,
+      reason: `${plan.title} - Happy Sapiens`,
+      external_reference: pendingCheckout.id,
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: plan.price,
+        currency_id: plan.currency,
+      },
+    }
+
+    const preApproval = await preApprovalClient.create({ body: preApprovalBody })
 
     return NextResponse.json({ initPoint: preApproval.init_point })
   } catch (error: unknown) {

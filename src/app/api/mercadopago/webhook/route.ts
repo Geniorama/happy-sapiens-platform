@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { paymentClient, preApprovalClient } from '@/lib/mercadopago'
+import { paymentClient, preApprovalClient, getSubscriptionPlan } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
@@ -84,39 +84,53 @@ async function handlePreApproval(preApprovalId: string) {
     external_reference: preApproval.external_reference,
   })
 
-  let email = preApproval.payer_email || ''
-  let name = email
-  let firstName: string | null = null
-  let lastName: string | null = null
-  let referralCode: string | null = null
-  let productId: string | null = null
-  let shopifyVariantId: string | null = null
-  let shopifyFirstOrderVariantId: string | null = null
-  let taxExempt = false
   const preApprovalAny = preApproval as unknown as Record<string, unknown>
   const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
   const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
   const dateCreated = preApprovalAny.date_created as string | undefined
 
-  if (preApproval.external_reference) {
-    try {
-      const parsed = JSON.parse(preApproval.external_reference)
-      // payer_email no siempre viene en el response del SDK — usar external_reference como fuente
-      if (!email && parsed.email) email = parsed.email
-      name = parsed.name || email
-      firstName = parsed.firstName || null
-      lastName = parsed.lastName || null
-      referralCode = parsed.referralCode || null
-      productId = parsed.productId || null
-      shopifyVariantId = parsed.shopifyVariantId || null
-      shopifyFirstOrderVariantId = parsed.shopifyFirstOrderVariantId || null
-      taxExempt = parsed.taxExempt === true
-    } catch {
-      // external_reference no es JSON, ignorar
+  // Recuperación de identidad. payer_email viene vacío en el response de .get(), y MP ya no
+  // permite PII en external_reference. Por eso resolvemos email/datos desde tres fuentes:
+  //   1. external_reference = id de pending_checkout (formato nuevo, sin PII)
+  //   2. external_reference = JSON legacy con email/nombre (preapprovals previos al fix)
+  //   3. la fila users via subscriptionId (re-entregas y eventos de ciclo de vida: cancel/pause)
+  // Los datos del plan (variant/taxExempt) se derivan de productId con getSubscriptionPlan.
+  const ref = preApproval.external_reference || ''
+  let legacy: Record<string, unknown> | null = null
+  let pendingId: string | null = null
+  if (ref) {
+    if (ref.trim().startsWith('{')) {
+      try { legacy = JSON.parse(ref) } catch { legacy = null }
+    } else {
+      pendingId = ref
     }
   }
 
+  const userBySubscription = await prisma.user.findFirst({
+    where: { subscriptionId: preApprovalId },
+    select: {
+      email: true, name: true, firstName: true, lastName: true,
+      subscriptionProduct: true, subscriptionVariantId: true, subscriptionTaxExempt: true,
+    },
+  })
+
+  const pending = pendingId
+    ? await prisma.pendingCheckout.findUnique({ where: { id: pendingId } })
+    : null
+
+  const email = (legacy?.email as string) || pending?.email || userBySubscription?.email || preApproval.payer_email || ''
   if (!email) return
+
+  const productId = (legacy?.productId as string) || pending?.productId || userBySubscription?.subscriptionProduct || null
+  const plan = productId ? await getSubscriptionPlan(productId) : null
+
+  const name = (legacy?.name as string) || pending?.name || userBySubscription?.name || email
+  let firstName = (legacy?.firstName as string) || pending?.firstName || userBySubscription?.firstName || null
+  let lastName = (legacy?.lastName as string) || pending?.lastName || userBySubscription?.lastName || null
+  let referralCode = (legacy?.referralCode as string) || pending?.referralCode || null
+  const shopifyVariantId = plan?.shopifyVariantId || (legacy?.shopifyVariantId as string) || userBySubscription?.subscriptionVariantId || null
+  const shopifyFirstOrderVariantId = plan?.shopifyFirstOrderVariantId || (legacy?.shopifyFirstOrderVariantId as string) || null
+  const taxExempt = plan ? plan.taxExempt : (legacy?.taxExempt === true || userBySubscription?.subscriptionTaxExempt === true)
 
   const status = preApproval.status
 

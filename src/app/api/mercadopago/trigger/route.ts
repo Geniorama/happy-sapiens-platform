@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { preApprovalClient, paymentClient } from '@/lib/mercadopago'
+import { preApprovalClient, paymentClient, getSubscriptionPlan } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  const { type, id, email: bodyEmail } = await req.json()
+  const body = await req.json()
+  const { type, id, email: bodyEmail } = body
 
   if (!type) {
     return NextResponse.json({ error: 'type es requerido' }, { status: 400 })
@@ -149,15 +150,6 @@ export async function POST(req: Request) {
       const preApproval = await preApprovalClient.get({ id })
       logs.push(`status: ${preApproval.status}, email: ${preApproval.payer_email}`)
 
-      let email = preApproval.payer_email || ''
-      let name = email
-      let firstName: string | null = null
-      let lastName: string | null = null
-      let productId: string | null = null
-      let shopifyVariantId: string | null = null
-      let shopifyFirstOrderVariantId: string | null = null
-      let taxExempt = false
-      let referralCode: string | null = null
       const preApprovalAny = preApproval as unknown as Record<string, unknown>
       const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
       const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
@@ -165,25 +157,46 @@ export async function POST(req: Request) {
       if (subscriptionPrice !== undefined) logs.push(`Precio suscripción: ${subscriptionPrice}`)
       if (nextPaymentDate) logs.push(`Próximo pago: ${nextPaymentDate}`)
 
-      if (preApproval.external_reference) {
-        try {
-          const parsed = JSON.parse(preApproval.external_reference)
-          if (!email && parsed.email) email = parsed.email
-          name = parsed.name || email
-          firstName = parsed.firstName || null
-          lastName = parsed.lastName || null
-          productId = parsed.productId || null
-          shopifyVariantId = parsed.shopifyVariantId || null
-          shopifyFirstOrderVariantId = parsed.shopifyFirstOrderVariantId || null
-          taxExempt = parsed.taxExempt === true
-          referralCode = parsed.referralCode || null
-          logs.push(`external_reference: ${JSON.stringify(parsed)}`)
-        } catch {
-          logs.push('external_reference no es JSON válido')
+      // external_reference puede ser el id de pending_checkout (formato nuevo, sin PII) o un
+      // JSON legacy con email/nombre. Resolvemos identidad desde pending_checkout, users
+      // (por subscriptionId) y el JSON legacy; los datos del plan vienen de getSubscriptionPlan.
+      const ref = preApproval.external_reference || ''
+      let legacy: Record<string, unknown> | null = null
+      let pendingId: string | null = null
+      if (ref) {
+        if (ref.trim().startsWith('{')) {
+          try { legacy = JSON.parse(ref); logs.push(`external_reference (legacy JSON): ${ref}`) }
+          catch { logs.push('external_reference no es JSON válido') }
+        } else {
+          pendingId = ref
+          logs.push(`external_reference (id pending_checkout): ${ref}`)
         }
       }
 
-      if (!email) return NextResponse.json({ logs, error: 'email vacío en payer_email y external_reference' })
+      const userBySubscription = await prisma.user.findFirst({
+        where: { subscriptionId: id },
+        select: {
+          email: true, name: true, firstName: true, lastName: true,
+          subscriptionProduct: true, subscriptionVariantId: true, subscriptionTaxExempt: true,
+        },
+      })
+      const pendingById = pendingId
+        ? await prisma.pendingCheckout.findUnique({ where: { id: pendingId } })
+        : null
+
+      const email = (legacy?.email as string) || pendingById?.email || userBySubscription?.email || preApproval.payer_email || ''
+      if (!email) return NextResponse.json({ logs, error: 'email vacío en payer_email, pending_checkout y external_reference' })
+
+      const productId = (legacy?.productId as string) || pendingById?.productId || userBySubscription?.subscriptionProduct || null
+      const plan = productId ? await getSubscriptionPlan(productId) : null
+
+      const name = (legacy?.name as string) || pendingById?.name || userBySubscription?.name || email
+      let firstName = (legacy?.firstName as string) || pendingById?.firstName || userBySubscription?.firstName || null
+      let lastName = (legacy?.lastName as string) || pendingById?.lastName || userBySubscription?.lastName || null
+      let referralCode = (legacy?.referralCode as string) || pendingById?.referralCode || null
+      const shopifyVariantId = plan?.shopifyVariantId || (legacy?.shopifyVariantId as string) || userBySubscription?.subscriptionVariantId || null
+      const shopifyFirstOrderVariantId = plan?.shopifyFirstOrderVariantId || (legacy?.shopifyFirstOrderVariantId as string) || null
+      const taxExempt = plan ? plan.taxExempt : (legacy?.taxExempt === true || userBySubscription?.subscriptionTaxExempt === true)
 
       if (preApproval.status !== 'authorized') {
         return NextResponse.json({ logs, warning: `Estado es '${preApproval.status}', no 'authorized'. No se procesará.` })
@@ -518,6 +531,128 @@ export async function POST(req: Request) {
         logs.push('subscription_variant_id es null — no se crea orden Shopify')
       }
 
+    } else if (type === 'simulate_subscription') {
+      // Simula una suscripción sin pasar por Mercado Pago. Crea/actualiza el usuario
+      // y dispara una orden Shopify usando los datos del body. mode='first' fuerza
+      // el variant del kit de bienvenida; mode='recurring' usa el variant individual.
+      const mode: 'first' | 'recurring' = body.mode === 'recurring' ? 'recurring' : 'first'
+      const { email: simEmail, name, firstName, lastName, productId, billing, shipping } = body
+
+      if (!simEmail || !name || !productId) {
+        return NextResponse.json({ error: 'email, name y productId son requeridos' }, { status: 400 })
+      }
+
+      const plan = await getSubscriptionPlan(productId)
+      if (!plan) {
+        return NextResponse.json({ error: `Plan no encontrado: ${productId}` }, { status: 400 })
+      }
+
+      logs.push(`Plan: ${plan.id} | variant: ${plan.shopifyVariantId} | kit: ${plan.shopifyFirstOrderVariantId ?? 'no'} | taxExempt: ${plan.taxExempt}`)
+      logs.push(`Modo: ${mode}`)
+
+      const userData = {
+        name,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        subscriptionStatus: 'active',
+        subscriptionProduct: plan.id,
+        subscriptionVariantId: plan.shopifyVariantId,
+        subscriptionTaxExempt: plan.taxExempt,
+        subscriptionPrice: plan.price,
+        subscriptionSyncedAt: new Date(),
+        subscriptionStartDate: new Date(),
+        ...(billing && {
+          billingDocumentType: billing.documentType ?? null,
+          billingDocumentNumber: billing.documentNumber ?? null,
+          billingPhone: billing.phone ?? null,
+          billingAddress: billing.address ?? null,
+          billingCity: billing.city ?? null,
+          billingDepartment: billing.department ?? null,
+        }),
+        ...(shipping && {
+          shippingFullName: shipping.fullName ?? null,
+          shippingFirstName: shipping.firstName ?? null,
+          shippingLastName: shipping.lastName ?? null,
+          shippingPhone: shipping.phone ?? null,
+          shippingAddress: shipping.address ?? null,
+          shippingCity: shipping.city ?? null,
+          shippingDepartment: shipping.department ?? null,
+        }),
+      }
+
+      const user = await prisma.user.upsert({
+        where: { email: simEmail },
+        create: { email: simEmail, role: 'user', ...userData },
+        update: userData,
+        select: {
+          id: true, firstName: true, lastName: true,
+          billingDocumentType: true, billingDocumentNumber: true,
+          billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
+          shippingFullName: true, shippingFirstName: true, shippingLastName: true,
+          shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
+        },
+      })
+      logs.push(`Usuario upsert: ${user.id}`)
+
+      const useWelcomeKit = mode === 'first' && !!plan.shopifyFirstOrderVariantId
+      const variantId = useWelcomeKit ? plan.shopifyFirstOrderVariantId! : plan.shopifyVariantId
+
+      if (!variantId) {
+        return NextResponse.json({ logs, error: `Plan ${plan.id} no tiene variant configurado para modo ${mode}` })
+      }
+      logs.push(`Variant a usar: ${variantId} (kit: ${useWelcomeKit})`)
+
+      const billingAddress = user.billingAddress ? {
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
+        phone: user.billingPhone || '',
+        address: user.billingAddress,
+        city: user.billingCity || '',
+        department: user.billingDepartment || '',
+      } : undefined
+
+      const shippingAddress = user.shippingAddress ? {
+        firstName: user.shippingFirstName || user.firstName || undefined,
+        lastName: user.shippingLastName || user.lastName || undefined,
+        fullName: user.shippingFullName || name,
+        phone: user.shippingPhone || '',
+        address: user.shippingAddress,
+        city: user.shippingCity || '',
+        department: user.shippingDepartment || '',
+      } : undefined
+
+      // Idempotency key único por corrida — permite reintentar el mismo email sin colisiones.
+      const testKey = `simulate:${mode}:${Date.now()}:${randomBytes(4).toString('hex')}`
+
+      const result = await dispatchShopifyOrder({
+        idempotencyKey: testKey,
+        email: simEmail,
+        userId: user.id,
+        params: {
+          email: simEmail,
+          name,
+          firstName: user.firstName || firstName || undefined,
+          lastName: user.lastName || lastName || undefined,
+          variantId,
+          taxExempt: plan.taxExempt,
+          documentType: user.billingDocumentType,
+          documentNumber: user.billingDocumentNumber,
+          note: useWelcomeKit
+            ? '[TEST] Kit de bienvenida — simulación'
+            : '[TEST] Pedido recurrente — simulación',
+          billing: billingAddress,
+          shipping: shippingAddress,
+        },
+      })
+
+      if (result.status === 'created') {
+        logs.push(`Orden Shopify creada: #${result.order.order_number} (id: ${result.order.id})`)
+        return NextResponse.json({ ok: true, logs, idempotencyKey: testKey, orderId: result.order.id, orderNumber: result.order.order_number })
+      } else {
+        logs.push(`Orden Shopify omitida: ${result.existing.status}`)
+        return NextResponse.json({ ok: false, logs, idempotencyKey: testKey, existing: result.existing })
+      }
+
     } else if (type === 'list_shopify_products') {
       const domain = process.env.SHOPIFY_SHOP_DOMAIN!
       const token = process.env.SHOPIFY_ADMIN_API_TOKEN!
@@ -532,7 +667,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, products })
 
     } else {
-      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval', 'subscription_authorized_payment', 'resend_email', 'create_shopify_order' o 'list_shopify_products'` }, { status: 400 })
+      return NextResponse.json({ error: `Tipo no soportado: ${type}. Usar 'preapproval', 'subscription_authorized_payment', 'resend_email', 'create_shopify_order', 'simulate_subscription' o 'list_shopify_products'` }, { status: 400 })
     }
 
     return NextResponse.json({ ok: true, logs })
