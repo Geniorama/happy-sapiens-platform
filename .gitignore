@@ -44,3 +44,6 @@ next-env.d.ts
 
 # documents
 /docs
+
+# local test payloads (p. ej. cuerpos para /api/mercadopago/trigger)
+test-*.json
