@@ -57,6 +57,13 @@ FACEBOOK_CLIENT_SECRET=""
 # Strava
 STRAVA_CLIENT_ID=""
 STRAVA_CLIENT_SECRET=""
+
+# ============================================
+# ANALYTICS (OPCIONAL)
+# ============================================
+# Google Tag Manager — ID del contenedor (formato GTM-XXXXXXX).
+# Si se omite, GTM no se carga.
+NEXT_PUBLIC_GTM_ID="GTM-P99DWVK9"
 ```
 
 ### 3. Reiniciar el servidor

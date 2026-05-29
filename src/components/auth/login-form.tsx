@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { signIn, signOut, getSession } from "next-auth/react"
 import Link from "next/link"
+import { trackLogin } from "@/lib/analytics"
 
 export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
@@ -35,6 +36,7 @@ export function LoginForm() {
         return
       }
 
+      trackLogin("email")
       window.location.href = "/"
     } catch {
       setError("Ocurrió un error al iniciar sesión")
@@ -49,6 +51,7 @@ export function LoginForm() {
       if (existing?.user) {
         await signOut({ redirect: false })
       }
+      trackLogin(provider)
       await signIn(provider, { callbackUrl: "/" })
     } catch {
       setError(`Error al iniciar sesión con ${provider}`)

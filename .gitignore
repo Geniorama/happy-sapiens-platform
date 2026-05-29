@@ -40,10 +40,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.claude
+.claude/
 
 # documents
 /docs
 
 # local test payloads (p. ej. cuerpos para /api/mercadopago/trigger)
 test-*.json
+
+MODULO_ANALYTICS.md
+PASOS_ANALYTICS.md
+CLAUDE.md

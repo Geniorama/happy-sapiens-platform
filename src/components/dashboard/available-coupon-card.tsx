@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { ExternalLink, Tag, Ticket, Calendar, Info, Package, User, FileText, X } from "lucide-react"
 import { assignCoupon } from "@/app/dashboard/partners/actions"
+import { trackClaimCoupon } from "@/lib/analytics"
 
 interface Coupon {
   id: string
@@ -71,6 +72,12 @@ export function AvailableCouponCard({ coupon, userId, availableCount, userObtain
     } else {
       setLocalCount(prev => prev - 1)
       setLocalUserCount(prev => prev + 1)
+      trackClaimCoupon({
+        partnerId: coupon.partner.id,
+        partnerName: coupon.partner.name,
+        couponTitle: coupon.title,
+        discountPercentage: coupon.discount_percentage ?? coupon.partner.discount_percentage,
+      })
       setMessage({ type: "success", text: "¡Cupón obtenido! Ve a 'Mis Cupones' para verlo" })
       
       // Recargar después de 2 segundos para actualizar la lista

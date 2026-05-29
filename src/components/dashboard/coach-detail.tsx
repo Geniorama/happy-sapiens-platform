@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Clock, MapPin, User, ArrowLeft, ChevronLeft, ChevronRight, CalendarX, PauseCircle, Video } from "lucide-react"
 import Link from "next/link"
 import { createAppointment } from "@/app/dashboard/coaches/actions"
+import { trackAppointmentBooked } from "@/lib/analytics"
 import { HealthProfileForm } from "./health-profile-form"
 import { PointsBanner } from "@/components/dashboard/points-banner"
 
@@ -350,6 +351,14 @@ export function CoachDetail({
       }
     } else {
       setMessage({ type: "success", text: "¡Cita agendada exitosamente!" })
+      trackAppointmentBooked({
+        coachId: coach.id,
+        coachName: coach.name,
+        date: selectedDate,
+        time: selectedTime,
+        durationMinutes: selectedDuration,
+        pointsEarned: result.pointsEarned,
+      })
       if (result.pointsEarned) setPointsEarned(result.pointsEarned)
       if (result.meetLink) setBookedMeetLink(result.meetLink)
       setTimeout(() => {

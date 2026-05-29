@@ -7,6 +7,7 @@ import type { SubscriptionPlan } from "@/lib/mercadopago"
 import { COLOMBIA_DEPARTMENTS, COLOMBIA_LOCATIONS } from "@/lib/colombia-locations"
 import { PhoneInput } from "@/components/ui/phone-input"
 import { isValidPhoneNumber } from "react-phone-number-input"
+import { trackBeginCheckout } from "@/lib/analytics"
 
 const DOCUMENT_TYPES = [
   { value: "CC", label: "Cédula de Ciudadanía" },
@@ -132,6 +133,13 @@ export function SubscriptionForm({ plans }: { plans: SubscriptionPlan[] }) {
           documentType: shipping.documentType,
           documentNumber: shipping.documentNumber,
         }
+
+    trackBeginCheckout({
+      planId: plan.id,
+      planTitle: plan.title,
+      price: plan.price,
+      referralCode: refCode || null,
+    })
 
     try {
       const response = await fetch("/api/mercadopago/create-subscription", {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Anton, Quicksand } from "next/font/google";
+import { GoogleTagManager } from "@next/third-parties/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/providers/session-provider";
 
@@ -25,8 +26,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const gtmId = process.env.NEXT_PUBLIC_GTM_ID;
+
   return (
     <html lang="es">
+      {gtmId && <GoogleTagManager gtmId={gtmId} />}
       <body
         className={`${anton.variable} ${quicksand.variable} antialiased`}
       >

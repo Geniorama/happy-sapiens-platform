@@ -1,18 +1,27 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useRef, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { CheckCircle } from "lucide-react"
+import { trackPurchase } from "@/lib/analytics"
 
 function SuccessContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [countdown, setCountdown] = useState(5)
+  const conversionTracked = useRef(false)
 
   useEffect(() => {
     // Limpiar datos temporales
     sessionStorage.removeItem('pendingUser')
+
+    // Evento de conversión a GTM/dataLayer (formato ecommerce GA4).
+    // El guard evita el doble disparo del useEffect en StrictMode (dev).
+    if (!conversionTracked.current) {
+      conversionTracked.current = true
+      trackPurchase({ transactionId: searchParams.get("payment_id") || undefined })
+    }
 
     // Countdown para redirección automática
     const timer = setInterval(() => {
@@ -27,7 +36,7 @@ function SuccessContent() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [router])
+  }, [router, searchParams])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
