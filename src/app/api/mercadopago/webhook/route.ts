@@ -140,6 +140,25 @@ async function handlePreApproval(preApprovalId: string) {
   })
 
   if (status === 'authorized') {
+    // Una preaprobación 'authorized' significa que el MANDATO de cobro quedó
+    // habilitado, NO que se haya cobrado con éxito. Mercado Pago mantiene la
+    // suscripción en 'authorized' mientras reintenta cobros que fallan (p.ej.
+    // tarjeta sin fondos). No activamos al usuario hasta confirmar al menos un
+    // cobro exitoso; de lo contrario quedaría una suscripción activa sin pago.
+    const summarized = (preApprovalAny.summarized ?? {}) as Record<string, unknown>
+    const chargedQuantity = Number(summarized.charged_quantity ?? 0)
+    const hasSuccessfulCharge = chargedQuantity > 0 || !!summarized.last_charged_date
+
+    if (!hasSuccessfulCharge) {
+      await log('webhook.preapproval.pending_payment', email, {
+        preApprovalId,
+        status,
+        charged_quantity: summarized.charged_quantity ?? null,
+      })
+      console.log(`Suscripción autorizada sin cobro confirmado, en espera de pago: ${email}`)
+      return
+    }
+
     // Leer datos de facturación/envío del checkout pendiente
     const pendingCheckout = await prisma.pendingCheckout.findUnique({
       where: { email },
@@ -423,10 +442,13 @@ async function handlePayment(paymentId: string) {
     const email = payment.payer?.email
     if (!email) return
 
-    // Pago rechazado → marcar suscripción como past_due (no crear orden Shopify)
+    // Pago rechazado → marcar suscripción como past_due (no crear orden Shopify).
+    // Solo afecta suscripciones vigentes ('active'/'past_due'); un evento de cobro
+    // extraviado no debe degradar una 'paused'/'cancelled' ni activar una cuenta
+    // inexistente (updateMany no coincide si el usuario aún no se ha creado).
     if (payment.status === 'rejected' || payment.status === 'cancelled') {
       await prisma.user.updateMany({
-        where: { email },
+        where: { email, subscriptionStatus: { in: ['active', 'past_due'] } },
         data: { subscriptionStatus: 'past_due', subscriptionSyncedAt: new Date() },
       })
       await log('webhook.payment.rejected', email, { paymentId, status: payment.status })
@@ -461,6 +483,20 @@ async function handlePayment(paymentId: string) {
       },
     })
 
+    // Primer cobro aprobado tras reintentos: si la suscripción quedó "en espera
+    // de pago" (no se activó en el evento de preaprobación por no haber cobro
+    // confirmado), aún no existe el usuario. Este cobro aprobado la activa vía el
+    // flujo de preaprobación, que vuelve a verificar el cobro (ya en summarized)
+    // y crea usuario + email de bienvenida + primer despacho. No se ejecuta el
+    // despacho recurrente de abajo porque el usuario era null al consultarse.
+    if (!user) {
+      const preApprovalId = paymentAny.subscription_id
+      if (typeof preApprovalId === 'string' && preApprovalId) {
+        await handlePreApproval(preApprovalId)
+      }
+      return
+    }
+
     if (user) {
       const recurringPrice = payment.transaction_amount ?? undefined
       const paymentAnyData = payment as unknown as Record<string, unknown>
@@ -470,6 +506,12 @@ async function handlePayment(paymentId: string) {
         where: { id: user.id },
         data: {
           subscriptionSyncedAt: new Date(),
+          // Un cobro recurrente aprobado restaura la suscripción a 'active'
+          // (p.ej. recuperándose de 'past_due' tras un reintento exitoso de MP).
+          // No se reactivan suscripciones 'paused' ni 'cancelled': un cobro no
+          // debe reanudarlas por sí solo.
+          ...(user.subscriptionStatus !== 'paused' &&
+            user.subscriptionStatus !== 'cancelled' && { subscriptionStatus: 'active' }),
           ...(recurringPrice !== undefined && { subscriptionPrice: recurringPrice }),
           ...(nextDate && { subscriptionEndDate: new Date(nextDate) }),
         },
@@ -585,6 +627,10 @@ async function handlePayment(paymentId: string) {
   }
 
   // Pago único legacy (flujo anterior con create-preference)
+  // Solo se activa con el pago efectivamente aprobado; un pago rechazado o
+  // pendiente nunca debe crear/activar la cuenta.
+  if (payment.status !== 'approved') return
+
   const userEmail = payment.metadata?.user_email as string
   const userName = payment.metadata?.user_name as string
   const userPassword = payment.metadata?.user_password as string
