@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { logAdminAction } from "@/lib/log"
+import { preApprovalClient } from "@/lib/mercadopago"
 
 async function getAdminSession() {
   const session = await auth()
@@ -23,7 +24,77 @@ export interface PlanUpdateData {
   shopifyFirstOrderVariantId: string | null
 }
 
-export async function updateSubscriptionPlan(slug: string, data: PlanUpdateData) {
+// Estados de suscripción cuyo cobro recurrente sigue vigente en Mercado Pago y,
+// por tanto, debe re-sincronizarse al cambiar el precio. Las canceladas/inactivas
+// se omiten porque ya no se les cobra.
+const PROPAGATABLE_STATUSES = ["active", "paused", "past_due"]
+
+export interface ApplyPriceResult {
+  total: number
+  updated: number
+  failed: number
+  errors: string[]
+}
+
+// Propaga el nuevo precio a las suscripciones existentes del plan: actualiza el
+// monto recurrente real en Mercado Pago (lo que se le cobra al cliente en su
+// próxima renovación) y luego el snapshot local. Si Mercado Pago falla para un
+// usuario, NO se toca su snapshot, para que panel y cobro real no se desajusten.
+async function applyPriceToExistingSubscriptions(
+  slug: string,
+  price: number,
+  currency: string,
+): Promise<{ result: ApplyPriceResult; failedUserIds: string[] }> {
+  const subscribers = await prisma.user.findMany({
+    where: {
+      subscriptionProduct: slug,
+      subscriptionId: { not: null },
+      subscriptionStatus: { in: PROPAGATABLE_STATUSES },
+    },
+    select: { id: true, subscriptionId: true },
+  })
+
+  let updated = 0
+  const errors: string[] = []
+  const failedUserIds: string[] = []
+
+  for (const sub of subscribers) {
+    const subscriptionId = sub.subscriptionId!
+    try {
+      await preApprovalClient.update({
+        id: subscriptionId,
+        body: {
+          auto_recurring: {
+            transaction_amount: price,
+            currency_id: currency,
+          },
+        },
+      })
+
+      await prisma.user.update({
+        where: { id: sub.id },
+        data: { subscriptionPrice: price, subscriptionSyncedAt: new Date() },
+      })
+      updated++
+    } catch (err) {
+      failedUserIds.push(sub.id)
+      const message = err instanceof Error ? err.message : "Error desconocido"
+      errors.push(`${subscriptionId}: ${message}`)
+      console.error(`Error sincronizando precio en MP para usuario ${sub.id}:`, err)
+    }
+  }
+
+  return {
+    result: { total: subscribers.length, updated, failed: failedUserIds.length, errors },
+    failedUserIds,
+  }
+}
+
+export async function updateSubscriptionPlan(
+  slug: string,
+  data: PlanUpdateData,
+  applyToExisting = false,
+) {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 
@@ -79,10 +150,44 @@ export async function updateSubscriptionPlan(slug: string, data: PlanUpdateData)
     return { error: "No se pudo actualizar el plan" }
   }
 
+  let applied: ApplyPriceResult | undefined
+  if (applyToExisting) {
+    try {
+      const { result, failedUserIds } = await applyPriceToExistingSubscriptions(
+        slug,
+        data.price,
+        data.currency.trim().toUpperCase(),
+      )
+      applied = result
+
+      await logAdminAction({
+        actorId: session.user.id!,
+        actorEmail: session.user.email ?? "",
+        action: "subscription_plan.apply_price_to_existing",
+        entityType: "subscription_plan",
+        entityId: slug,
+        metadata: {
+          price: data.price,
+          total: result.total,
+          updated: result.updated,
+          failed: result.failed,
+          failedUserIds,
+        },
+      })
+    } catch (err) {
+      console.error("Error aplicando precio a suscripciones existentes:", err)
+      // El plan ya se actualizó; informamos el fallo de la propagación.
+      return {
+        success: true as const,
+        applyError: "El plan se guardó, pero no se pudo aplicar a las suscripciones existentes.",
+      }
+    }
+  }
+
   revalidatePath("/admin/plans")
   revalidatePath("/subscribe")
   revalidatePath("/dashboard/subscription")
-  return { success: true }
+  return { success: true as const, applied }
 }
 
 export async function toggleSubscriptionPlanActive(slug: string, isActive: boolean) {

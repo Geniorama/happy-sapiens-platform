@@ -30,18 +30,30 @@ export function PlansManager({ plans: initialPlans }: { plans: Plan[] }) {
   )
 }
 
+interface ApplyResult {
+  total: number
+  updated: number
+  failed: number
+  errors: string[]
+}
+
 function PlanCard({ plan }: { plan: Plan }) {
   const [form, setForm] = useState<Plan>(plan)
   const [committedActive, setCommittedActive] = useState<boolean>(plan.isActive)
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [applyToExisting, setApplyToExisting] = useState(false)
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null)
+  const [applyWarning, setApplyWarning] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [isToggling, startToggle] = useTransition()
+
+  const priceChanged = form.price !== plan.price
 
   const dirty =
     form.title !== plan.title ||
     form.description !== plan.description ||
-    form.price !== plan.price ||
+    priceChanged ||
     form.currency !== plan.currency ||
     form.taxExempt !== plan.taxExempt ||
     (form.shopifyVariantId ?? "") !== (plan.shopifyVariantId ?? "") ||
@@ -50,21 +62,32 @@ function PlanCard({ plan }: { plan: Plan }) {
   const handleSave = () => {
     setError(null)
     setSavedAt(null)
+    setApplyResult(null)
+    setApplyWarning(null)
+    // Solo tiene sentido propagar si efectivamente cambió el precio.
+    const shouldApply = applyToExisting && priceChanged
     startTransition(async () => {
-      const result = await updateSubscriptionPlan(plan.slug, {
-        title: form.title,
-        description: form.description,
-        price: form.price,
-        currency: form.currency,
-        taxExempt: form.taxExempt,
-        isActive: committedActive,
-        shopifyVariantId: form.shopifyVariantId,
-        shopifyFirstOrderVariantId: form.shopifyFirstOrderVariantId,
-      })
+      const result = await updateSubscriptionPlan(
+        plan.slug,
+        {
+          title: form.title,
+          description: form.description,
+          price: form.price,
+          currency: form.currency,
+          taxExempt: form.taxExempt,
+          isActive: committedActive,
+          shopifyVariantId: form.shopifyVariantId,
+          shopifyFirstOrderVariantId: form.shopifyFirstOrderVariantId,
+        },
+        shouldApply,
+      )
       if (result.error) {
         setError(result.error)
       } else {
         setSavedAt(Date.now())
+        setApplyToExisting(false)
+        if (result.applyError) setApplyWarning(result.applyError)
+        if (result.applied) setApplyResult(result.applied)
       }
     })
   }
@@ -216,6 +239,47 @@ function PlanCard({ plan }: { plan: Plan }) {
             />
           </div>
         </div>
+
+        {priceChanged && (
+          <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={applyToExisting}
+              onChange={(e) => setApplyToExisting(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-amber-600 rounded"
+            />
+            <span className="text-xs text-amber-900 leading-relaxed">
+              <span className="font-medium">Aplicar el nuevo precio a las suscripciones existentes.</span>{" "}
+              Se actualizará el cobro recurrente en Mercado Pago de los suscriptores
+              activos de este plan; pagarán el nuevo valor en su próxima renovación.
+            </span>
+          </label>
+        )}
+
+        {applyResult && (
+          <div
+            className={`text-xs rounded-lg px-3 py-2 border ${
+              applyResult.failed > 0
+                ? "text-amber-800 bg-amber-50 border-amber-200"
+                : "text-green-700 bg-green-50 border-green-200"
+            }`}
+          >
+            Precio aplicado a {applyResult.updated} de {applyResult.total} suscripciones
+            {applyResult.failed > 0 && (
+              <>
+                {" "}
+                — {applyResult.failed} fallaron y conservan su precio anterior. Revisa el
+                registro de actividad e inténtalo de nuevo.
+              </>
+            )}
+          </div>
+        )}
+
+        {applyWarning && (
+          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {applyWarning}
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-3 pt-2">
           {savedAt && !dirty && (
