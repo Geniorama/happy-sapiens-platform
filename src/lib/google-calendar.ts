@@ -1,5 +1,6 @@
 import { unstable_noStore as noStore } from "next/cache"
 import { prisma } from "@/lib/db"
+import { APP_TIMEZONE } from "@/lib/timezone"
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
@@ -208,14 +209,27 @@ export async function createCalendarEvent(
   }
 
   try {
-    const startDt = new Date(`${input.date}T${input.startTime}:00`)
-    const endDt = new Date(startDt.getTime() + input.durationMinutes * 60_000)
+    // input.date/startTime son hora de pared Colombia. Enviamos la hora local
+    // SIN convertir a UTC, junto con timeZone explícito, para que Google la
+    // almacene y muestre correctamente sin depender de la TZ por defecto del
+    // calendario del coach. Antes se usaba `new Date(`...T...`).toISOString()`,
+    // que tomaba la TZ del servidor (UTC en prod) y corría la cita 5 horas.
+    // El string local también es consistente con extractLocalDateTime (lectura).
+    const startLocal = `${input.date}T${input.startTime}:00`
+    const [y, mo, d] = input.date.split("-").map(Number)
+    const [h, mi] = input.startTime.split(":").map(Number)
+    // Aritmética en wall-clock (Colombia no tiene DST): tratamos los componentes
+    // como UTC solo para sumar la duración, luego formateamos de vuelta.
+    const endBase = new Date(
+      Date.UTC(y, (mo ?? 1) - 1, d, h ?? 0, mi ?? 0) + input.durationMinutes * 60_000
+    )
+    const endLocal = endBase.toISOString().slice(0, 19) // "YYYY-MM-DDTHH:MM:SS"
 
     const body: Record<string, unknown> = {
       summary: input.title,
       description: input.description ?? "",
-      start: { dateTime: startDt.toISOString() },
-      end: { dateTime: endDt.toISOString() },
+      start: { dateTime: startLocal, timeZone: APP_TIMEZONE },
+      end: { dateTime: endLocal, timeZone: APP_TIMEZONE },
       conferenceData: {
         createRequest: {
           requestId: input.appointmentId,
