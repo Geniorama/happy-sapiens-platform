@@ -85,7 +85,8 @@ export async function getShopifyCustomerById(numericId: number) {
 // no aplicamos descuento ni sobrescribimos el price del line item. Shopify calcula
 // IVA con la configuración del variant; respetamos tax_exempt cuando aplica.
 //
-// Flujo: POST /draft_orders → PUT /draft_orders/{id}/complete?payment_pending=false → GET /orders/{order_id}.
+// Flujo: POST /draft_orders → PUT /draft_orders/{id}/complete?payment_pending=true →
+// POST /orders/{order_id}/transactions (gateway "Mercado Pago") → GET /orders/{order_id}.
 export async function createShopifyOrder(params: {
   email: string
   name: string
@@ -230,9 +231,12 @@ export async function createShopifyOrder(params: {
   const { draft_order } = await draftRes.json()
   const draftId = draft_order.id as number
 
-  // 2. Completar el draft order — payment_pending=false marca financial_status='paid'.
+  // 2. Completar el draft order con payment_pending=true: crea la orden SIN
+  // generar la transacción genérica "manual". El pago real lo registramos en el
+  // paso 3 con el gateway "Mercado Pago", para que Shopify (y Moship/Siigo)
+  // identifiquen el método de pago en vez de mostrar "manual".
   const completeRes = await fetch(
-    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders/${draftId}/complete.json?payment_pending=false`,
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders/${draftId}/complete.json?payment_pending=true`,
     {
       method: 'PUT',
       headers,
@@ -248,7 +252,33 @@ export async function createShopifyOrder(params: {
   const { draft_order: completed } = await completeRes.json()
   const orderId = completed.order_id as number
 
-  // 3. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
+  // 3. Registrar el pago como transacción `sale` con gateway "Mercado Pago".
+  // Esto marca financial_status='paid' y deja el método de pago identificado
+  // (payment_gateway_names: ["Mercado Pago"]), que es lo que lee Moship.
+  const txRes = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        transaction: {
+          kind: 'sale',
+          status: 'success',
+          gateway: 'Mercado Pago',
+          amount: completed.total_price,
+          currency: completed.currency,
+        },
+      }),
+      cache: 'no-store',
+    }
+  )
+
+  if (!txRes.ok) {
+    const errorBody = await txRes.text()
+    throw new Error(`Shopify order transaction error: ${txRes.status} ${errorBody}`)
+  }
+
+  // 4. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
   const orderRes = await fetch(
     `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number`,
     { headers, cache: 'no-store' }
