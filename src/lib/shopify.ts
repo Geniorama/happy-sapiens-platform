@@ -125,7 +125,8 @@ export async function createShopifyOrder(params: {
 
   const buildAddress = (
     data: { firstName?: string; lastName?: string; fullName?: string; phone: string; address: string; city: string; department: string },
-    fallback: { firstName?: string; lastName?: string; fullName: string }
+    fallback: { firstName?: string; lastName?: string; fullName: string },
+    company?: string | null
   ) => {
     const hasExplicit = !!(data.firstName || data.lastName)
     const first_name = hasExplicit
@@ -146,6 +147,9 @@ export async function createShopifyOrder(params: {
       country: 'Colombia',
       country_code: 'CO',
       phone: data.phone,
+      // Moship lee la identificación (cédula/NIT) del cliente desde `company`
+      // de la dirección para la FE en Siigo. Los note_attributes NO los lee.
+      ...(company && { company }),
     }
   }
 
@@ -153,20 +157,28 @@ export async function createShopifyOrder(params: {
   const customerFirstName = params.firstName || splitName(params.name).first_name
   const customerLastName = params.lastName || splitName(params.name).last_name
 
+  // El número de documento viaja en `company` de la dirección de facturación:
+  // es de donde Moship toma la identificación del cliente para la FE en Siigo.
+  const fiscalCompany = params.documentNumber || undefined
+
   const shippingAddress = params.shipping
     ? buildAddress(params.shipping, fallbackName)
     : undefined
 
   const billingAddress = params.billing
-    ? buildAddress(params.billing, fallbackName)
+    ? buildAddress(params.billing, fallbackName, fiscalCompany)
     : shippingAddress
+      ? { ...shippingAddress, ...(fiscalCompany && { company: fiscalCompany }) }
+      : undefined
 
   const headers = {
     'Content-Type': 'application/json',
     'X-Shopify-Access-Token': SHOPIFY_TOKEN,
   }
 
-  // note_attributes: Siigo/Moship leen tipo y número de documento desde aquí para la FE.
+  // note_attributes: solo referencia humana en el admin de Shopify ("Información
+  // adicional"). Moship NO los lee para la FE — la identificación que sí procesa
+  // va en `billing_address.company` (ver fiscalCompany arriba).
   const noteAttributes: { name: string; value: string }[] = []
   if (params.documentType) noteAttributes.push({ name: 'Tipo de documento', value: params.documentType })
   if (params.documentNumber) noteAttributes.push({ name: 'Número de documento', value: params.documentNumber })
