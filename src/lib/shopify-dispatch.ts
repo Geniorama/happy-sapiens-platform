@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
-import { createShopifyOrder } from '@/lib/shopify'
+import { createShopifyOrder, ShopifyPostCreateError } from '@/lib/shopify'
 
 type CreateShopifyOrderParams = Parameters<typeof createShopifyOrder>[0]
 type ShopifyOrder = Awaited<ReturnType<typeof createShopifyOrder>>
@@ -65,8 +65,28 @@ export async function dispatchShopifyOrder({
     })
     return { status: 'created', order }
   } catch (err) {
-    // Liberar el slot para que MP pueda reintentar. Si fuera un error permanente
-    // (ej. variant con components), MP eventualmente desistirá por su cuenta.
+    // La orden ya existe en Shopify, pero falló un paso posterior (pago/lectura).
+    // NO liberar el slot: borrarlo permitiría que un reintento cree una orden
+    // duplicada (p.ej. un segundo kit de bienvenida). Confirmamos el dispatch como
+    // 'created' con el orderId y guardamos el detalle del fallo parcial; luego
+    // re-lanzamos para que el llamador lo registre y sea visible para operación.
+    if (err instanceof ShopifyPostCreateError) {
+      await prisma.shopifyOrderDispatch
+        .update({
+          where: { idempotencyKey },
+          data: {
+            status: 'created',
+            shopifyOrderId: String(err.shopifyOrderId),
+            errorMessage: err.message,
+          },
+        })
+        .catch(() => undefined)
+      throw err
+    }
+
+    // Error antes de crear la orden: liberar el slot para que MP pueda reintentar.
+    // Si fuera un error permanente (ej. variant con components), MP eventualmente
+    // desistirá por su cuenta.
     await prisma.shopifyOrderDispatch
       .delete({ where: { idempotencyKey } })
       .catch(() => undefined)

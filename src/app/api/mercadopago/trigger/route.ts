@@ -348,18 +348,19 @@ export async function POST(req: Request) {
         logs.push('pending_checkout no existía')
       }
 
-      // Kit de bienvenida: solo si nunca hubo un primer despacho exitoso (mirror del webhook).
-      const priorFirstOrder = shopifyFirstOrderVariantId
+      // Kit de bienvenida: solo en el primer pedido. A partir del 2º va el variant
+      // recurrente. Se entrega el kit solo si el email no tiene ningún despacho
+      // exitoso previo (cualquier clave). Mirror del webhook.
+      const priorOrder = shopifyFirstOrderVariantId
         ? await prisma.shopifyOrderDispatch.findFirst({
             where: {
               email,
-              idempotencyKey: { startsWith: 'preapproval:' },
               status: 'created',
             },
             select: { id: true },
           })
         : null
-      const useWelcomeKit = !!shopifyFirstOrderVariantId && !priorFirstOrder
+      const useWelcomeKit = !!shopifyFirstOrderVariantId && !priorOrder
       const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
       logs.push(`Kit de bienvenida: ${useWelcomeKit ? 'sí' : 'no'} (variant: ${firstOrderVariantId})`)
 

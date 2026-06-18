@@ -74,6 +74,18 @@ export async function getShopifyCustomerById(numericId: number) {
   return data.customer
 }
 
+// Error lanzado cuando la orden ya se creó en Shopify pero falló un paso
+// posterior (registrar el pago o leer el order_number). Carga el orderId para que
+// el despacho confirme la fila como creada y no la borre (evita duplicar la orden).
+export class ShopifyPostCreateError extends Error {
+  shopifyOrderId: number
+  constructor(shopifyOrderId: number, detail: string) {
+    super(`Orden Shopify ${shopifyOrderId} creada, pero falló un paso posterior: ${detail}`)
+    this.name = 'ShopifyPostCreateError'
+    this.shopifyOrderId = shopifyOrderId
+  }
+}
+
 // Crear una orden en Shopify para una suscripción (primer despacho o cobro recurrente).
 //
 // Usamos el flujo de Draft Orders en vez de Orders directos porque la REST Orders API
@@ -252,45 +264,55 @@ export async function createShopifyOrder(params: {
   const { draft_order: completed } = await completeRes.json()
   const orderId = completed.order_id as number
 
-  // 3. Registrar el pago como transacción `sale` con gateway "Mercado Pago".
-  // Esto marca financial_status='paid' y deja el método de pago identificado
-  // (payment_gateway_names: ["Mercado Pago"]), que es lo que lee Moship.
-  const txRes = await fetch(
-    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        transaction: {
-          kind: 'sale',
-          status: 'success',
-          gateway: 'Mercado Pago',
-          amount: completed.total_price,
-          currency: completed.currency,
-        },
-      }),
-      cache: 'no-store',
+  // A partir de aquí la orden YA existe en Shopify. Si un paso posterior falla,
+  // NO podemos dejar que el error se propague tal cual: el patrón de despacho
+  // borraría el slot de idempotencia y un reintento crearía una orden duplicada
+  // (p.ej. un segundo kit de bienvenida). Por eso envolvemos los pasos 3-4 y, ante
+  // un fallo, lanzamos un ShopifyPostCreateError que carga el orderId para que el
+  // despacho confirme la fila como 'created' (idempotente) en lugar de borrarla.
+  try {
+    // 3. Registrar el pago como transacción `sale` con gateway "Mercado Pago".
+    // Esto marca financial_status='paid' y deja el método de pago identificado
+    // (payment_gateway_names: ["Mercado Pago"]), que es lo que lee Moship.
+    const txRes = await fetch(
+      `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          transaction: {
+            kind: 'sale',
+            status: 'success',
+            gateway: 'Mercado Pago',
+            amount: completed.total_price,
+            currency: completed.currency,
+          },
+        }),
+        cache: 'no-store',
+      }
+    )
+
+    if (!txRes.ok) {
+      const errorBody = await txRes.text()
+      throw new Error(`Shopify order transaction error: ${txRes.status} ${errorBody}`)
     }
-  )
 
-  if (!txRes.ok) {
-    const errorBody = await txRes.text()
-    throw new Error(`Shopify order transaction error: ${txRes.status} ${errorBody}`)
+    // 4. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
+    const orderRes = await fetch(
+      `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number`,
+      { headers, cache: 'no-store' }
+    )
+
+    if (!orderRes.ok) {
+      const errorBody = await orderRes.text()
+      throw new Error(`Shopify order fetch error: ${orderRes.status} ${errorBody}`)
+    }
+
+    const { order } = await orderRes.json()
+    return { id: order.id as number, order_number: order.order_number as number }
+  } catch (err) {
+    throw new ShopifyPostCreateError(orderId, err instanceof Error ? err.message : String(err))
   }
-
-  // 4. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
-  const orderRes = await fetch(
-    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number`,
-    { headers, cache: 'no-store' }
-  )
-
-  if (!orderRes.ok) {
-    const errorBody = await orderRes.text()
-    throw new Error(`Shopify order fetch error: ${orderRes.status} ${errorBody}`)
-  }
-
-  const { order } = await orderRes.json()
-  return { id: order.id as number, order_number: order.order_number as number }
 }
 
 export interface ShopifyOrder {

@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { paymentClient, preApprovalClient, getSubscriptionPlan } from '@/lib/mercadopago'
+import { paymentClient } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
-import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
-import { randomBytes, createHmac } from 'crypto'
+import { provisionFromPreApproval, logSubscription as log } from '@/lib/subscription-provisioning'
+import { createHmac } from 'crypto'
 import { hash } from 'bcryptjs'
-import { Prisma } from '@prisma/client'
 
 function verifyMpSignature(req: Request, rawBody: string, dataId: string): boolean {
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
@@ -25,405 +24,6 @@ function verifyMpSignature(req: Request, rawBody: string, dataId: string): boole
   const expected = createHmac('sha256', secret).update(message).digest('hex')
 
   return expected === v1
-}
-
-async function sendWelcomeEmail(email: string, name: string, resetToken: string) {
-  const appUrl = (process.env.NEXTAUTH_URL || 'https://happy-sapiens.netlify.app').replace(/\/$/, '')
-  const setupUrl = `${appUrl}/auth/reset-password?token=${resetToken}`
-
-  await sendEmail({
-    to: email,
-    subject: '¡Bienvenido a Happy Sapiens! Crea tu contraseña',
-    html: `
-      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #18181b;">
-        <img src="${appUrl}/hs-logo.svg" alt="Happy Sapiens" style="width: 160px; margin-bottom: 24px;" />
-        <h2 style="margin-bottom: 8px;">¡Tu suscripción está activa!</h2>
-        <p>Hola ${name},</p>
-        <p>Tu suscripción a Happy Sapiens fue procesada exitosamente. Para acceder a la plataforma solo necesitas crear tu contraseña:</p>
-        <a
-          href="${setupUrl}"
-          style="display:inline-block;margin:24px 0;padding:12px 28px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;"
-        >
-          Crear mi contraseña
-        </a>
-        <p style="color:#71717a;font-size:14px;">Este enlace es válido por 24 horas.</p>
-        <p style="color:#71717a;font-size:14px;">Si el botón no funciona, copia y pega esta URL:<br/><a href="${setupUrl}" style="color:#16a34a;">${setupUrl}</a></p>
-      </div>
-    `,
-  })
-}
-
-async function log(action: string, email: string, metadata: Record<string, unknown>) {
-  try {
-    await prisma.systemLog.create({
-      data: {
-        actorEmail: email,
-        action,
-        entityType: 'subscription',
-        metadata: metadata as Prisma.InputJsonValue,
-      },
-    })
-  } catch {
-    // no romper el flujo si el log falla
-  }
-}
-
-async function handlePreApproval(preApprovalId: string) {
-  let preApproval: Awaited<ReturnType<typeof preApprovalClient.get>>
-  try {
-    preApproval = await preApprovalClient.get({ id: preApprovalId })
-  } catch (err) {
-    console.error('[webhook] error obteniendo preApproval:', preApprovalId, err)
-    return
-  }
-
-  await log('webhook.preapproval.received', preApproval.payer_email || 'unknown', {
-    preApprovalId,
-    status: preApproval.status,
-    payer_email: preApproval.payer_email,
-    external_reference: preApproval.external_reference,
-  })
-
-  const preApprovalAny = preApproval as unknown as Record<string, unknown>
-  const subscriptionPrice = (preApprovalAny.auto_recurring as Record<string, unknown> | undefined)?.transaction_amount as number | undefined
-  const nextPaymentDate = preApprovalAny.next_payment_date as string | undefined
-  const dateCreated = preApprovalAny.date_created as string | undefined
-
-  // Recuperación de identidad. payer_email viene vacío en el response de .get(), y MP ya no
-  // permite PII en external_reference. Por eso resolvemos email/datos desde tres fuentes:
-  //   1. external_reference = id de pending_checkout (formato nuevo, sin PII)
-  //   2. external_reference = JSON legacy con email/nombre (preapprovals previos al fix)
-  //   3. la fila users via subscriptionId (re-entregas y eventos de ciclo de vida: cancel/pause)
-  // Los datos del plan (variant/taxExempt) se derivan de productId con getSubscriptionPlan.
-  const ref = preApproval.external_reference || ''
-  let legacy: Record<string, unknown> | null = null
-  let pendingId: string | null = null
-  if (ref) {
-    if (ref.trim().startsWith('{')) {
-      try { legacy = JSON.parse(ref) } catch { legacy = null }
-    } else {
-      pendingId = ref
-    }
-  }
-
-  const userBySubscription = await prisma.user.findFirst({
-    where: { subscriptionId: preApprovalId },
-    select: {
-      email: true, name: true, firstName: true, lastName: true,
-      subscriptionProduct: true, subscriptionVariantId: true, subscriptionTaxExempt: true,
-    },
-  })
-
-  const pending = pendingId
-    ? await prisma.pendingCheckout.findUnique({ where: { id: pendingId } })
-    : null
-
-  const email = (legacy?.email as string) || pending?.email || userBySubscription?.email || preApproval.payer_email || ''
-  if (!email) return
-
-  const productId = (legacy?.productId as string) || pending?.productId || userBySubscription?.subscriptionProduct || null
-  const plan = productId ? await getSubscriptionPlan(productId) : null
-
-  const name = (legacy?.name as string) || pending?.name || userBySubscription?.name || email
-  let firstName = (legacy?.firstName as string) || pending?.firstName || userBySubscription?.firstName || null
-  let lastName = (legacy?.lastName as string) || pending?.lastName || userBySubscription?.lastName || null
-  let referralCode = (legacy?.referralCode as string) || pending?.referralCode || null
-  const shopifyVariantId = plan?.shopifyVariantId || (legacy?.shopifyVariantId as string) || userBySubscription?.subscriptionVariantId || null
-  const shopifyFirstOrderVariantId = plan?.shopifyFirstOrderVariantId || (legacy?.shopifyFirstOrderVariantId as string) || null
-  const taxExempt = plan ? plan.taxExempt : (legacy?.taxExempt === true || userBySubscription?.subscriptionTaxExempt === true)
-
-  const status = preApproval.status
-
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  })
-
-  if (status === 'authorized') {
-    // Una preaprobación 'authorized' significa que el MANDATO de cobro quedó
-    // habilitado, NO que se haya cobrado con éxito. Mercado Pago mantiene la
-    // suscripción en 'authorized' mientras reintenta cobros que fallan (p.ej.
-    // tarjeta sin fondos). No activamos al usuario hasta confirmar al menos un
-    // cobro exitoso; de lo contrario quedaría una suscripción activa sin pago.
-    const summarized = (preApprovalAny.summarized ?? {}) as Record<string, unknown>
-    const chargedQuantity = Number(summarized.charged_quantity ?? 0)
-    const hasSuccessfulCharge = chargedQuantity > 0 || !!summarized.last_charged_date
-
-    if (!hasSuccessfulCharge) {
-      await log('webhook.preapproval.pending_payment', email, {
-        preApprovalId,
-        status,
-        charged_quantity: summarized.charged_quantity ?? null,
-      })
-      console.log(`Suscripción autorizada sin cobro confirmado, en espera de pago: ${email}`)
-      return
-    }
-
-    // Leer datos de facturación/envío del checkout pendiente
-    const pendingCheckout = await prisma.pendingCheckout.findUnique({
-      where: { email },
-      select: { billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
-    })
-
-    const billingData = pendingCheckout?.billing as Record<string, string> | null
-    const shippingData = pendingCheckout?.shipping as Record<string, string> | null
-    // Si el referralCode viene del pending_checkout, tiene prioridad
-    if (!referralCode && pendingCheckout?.referralCode) {
-      referralCode = pendingCheckout.referralCode
-    }
-    if (!firstName && pendingCheckout?.firstName) firstName = pendingCheckout.firstName
-    if (!lastName && pendingCheckout?.lastName) lastName = pendingCheckout.lastName
-
-    if (existingUser) {
-      const updateData: Prisma.UserUpdateInput = {
-        subscriptionStatus: 'active',
-        subscriptionId: preApprovalId,
-        subscriptionSyncedAt: new Date(),
-        subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
-        subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
-        subscriptionProduct: productId,
-        subscriptionVariantId: shopifyVariantId,
-        subscriptionTaxExempt: taxExempt,
-        ...(subscriptionPrice !== undefined && { subscriptionPrice }),
-        ...(firstName && { firstName }),
-        ...(lastName && { lastName }),
-        ...(billingData && {
-          billingDocumentType: billingData.documentType,
-          billingDocumentNumber: billingData.documentNumber,
-          billingPhone: billingData.phone,
-          billingAddress: billingData.address,
-          billingCity: billingData.city,
-          billingDepartment: billingData.department,
-        }),
-        ...(shippingData && {
-          shippingFullName: shippingData.fullName,
-          shippingFirstName: shippingData.firstName || null,
-          shippingLastName: shippingData.lastName || null,
-          shippingPhone: shippingData.phone,
-          shippingAddress: shippingData.address,
-          shippingCity: shippingData.city,
-          shippingDepartment: shippingData.department,
-          shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
-        }),
-      }
-
-      await prisma.user.update({ where: { id: existingUser.id }, data: updateData })
-
-      console.log(`Suscripción reactivada: ${email}`)
-    } else {
-      let referrerId: string | null = null
-      if (referralCode) {
-        const referrer = await prisma.user.findUnique({
-          where: { referralCode },
-          select: { id: true },
-        })
-        if (referrer) referrerId = referrer.id
-      }
-
-      const resetToken = randomBytes(32).toString('hex')
-      const resetTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
-
-      let newUser
-      try {
-        newUser = await prisma.user.create({
-          data: {
-            name,
-            firstName,
-            lastName,
-            email,
-            role: 'user',
-            subscriptionStatus: 'active',
-            subscriptionId: preApprovalId,
-            subscriptionSyncedAt: new Date(),
-            subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
-            subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
-            subscriptionProduct: productId,
-            subscriptionVariantId: shopifyVariantId,
-            subscriptionTaxExempt: taxExempt,
-            ...(subscriptionPrice !== undefined && { subscriptionPrice }),
-            referredBy: referrerId,
-            resetToken: resetToken,
-            resetTokenExpires: resetTokenExpires,
-            ...(billingData && {
-              billingDocumentType: billingData.documentType,
-              billingDocumentNumber: billingData.documentNumber,
-              billingPhone: billingData.phone,
-              billingAddress: billingData.address,
-              billingCity: billingData.city,
-              billingDepartment: billingData.department,
-            }),
-            ...(shippingData && {
-              shippingFullName: shippingData.fullName,
-              shippingFirstName: shippingData.firstName || null,
-              shippingLastName: shippingData.lastName || null,
-              shippingPhone: shippingData.phone,
-              shippingAddress: shippingData.address,
-              shippingCity: shippingData.city,
-              shippingDepartment: shippingData.department,
-              shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
-            }),
-          },
-          select: { id: true },
-        })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        const code = err instanceof Prisma.PrismaClientKnownRequestError ? err.code : ''
-        console.error('Error creando usuario:', err)
-        await log('webhook.preapproval.user_create_error', email, { error: msg, code })
-        return
-      }
-
-      await log('webhook.preapproval.user_created', email, { userId: newUser.id, productId })
-      console.log(`Usuario creado: ${email} — producto: ${productId}`)
-
-      await awardPoints({
-        userId: newUser.id,
-        actionType: POINT_ACTIONS.SIGNUP,
-        description: 'Registro en la plataforma',
-      })
-      await awardPoints({
-        userId: newUser.id,
-        actionType: POINT_ACTIONS.SUBSCRIPTION_ACTIVE,
-        description: 'Primera suscripción activada',
-      })
-
-      if (referrerId) {
-        await awardPoints({
-          userId: referrerId,
-          actionType: POINT_ACTIONS.REFERRAL_SUBSCRIBED,
-          description: `Referido ${name} se suscribió`,
-          referenceType: 'user',
-          referenceId: newUser.id,
-        })
-      }
-
-      await sendWelcomeEmail(email, name, resetToken)
-    }
-
-    // Crear primer pedido en Shopify al activar la suscripción.
-    //
-    // Kit de bienvenida: se entrega solo si el usuario nunca ha recibido un primer
-    // despacho exitoso antes. Consultamos shopify_order_dispatches en vez de usar
-    // `!existingUser` porque las reentregas del webhook crean al user en la primera
-    // pasada y, sin este check, la reentrega caería al variant regular y se perdería
-    // el kit (que fue lo que pasó con joh.berrio antes del fix de Draft Orders).
-    const priorFirstOrder = shopifyFirstOrderVariantId
-      ? await prisma.shopifyOrderDispatch.findFirst({
-          where: {
-            email,
-            idempotencyKey: { startsWith: 'preapproval:' },
-            status: 'created',
-          },
-          select: { id: true },
-        })
-      : null
-    const useWelcomeKit = !!shopifyFirstOrderVariantId && !priorFirstOrder
-    const firstOrderVariantId = useWelcomeKit ? shopifyFirstOrderVariantId! : shopifyVariantId
-
-    if (firstOrderVariantId) {
-      // Releer el User: pending_checkout se borra al final del handler, así que
-      // en reentregas la única fuente confiable de direcciones es la fila users.
-      const userForOrder = await prisma.user.findUnique({
-        where: { email },
-        select: {
-          id: true,
-          firstName: true, lastName: true,
-          billingDocumentType: true, billingDocumentNumber: true,
-          billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
-          shippingFullName: true, shippingFirstName: true, shippingLastName: true,
-          shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
-        },
-      })
-
-      const billingAddress = userForOrder?.billingAddress
-        ? {
-            firstName: userForOrder.firstName || undefined,
-            lastName: userForOrder.lastName || undefined,
-            phone: userForOrder.billingPhone || '',
-            address: userForOrder.billingAddress,
-            city: userForOrder.billingCity || '',
-            department: userForOrder.billingDepartment || '',
-          }
-        : undefined
-
-      const shippingAddress = userForOrder?.shippingAddress
-        ? {
-            firstName: userForOrder.shippingFirstName || userForOrder.firstName || undefined,
-            lastName: userForOrder.shippingLastName || userForOrder.lastName || undefined,
-            fullName: userForOrder.shippingFullName || name,
-            phone: userForOrder.shippingPhone || '',
-            address: userForOrder.shippingAddress,
-            city: userForOrder.shippingCity || '',
-            department: userForOrder.shippingDepartment || '',
-          }
-        : undefined
-
-      try {
-        const result = await dispatchShopifyOrder({
-          idempotencyKey: `preapproval:${preApprovalId}`,
-          email,
-          userId: userForOrder?.id ?? null,
-          params: {
-            email,
-            name,
-            firstName: userForOrder?.firstName || firstName || undefined,
-            lastName: userForOrder?.lastName || lastName || undefined,
-            variantId: firstOrderVariantId,
-            taxExempt,
-            documentType: userForOrder?.billingDocumentType ?? null,
-            documentNumber: userForOrder?.billingDocumentNumber ?? null,
-            note: useWelcomeKit
-              ? 'Kit de bienvenida — primera entrega con accesorios de obsequio'
-              : 'Primera entrega — suscripción activada vía MercadoPago',
-            billing: billingAddress,
-            shipping: shippingAddress,
-          },
-        })
-        if (result.status === 'created') {
-          await log('webhook.preapproval.shopify_order_created', email, {
-            order_number: result.order.order_number,
-            order_id: result.order.id,
-            welcomeKit: useWelcomeKit,
-            variantId: firstOrderVariantId,
-            preApprovalId,
-          })
-          console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}${useWelcomeKit ? ' (Kit bienvenida)' : ''}`)
-        } else {
-          await log('webhook.preapproval.shopify_order_skipped', email, {
-            reason: 'duplicate_dispatch',
-            preApprovalId,
-            existing: result.existing,
-          })
-          console.log(`Orden Shopify omitida (idempotencia) para ${email}: ya existe dispatch ${result.existing.status}`)
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        await log('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: firstOrderVariantId, preApprovalId })
-        console.error('Error creando orden en Shopify:', err)
-      }
-    }
-
-    // Limpiar el checkout pendiente
-    try {
-      await prisma.pendingCheckout.delete({ where: { email } })
-    } catch {
-      // si no existe, ignorar (P2025)
-    }
-  } else if (status === 'cancelled' || status === 'paused' || status === 'past_due') {
-    if (existingUser) {
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: {
-          subscriptionStatus: status === 'cancelled' ? 'cancelled'
-            : status === 'paused' ? 'paused'
-            : 'past_due',
-          subscriptionSyncedAt: new Date(),
-        },
-      })
-
-      console.log(`Suscripción ${status}: ${email}`)
-    }
-  }
 }
 
 async function handlePayment(paymentId: string) {
@@ -492,7 +92,17 @@ async function handlePayment(paymentId: string) {
     if (!user) {
       const preApprovalId = paymentAny.subscription_id
       if (typeof preApprovalId === 'string' && preApprovalId) {
-        await handlePreApproval(preApprovalId)
+        // Este pago ya está 'approved' (se verificó arriba), así que el cobro
+        // está confirmado: no re-chequear el agregado `summarized`, que llega
+        // rezagado y haría descartar la activación y la orden Shopify.
+        // Un fallo de Shopify se relanza desde provisionFromPreApproval (ya quedó
+        // logueado dentro); lo tragamos aquí para responder 200 y que MP no
+        // reintente en bucle — el admin puede reaprovisionar manualmente.
+        try {
+          await provisionFromPreApproval(preApprovalId, { chargeConfirmed: true })
+        } catch (err) {
+          console.error('Error aprovisionando suscripción desde pago:', err)
+        }
       }
       return
     }
@@ -723,7 +333,13 @@ export async function POST(req: Request) {
     await log('webhook.received', 'system', { type: body.type, data_id: dataId, body })
 
     if (body.type === 'preapproval' || body.type === 'subscription_preapproval') {
-      await handlePreApproval(dataId)
+      // Un fallo de Shopify se relanza desde provisionFromPreApproval; lo tragamos
+      // para responder 200 (MP no reintenta en bucle) — recuperable desde el admin.
+      try {
+        await provisionFromPreApproval(dataId)
+      } catch (err) {
+        console.error('Error aprovisionando suscripción desde preapproval:', err)
+      }
     } else if (body.type === 'subscription_authorized_payment' || body.type === 'payment') {
       await handlePayment(dataId)
     }
