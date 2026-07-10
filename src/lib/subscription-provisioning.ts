@@ -317,6 +317,7 @@ export async function provisionFromPreApproval(
             affiliateId: referrerId,
             referredUserId: newUser.id,
             planPrice: subscriptionPrice,
+            planProduct: productId,
           })
           await logSubscription('webhook.preapproval.affiliate_reward', email, {
             affiliateId: referrerId,

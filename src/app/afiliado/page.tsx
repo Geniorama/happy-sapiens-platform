@@ -131,7 +131,10 @@ export default async function AfiliadoHomePage() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-zinc-900 truncate">{name}</p>
-                      <p className="text-xs text-zinc-500">Se suscribió el {formatDate(r.createdAt)}</p>
+                      <p className="text-xs text-zinc-500">
+                        Se suscribió el {formatDate(r.createdAt)}
+                        {r.plan ? ` · ${r.plan}` : ""}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 pl-12 sm:pl-0 shrink-0">

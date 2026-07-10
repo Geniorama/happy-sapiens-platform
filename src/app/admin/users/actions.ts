@@ -23,6 +23,121 @@ async function getUserEmail(userId: string): Promise<string | null> {
   return data?.email ?? null
 }
 
+export interface UserSubscriptionDetail {
+  current: {
+    status: string | null
+    productSlug: string | null
+    planTitle: string | null
+    price: number | null
+    startDate: string | null
+    endDate: string | null
+    pauseEndsAt: string | null
+    subscriptionId: string | null
+    taxExempt: boolean
+  }
+  history: {
+    id: string
+    action: string
+    previousStatus: string | null
+    newStatus: string | null
+    amount: number | null
+    notes: string | null
+    createdAt: string
+  }[]
+  payments: {
+    id: string
+    status: string
+    amount: number | null
+    currency: string | null
+    paymentMethod: string | null
+    paymentDate: string | null
+    mercadopagoPaymentId: string | null
+  }[]
+}
+
+/**
+ * Detalle de suscripción de un usuario para el admin: plan/producto actual,
+ * precio y fechas, más el historial de cambios de suscripción y los pagos.
+ * Se carga bajo demanda al abrir la pestaña "Suscripción" de un usuario.
+ */
+export async function getUserSubscriptionDetail(
+  userId: string
+): Promise<{ data: UserSubscriptionDetail } | { error: string }> {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+
+  const [user, history, payments] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        subscriptionStatus: true,
+        subscriptionProduct: true,
+        subscriptionPrice: true,
+        subscriptionStartDate: true,
+        subscriptionEndDate: true,
+        subscriptionPauseEndsAt: true,
+        subscriptionId: true,
+        subscriptionTaxExempt: true,
+      },
+    }),
+    prisma.subscriptionHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.paymentTransaction.findMany({
+      where: { userId },
+      orderBy: { paymentDate: "desc" },
+      take: 20,
+    }),
+  ])
+
+  if (!user) return { error: "Usuario no encontrado" }
+
+  let planTitle: string | null = null
+  if (user.subscriptionProduct) {
+    const plan = await prisma.subscriptionPlanConfig.findUnique({
+      where: { slug: user.subscriptionProduct },
+      select: { title: true },
+    })
+    planTitle = plan?.title ?? null
+  }
+
+  return {
+    data: {
+      current: {
+        status: user.subscriptionStatus,
+        productSlug: user.subscriptionProduct,
+        planTitle,
+        price: user.subscriptionPrice == null ? null : Number(user.subscriptionPrice),
+        startDate: user.subscriptionStartDate ? user.subscriptionStartDate.toISOString() : null,
+        endDate: user.subscriptionEndDate ? user.subscriptionEndDate.toISOString() : null,
+        pauseEndsAt: user.subscriptionPauseEndsAt ? user.subscriptionPauseEndsAt.toISOString() : null,
+        subscriptionId: user.subscriptionId,
+        taxExempt: user.subscriptionTaxExempt === true,
+      },
+      history: history.map((h) => ({
+        id: h.id,
+        action: h.action,
+        previousStatus: h.previousStatus,
+        newStatus: h.newStatus,
+        amount: h.amount == null ? null : Number(h.amount),
+        notes: h.notes,
+        createdAt: h.createdAt.toISOString(),
+      })),
+      payments: payments.map((p) => ({
+        id: p.id,
+        status: p.status,
+        amount: p.amount == null ? null : Number(p.amount),
+        currency: p.currency,
+        paymentMethod: p.paymentMethod,
+        paymentDate: p.paymentDate ? p.paymentDate.toISOString() : null,
+        mercadopagoPaymentId: p.mercadopagoPaymentId,
+      })),
+    },
+  }
+}
+
 export async function createUser(data: {
   first_name: string
   last_name: string

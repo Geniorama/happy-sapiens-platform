@@ -68,6 +68,7 @@ export async function grantAffiliateReward(opts: {
   affiliateId: string
   referredUserId: string
   planPrice: number | null | undefined
+  planProduct?: string | null
 }): Promise<{ success: boolean; amount?: number; error?: string }> {
   const percent = await getAffiliateRewardPercent()
   const planPrice = Number(opts.planPrice)
@@ -86,6 +87,7 @@ export async function grantAffiliateReward(opts: {
         referredUserId: opts.referredUserId,
         amount,
         planPrice,
+        planProduct: opts.planProduct ?? null,
         rewardPercent: percent,
         note: `Recompensa por suscripción de referido (${percent}% de ${planPrice.toLocaleString("es-CO")})`,
       },
@@ -104,6 +106,7 @@ export interface AffiliateRewardRow {
   id: string
   amount: number
   planPrice: number | null
+  plan: string | null
   rewardPercent: number | null
   createdAt: string
   referredUser: {
@@ -165,7 +168,13 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
         take: 100,
         include: {
           referredUser: {
-            select: { id: true, name: true, email: true, subscriptionStatus: true },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              subscriptionStatus: true,
+              subscriptionProduct: true,
+            },
           },
         },
       }),
@@ -182,6 +191,24 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
     ])
 
   const totalEarned = toNumber(earnedAgg._sum.amount)
+
+  // Resolver el título legible del plan de cada recompensa. Prioridad: el producto
+  // guardado al momento de la conversión → el producto actual del referido.
+  const planSlugs = Array.from(
+    new Set(
+      rewards
+        .map((r) => r.planProduct ?? r.referredUser?.subscriptionProduct ?? null)
+        .filter((s): s is string => !!s)
+    )
+  )
+  const planTitles = new Map<string, string>()
+  if (planSlugs.length > 0) {
+    const plans = await prisma.subscriptionPlanConfig.findMany({
+      where: { slug: { in: planSlugs } },
+      select: { slug: true, title: true },
+    })
+    for (const p of plans) planTitles.set(p.slug, p.title)
+  }
 
   // Un retiro pendiente reserva fondos; uno pagado los descuenta. Un retiro
   // rechazado libera los fondos (no cuenta). Disponible = ganado - pagado - pendiente.
@@ -201,10 +228,13 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
     availableBalance: totalEarned - totalPaid - pendingPayout,
     currency: "COP",
     rewardPercent,
-    rewards: rewards.map((r) => ({
+    rewards: rewards.map((r) => {
+      const slug = r.planProduct ?? r.referredUser?.subscriptionProduct ?? null
+      return {
       id: r.id,
       amount: toNumber(r.amount),
       planPrice: r.planPrice == null ? null : toNumber(r.planPrice),
+      plan: slug ? planTitles.get(slug) ?? slug : null,
       rewardPercent: r.rewardPercent == null ? null : toNumber(r.rewardPercent),
       createdAt: r.createdAt.toISOString(),
       referredUser: r.referredUser
@@ -215,7 +245,8 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
             subscriptionStatus: r.referredUser.subscriptionStatus,
           }
         : null,
-    })),
+      }
+    }),
     payouts: payouts.map((p) => ({
       id: p.id,
       amount: toNumber(p.amount),

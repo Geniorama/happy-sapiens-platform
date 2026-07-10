@@ -13,6 +13,7 @@ import {
 } from "@/app/admin/users/actions"
 import { PhoneInput } from "@/components/ui/phone-input"
 import { isValidPhoneNumber } from "react-phone-number-input"
+import { UserSubscriptionDetail } from "@/components/admin/user-subscription-detail"
 
 interface User {
   id: string
@@ -412,9 +413,15 @@ function UserDetailPanel({
 
         {/* ── Suscripción ── */}
         {tab === "suscripcion" && (
-          <div className="space-y-3 max-w-sm">
-            <p className="text-xs text-zinc-500">
-              Estado actual:{" "}
+          <div className="space-y-5">
+            {/* Detalle de suscripción (plan, historial, pagos) */}
+            <UserSubscriptionDetail userId={user.id} />
+
+            {/* Controles de edición */}
+            <div className="space-y-3 max-w-sm border-t border-zinc-200 pt-4">
+              <p className="text-xs font-semibold text-zinc-700">Modificar suscripción</p>
+              <p className="text-xs text-zinc-500">
+                Estado actual:{" "}
               <span className={`font-semibold px-1.5 py-0.5 rounded ${subBadge(user.subscription_status)}`}>
                 {user.subscription_status || "inactiva"}
               </span>
@@ -453,6 +460,7 @@ function UserDetailPanel({
               {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
               Guardar suscripción
             </button>
+            </div>
           </div>
         )}
 

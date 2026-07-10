@@ -67,6 +67,7 @@ Tabla `affiliate_rewards` (modelo `AffiliateReward` en `prisma/schema.prisma`):
 | `referred_user_id` | UUID **unique** | FK → `users.id` (el referido convertido)   |
 | `amount`           | DECIMAL(12,2) | Recompensa en COP                            |
 | `plan_price`       | DECIMAL(12,2) | Precio cobrado usado para el cálculo         |
+| `plan_product`     | TEXT          | Slug del plan que contrató el referido       |
 | `reward_percent`   | DECIMAL(5,2)  | % aplicado en el momento del abono           |
 | `currency`         | TEXT          | `COP`                                        |
 | `created_at`       | TIMESTAMPTZ   |                                              |
@@ -81,6 +82,7 @@ prisma/schema.prisma                              # modelos AffiliateReward + Af
 prisma/migrations/20260710000000_affiliate_rewards/migration.sql
 prisma/migrations/20260710000001_affiliate_payouts/migration.sql
 prisma/migrations/20260710000002_affiliate_config/migration.sql
+prisma/migrations/20260710000003_affiliate_reward_plan_product/migration.sql
 src/lib/affiliate.ts                              # rol, grant, summary, requestPayout, report, get/setRewardPercent
 src/lib/subscription-provisioning.ts              # engancha grantAffiliateReward al activar suscripción
 src/app/afiliado/layout.tsx                       # gate de rol
