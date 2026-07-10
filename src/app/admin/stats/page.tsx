@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/db"
 import {
   Users, CreditCard, TrendingUp, TrendingDown, DollarSign,
-  AlertTriangle, Activity, Package, Receipt, ExternalLink,
+  AlertTriangle, Activity, Package, Receipt, ExternalLink, Banknote,
 } from "lucide-react"
 import Link from "next/link"
+import { getAffiliatesReport } from "@/lib/affiliate"
 
 const SUBSCRIPTION_STATUS_LABELS: Record<string, { label: string; color: string }> = {
   active: { label: "Activa", color: "bg-green-100 text-green-700" },
@@ -67,6 +68,7 @@ export default async function AdminStatsPage() {
     monthSeries,
     recentTxRows,
     approvedTxCount,
+    affReport,
   ] = await Promise.all([
     prisma.user.groupBy({
       by: ["subscriptionStatus"],
@@ -156,7 +158,10 @@ export default async function AdminStatsPage() {
       include: { user: { select: { email: true, name: true } } },
     }),
     prisma.paymentTransaction.count({ where: { status: "approved" } }),
+    getAffiliatesReport(),
   ])
+
+  const topAffiliates = affReport.affiliates.slice(0, 5)
 
   const statusCounts: Record<string, number> = {}
   for (const row of byStatus) {
@@ -491,6 +496,61 @@ export default async function AdminStatsPage() {
             })
           )}
         </div>
+      </div>
+
+      {/* Afiliados */}
+      <div className="bg-white rounded-xl border border-zinc-200">
+        <div className="flex items-center gap-2 px-6 py-4 border-b border-zinc-100">
+          <Banknote className="w-4 h-4 text-zinc-400" strokeWidth={1.5} />
+          <h2 className="font-semibold text-zinc-900 text-sm">Afiliados</h2>
+          <Link
+            href="/admin/afiliados"
+            className="ml-auto text-xs text-zinc-500 hover:text-zinc-900"
+          >
+            Gestionar retiros →
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-6 border-b border-zinc-100">
+          <div>
+            <p className="text-xs text-zinc-500">Afiliados</p>
+            <p className="text-xl font-bold text-zinc-900">{formatInt(affReport.totals.affiliates)}</p>
+            <p className="text-xs text-zinc-400">{formatInt(affReport.totals.referrals)} referidos</p>
+          </div>
+          <div>
+            <p className="text-xs text-zinc-500">Ganado por afiliados</p>
+            <p className="text-xl font-bold text-zinc-900">{formatCOP(affReport.totals.earned)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-zinc-500">Pagado</p>
+            <p className="text-xl font-bold text-zinc-900">{formatCOP(affReport.totals.paid)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-zinc-500">Pendiente de pago</p>
+            <p className="text-xl font-bold text-amber-600">{formatCOP(affReport.totals.pending)}</p>
+          </div>
+        </div>
+
+        {topAffiliates.length === 0 ? (
+          <p className="px-6 py-8 text-sm text-zinc-400 text-center">Aún no hay afiliados.</p>
+        ) : (
+          <div className="divide-y divide-zinc-50">
+            {topAffiliates.map((a) => (
+              <div key={a.id} className="flex items-center justify-between px-6 py-3 gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-zinc-900 truncate">{a.name || a.email || "—"}</p>
+                  <p className="text-xs text-zinc-500 truncate">
+                    {formatInt(a.totalReferrals)} referidos · {formatInt(a.activeReferrals)} activos
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-semibold text-zinc-900">{formatCOP(a.totalEarned)}</p>
+                  <p className="text-xs text-zinc-400">disp. {formatCOP(a.availableBalance)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

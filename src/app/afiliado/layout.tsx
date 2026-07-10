@@ -1,0 +1,37 @@
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
+import { AfiliadoLayout } from "@/components/afiliado/afiliado-layout"
+import { AFFILIATE_ROLE } from "@/lib/affiliate"
+import { prisma } from "@/lib/db"
+
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const session = await auth()
+
+  if (!session) {
+    redirect("/auth/login")
+  }
+
+  if (session.user.role !== AFFILIATE_ROLE) {
+    redirect("/dashboard")
+  }
+
+  let user: { image: string | null } | null = null
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { image: true },
+    })
+  } catch {
+    // si falla la DB, continuar con la imagen de sesión
+  }
+
+  return (
+    <AfiliadoLayout
+      userName={session.user?.name}
+      userEmail={session.user?.email}
+      userImage={user?.image ?? session.user?.image}
+    >
+      {children}
+    </AfiliadoLayout>
+  )
+}

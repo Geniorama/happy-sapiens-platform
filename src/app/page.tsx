@@ -8,7 +8,9 @@ export default async function Home() {
 
   if (session?.user) {
     const role = session.user.role
-    redirect(role === "coach" ? "/coach/appointments" : "/dashboard")
+    const home =
+      role === "coach" ? "/coach/appointments" : role === "afiliado" ? "/afiliado" : "/dashboard"
+    redirect(home)
   }
 
   redirect("/auth/login")

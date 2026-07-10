@@ -34,12 +34,13 @@ interface User {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const ROLES = ["user", "coach", "admin"] as const
+const ROLES = ["user", "coach", "admin", "afiliado"] as const
 const GENDERS = ["masculino", "femenino", "no_binario", "prefiero_no_decir"]
 
 function roleBadge(role: string) {
   if (role === "coach") return "bg-green-100 text-green-700"
   if (role === "admin") return "bg-amber-100 text-amber-700"
+  if (role === "afiliado") return "bg-blue-100 text-blue-700"
   return "bg-zinc-100 text-zinc-600"
 }
 
@@ -78,7 +79,7 @@ function CreateUserForm({ onClose, onCreated }: { onClose: () => void; onCreated
 
   const [form, setForm] = useState({
     first_name: "", last_name: "", email: "",
-    role: "user" as "user" | "coach" | "admin",
+    role: "user" as "user" | "coach" | "admin" | "afiliado",
     subscription_status: "active" as "active" | "inactive",
     subscription_start_date: today,
     subscription_end_date: defaultEnd,

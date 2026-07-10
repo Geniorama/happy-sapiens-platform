@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
+import { AFFILIATE_ROLE, grantAffiliateReward } from '@/lib/affiliate'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
 import { preApprovalClient, getSubscriptionPlan } from '@/lib/mercadopago'
 import { randomBytes } from 'crypto'
@@ -219,12 +220,16 @@ export async function provisionFromPreApproval(
       console.log(`Suscripción reactivada: ${email}`)
     } else {
       let referrerId: string | null = null
+      let referrerRole: string | null = null
       if (referralCode) {
         const referrer = await prisma.user.findUnique({
           where: { referralCode },
-          select: { id: true },
+          select: { id: true, role: true },
         })
-        if (referrer) referrerId = referrer.id
+        if (referrer) {
+          referrerId = referrer.id
+          referrerRole = referrer.role
+        }
       }
 
       const resetToken = randomBytes(32).toString('hex')
@@ -304,6 +309,24 @@ export async function provisionFromPreApproval(
           referenceType: 'user',
           referenceId: newUser.id,
         })
+
+        // Afiliados: además de puntos, acumulan una recompensa monetaria en COP
+        // (un % del precio cobrado). Idempotente por referredUserId.
+        if (referrerRole === AFFILIATE_ROLE) {
+          const reward = await grantAffiliateReward({
+            affiliateId: referrerId,
+            referredUserId: newUser.id,
+            planPrice: subscriptionPrice,
+          })
+          await logSubscription('webhook.preapproval.affiliate_reward', email, {
+            affiliateId: referrerId,
+            referredUserId: newUser.id,
+            planPrice: subscriptionPrice ?? null,
+            amount: reward.amount ?? null,
+            success: reward.success,
+            error: reward.success ? null : reward.error ?? null,
+          })
+        }
       }
 
       await sendWelcomeEmail(email, name, resetToken)

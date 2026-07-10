@@ -19,8 +19,8 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/subscribe?oauth=1", req.url))
   }
 
-  // Admins y coaches no necesitan verificación de suscripción
-  if (role === "admin" || role === "coach") {
+  // Admins, coaches y afiliados no necesitan verificación de suscripción
+  if (role === "admin" || role === "coach" || role === "afiliado") {
     return NextResponse.next()
   }
 
@@ -45,5 +45,5 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/coach/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/coach/:path*", "/admin/:path*", "/afiliado/:path*"],
 }

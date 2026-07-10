@@ -27,7 +27,7 @@ export async function createUser(data: {
   first_name: string
   last_name: string
   email: string
-  role: "user" | "coach" | "admin"
+  role: "user" | "coach" | "admin" | "afiliado"
   subscription_status: "active" | "inactive"
   subscription_start_date?: string
   subscription_end_date?: string
@@ -218,7 +218,7 @@ export async function updateUser(
   return { success: true }
 }
 
-export async function changeUserRole(userId: string, role: "user" | "coach" | "admin") {
+export async function changeUserRole(userId: string, role: "user" | "coach" | "admin" | "afiliado") {
   const session = await getAdminSession()
   if (!session) return { error: "No autorizado" }
 

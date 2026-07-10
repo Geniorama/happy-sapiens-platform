@@ -64,6 +64,13 @@ STRAVA_CLIENT_SECRET=""
 # Google Tag Manager — ID del contenedor (formato GTM-XXXXXXX).
 # Si se omite, GTM no se carga.
 NEXT_PUBLIC_GTM_ID="GTM-P99DWVK9"
+
+# ============================================
+# AFILIADOS (OPCIONAL)
+# ============================================
+# Porcentaje del precio del plan que gana un afiliado por cada referido que se
+# suscribe. Si se omite o es inválido, se usa 15. Ver MODULO_AFILIADOS.md.
+AFFILIATE_REWARD_PERCENT="15"
 ```
 
 ### 3. Reiniciar el servidor

@@ -86,6 +86,7 @@ Todos los módulos tienen documentación en español en archivos `.md` en la ra�
 - `MODULO_RITUAL_COACHES.md` — sistema de reserva de coaches
 - `MODULO_RECORDATORIOS.md` — recordatorios configurables de citas + setup cron-job.org
 - `MODULO_ALIADOS.md` — módulo de partners
+- `MODULO_AFILIADOS.md` — perfil afiliado (rol `afiliado`, recompensas en COP por referido suscrito)
 - `MERCADOPAGO_CONFIG.md` — integración de pagos
 - `AWS_S3_CLOUDFRONT_SETUP.md` — configuración de storage
 - `MODULO_ANALYTICS.md` — Google Tag Manager + GA4, catálogo de eventos del dataLayer

@@ -23,6 +23,10 @@ export default async function Layout({
     redirect("/admin")
   }
 
+  if (session.user.role === "afiliado") {
+    redirect("/afiliado")
+  }
+
   const [userRow, pointsBalance] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
