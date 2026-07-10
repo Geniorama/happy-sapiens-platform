@@ -97,6 +97,7 @@ model User {
   affiliateRewards    AffiliateReward[]     @relation("AffiliateRewards")
   affiliateReferrals  AffiliateReward[]     @relation("AffiliateReferredUser")
   affiliatePayouts    AffiliatePayout[]     @relation("AffiliatePayouts")
+  subscriptions       Subscription[]
 
   @@index([email])
   @@index([subscriptionStatus])
@@ -170,10 +171,14 @@ model PaymentTransaction {
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionRowId], references: [id], onDelete: SetNull)
+
+  subscriptionRowId String? @map("subscription_row_id") @db.Uuid
 
   @@index([userId])
   @@index([mercadopagoPaymentId])
+  @@index([subscriptionRowId])
   @@map("payment_transactions")
 }
 
@@ -188,10 +193,41 @@ model SubscriptionHistory {
   notes          String?
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionRowId], references: [id], onDelete: SetNull)
+
+  subscriptionRowId String? @map("subscription_row_id") @db.Uuid
 
   @@index([userId])
+  @@index([subscriptionRowId])
   @@map("subscription_history")
+}
+
+model Subscription {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  mpPreapprovalId String?   @unique @map("mp_preapproval_id")
+  status          String    @default("inactive")
+  product         String?
+  price           Decimal?  @db.Decimal
+  variantId       String?   @map("variant_id")
+  taxExempt       Boolean   @default(false) @map("tax_exempt")
+  startDate       DateTime? @map("start_date") @db.Timestamptz(6)
+  endDate         DateTime? @map("end_date") @db.Timestamptz(6)
+  pauseEndsAt     DateTime? @map("pause_ends_at") @db.Timestamptz(6)
+  syncedAt        DateTime? @map("synced_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentTransactions PaymentTransaction[]
+  subscriptionHistory SubscriptionHistory[]
+  shopifyDispatches   ShopifyOrderDispatch[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([product])
+  @@map("subscriptions")
 }
 
 model Partner {
@@ -480,10 +516,14 @@ model ShopifyOrderDispatch {
   shopifyOrderId     String?  @map("shopify_order_id")
   shopifyOrderNumber Int?     @map("shopify_order_number")
   errorMessage       String?  @map("error_message")
+  subscriptionRowId  String?  @map("subscription_row_id") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  subscription Subscription? @relation(fields: [subscriptionRowId], references: [id], onDelete: SetNull)
+
   @@index([email])
+  @@index([subscriptionRowId])
   @@map("shopify_order_dispatches")
 }
 
