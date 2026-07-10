@@ -18,9 +18,10 @@ disponible.
 - Se abona cuando un **referido paga/activa su suscripción** (mismo momento en que
   el webhook de MercadoPago crea la cuenta del referido).
 - Monto = **porcentaje del precio realmente cobrado**, redondeado al peso.
-- El porcentaje se configura con la variable de entorno **`AFFILIATE_REWARD_PERCENT`**
-  (por defecto `15`). Se lee en tiempo de ejecución, así que basta editar el `.env`
-  del servidor (no requiere migración ni redeploy de esquema).
+- El porcentaje se edita desde el **panel de admin** (`/admin/afiliados` → "Recompensa
+  por referido") y se guarda en la tabla `affiliate_config`. Prioridad de lectura:
+  **config en BD → variable de entorno `AFFILIATE_REWARD_PERCENT` → 15**. Aplica a las
+  recompensas nuevas; las ya registradas conservan el % con el que se calcularon.
 - Es **one-time por referido** (no comisión recurrente mensual). Idempotente: la
   fila se llavea por `referred_user_id` (unique), de modo que re-entregas del
   webhook no duplican la recompensa.
@@ -46,9 +47,10 @@ Tabla `affiliate_payouts` (modelo `AffiliatePayout`): `affiliate_id`, `amount`,
 
 ## 🛠️ Admin
 
-- **/admin/afiliados** — KPIs globales, solicitudes de retiro pendientes
-  (aprobar/rechazar con nota) y detalle por afiliado (referidos, ganado, pagado,
-  pendiente, disponible). Enlace en el menú lateral del admin.
+- **/admin/afiliados** — configuración del **porcentaje de recompensa**, KPIs
+  globales, solicitudes de retiro pendientes (aprobar/rechazar con nota) y detalle
+  por afiliado (referidos, ganado, pagado, pendiente, disponible). Enlace en el menú
+  lateral del admin.
 - **/admin/stats** — sección "Afiliados" con totales (afiliados, referidos,
   ganado, pagado, pendiente) y top 5 afiliados, con enlace a la gestión de retiros.
 - Las resoluciones de retiro quedan registradas en `system_logs`
@@ -75,10 +77,11 @@ Migración: `prisma/migrations/20260710000000_affiliate_rewards/`. Aplicar con
 ## 🧩 Archivos
 
 ```
-prisma/schema.prisma                              # modelos AffiliateReward + AffiliatePayout + relaciones en User
+prisma/schema.prisma                              # modelos AffiliateReward + AffiliatePayout + AffiliateConfig
 prisma/migrations/20260710000000_affiliate_rewards/migration.sql
 prisma/migrations/20260710000001_affiliate_payouts/migration.sql
-src/lib/affiliate.ts                              # rol, grant, summary, requestPayout, report, pendingPayouts
+prisma/migrations/20260710000002_affiliate_config/migration.sql
+src/lib/affiliate.ts                              # rol, grant, summary, requestPayout, report, get/setRewardPercent
 src/lib/subscription-provisioning.ts              # engancha grantAffiliateReward al activar suscripción
 src/app/afiliado/layout.tsx                       # gate de rol
 src/app/afiliado/page.tsx                         # panel: stats + saldo + retiro + recompensas
@@ -86,9 +89,10 @@ src/app/afiliado/actions.ts                       # getAffiliateData(), requestP
 src/components/afiliado/afiliado-layout.tsx       # shell/sidebar del área
 src/components/afiliado/affiliate-share-card.tsx  # código + link (copiar/compartir)
 src/components/afiliado/payout-request-card.tsx   # solicitar retiro + historial
-src/app/admin/afiliados/page.tsx                  # reporte + gestión de retiros
-src/app/admin/afiliados/actions.ts                # resolveAffiliatePayout (pagado/rechazado)
+src/app/admin/afiliados/page.tsx                  # config % + reporte + gestión de retiros
+src/app/admin/afiliados/actions.ts                # resolveAffiliatePayout + updateRewardPercent
 src/components/admin/payouts-manager.tsx          # botones aprobar/rechazar (cliente)
+src/components/admin/affiliate-config-form.tsx    # editar % de recompensa (cliente)
 src/app/admin/stats/page.tsx                      # sección "Afiliados" en estadísticas
 src/components/admin/admin-layout.tsx             # enlace "Afiliados" en el menú
 src/middleware.ts                                 # /afiliado en matcher + bypass de suscripción
@@ -120,5 +124,4 @@ Desde **/admin/users**:
 ## 🔮 Extensiones futuras
 
 - **Comisión recurrente** (abonar en cada cobro mensual, no solo la conversión).
-- Porcentaje configurable desde el panel de admin (hoy vía env).
 - Pago automático de retiros vía pasarela (hoy el pago es manual por fuera).

@@ -69,7 +69,8 @@ NEXT_PUBLIC_GTM_ID="GTM-P99DWVK9"
 # AFILIADOS (OPCIONAL)
 # ============================================
 # Porcentaje del precio del plan que gana un afiliado por cada referido que se
-# suscribe. Si se omite o es inválido, se usa 15. Ver MODULO_AFILIADOS.md.
+# suscribe. FALLBACK: normalmente se edita desde /admin/afiliados (tabla
+# affiliate_config). Este valor solo se usa si no hay config en BD. Default 15.
 AFFILIATE_REWARD_PERCENT="15"
 ```
 

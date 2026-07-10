@@ -7,12 +7,54 @@ import { Prisma } from "@prisma/client"
 // gamificación), el afiliado acumula un saldo monetario que puede redimir.
 export const AFFILIATE_ROLE = "afiliado"
 
-// Porcentaje del precio del plan que se abona al afiliado por cada conversión.
-// Configurable sin redeploy de esquema vía .env del servidor.
-export function getAffiliateRewardPercent(): number {
+const AFFILIATE_CONFIG_ID = "default"
+const DEFAULT_REWARD_PERCENT = 15
+
+// Fallback de porcentaje desde variable de entorno (cuando no hay config en BD).
+function getRewardPercentFromEnv(): number {
   const raw = Number(process.env.AFFILIATE_REWARD_PERCENT)
-  if (!Number.isFinite(raw) || raw <= 0) return 15
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_REWARD_PERCENT
   return raw
+}
+
+// Porcentaje del precio del plan que se abona al afiliado por cada conversión.
+// Prioridad: config editable en BD (admin) → variable de entorno → 15.
+export async function getAffiliateRewardPercent(): Promise<number> {
+  try {
+    const config = await prisma.affiliateConfig.findUnique({
+      where: { id: AFFILIATE_CONFIG_ID },
+      select: { rewardPercent: true },
+    })
+    if (config?.rewardPercent != null) {
+      const n = Number(config.rewardPercent)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+  } catch {
+    // Si la BD/tabla no está disponible, usar el fallback de entorno.
+  }
+  return getRewardPercentFromEnv()
+}
+
+/** Guarda el porcentaje de recompensa configurable por el admin. */
+export async function setAffiliateRewardPercent(
+  percent: number,
+  updatedById?: string
+): Promise<{ success: boolean; error?: string }> {
+  const value = Number(percent)
+  if (!Number.isFinite(value) || value <= 0 || value > 100) {
+    return { success: false, error: "El porcentaje debe estar entre 0 y 100" }
+  }
+  try {
+    await prisma.affiliateConfig.upsert({
+      where: { id: AFFILIATE_CONFIG_ID },
+      create: { id: AFFILIATE_CONFIG_ID, rewardPercent: value, updatedById: updatedById ?? null },
+      update: { rewardPercent: value, updatedById: updatedById ?? null },
+    })
+    return { success: true }
+  } catch (err) {
+    console.error("setAffiliateRewardPercent exception:", err)
+    return { success: false, error: "No se pudo guardar el porcentaje" }
+  }
 }
 
 /**
@@ -27,7 +69,7 @@ export async function grantAffiliateReward(opts: {
   referredUserId: string
   planPrice: number | null | undefined
 }): Promise<{ success: boolean; amount?: number; error?: string }> {
-  const percent = getAffiliateRewardPercent()
+  const percent = await getAffiliateRewardPercent()
   const planPrice = Number(opts.planPrice)
 
   if (!Number.isFinite(planPrice) || planPrice <= 0) {
@@ -113,29 +155,31 @@ function toNumber(value: Prisma.Decimal | number | null | undefined): number {
  * total ganado y saldo disponible (= total ganado, sin flujo de redención por ahora).
  */
 export async function getAffiliateSummary(affiliateId: string): Promise<AffiliateSummary> {
-  const [totalReferrals, activeReferrals, rewards, earnedAgg, payouts] = await Promise.all([
-    prisma.user.count({ where: { referredBy: affiliateId } }),
-    prisma.user.count({ where: { referredBy: affiliateId, subscriptionStatus: "active" } }),
-    prisma.affiliateReward.findMany({
-      where: { affiliateId },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      include: {
-        referredUser: {
-          select: { id: true, name: true, email: true, subscriptionStatus: true },
+  const [totalReferrals, activeReferrals, rewards, earnedAgg, payouts, rewardPercent] =
+    await Promise.all([
+      prisma.user.count({ where: { referredBy: affiliateId } }),
+      prisma.user.count({ where: { referredBy: affiliateId, subscriptionStatus: "active" } }),
+      prisma.affiliateReward.findMany({
+        where: { affiliateId },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: {
+          referredUser: {
+            select: { id: true, name: true, email: true, subscriptionStatus: true },
+          },
         },
-      },
-    }),
-    prisma.affiliateReward.aggregate({
-      where: { affiliateId },
-      _sum: { amount: true },
-    }),
-    prisma.affiliatePayout.findMany({
-      where: { affiliateId },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-  ])
+      }),
+      prisma.affiliateReward.aggregate({
+        where: { affiliateId },
+        _sum: { amount: true },
+      }),
+      prisma.affiliatePayout.findMany({
+        where: { affiliateId },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+      getAffiliateRewardPercent(),
+    ])
 
   const totalEarned = toNumber(earnedAgg._sum.amount)
 
@@ -156,7 +200,7 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
     pendingPayout,
     availableBalance: totalEarned - totalPaid - pendingPayout,
     currency: "COP",
-    rewardPercent: getAffiliateRewardPercent(),
+    rewardPercent,
     rewards: rewards.map((r) => ({
       id: r.id,
       amount: toNumber(r.amount),

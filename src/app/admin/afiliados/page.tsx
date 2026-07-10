@@ -1,6 +1,7 @@
 import { Users, Wallet, Banknote, Clock, Hourglass } from "lucide-react"
-import { getAffiliatesReport, getPendingPayouts } from "@/lib/affiliate"
+import { getAffiliatesReport, getPendingPayouts, getAffiliateRewardPercent } from "@/lib/affiliate"
 import { PayoutsManager } from "@/components/admin/payouts-manager"
+import { AffiliateConfigForm } from "@/components/admin/affiliate-config-form"
 
 export const dynamic = "force-dynamic"
 
@@ -17,7 +18,11 @@ function formatInt(value: number): string {
 }
 
 export default async function AdminAfiliadosPage() {
-  const [report, pendingPayouts] = await Promise.all([getAffiliatesReport(), getPendingPayouts()])
+  const [report, pendingPayouts, rewardPercent] = await Promise.all([
+    getAffiliatesReport(),
+    getPendingPayouts(),
+    getAffiliateRewardPercent(),
+  ])
   const { totals, affiliates } = report
 
   const kpis = [
@@ -52,6 +57,9 @@ export default async function AdminAfiliadosPage() {
           )
         })}
       </div>
+
+      {/* Config: porcentaje de recompensa */}
+      <AffiliateConfigForm current={rewardPercent} />
 
       {/* Solicitudes de retiro pendientes */}
       <div className="bg-white rounded-xl border border-zinc-200">

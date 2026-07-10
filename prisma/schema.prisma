@@ -548,6 +548,16 @@ model AffiliatePayout {
   @@map("affiliate_payouts")
 }
 
+model AffiliateConfig {
+  id            String   @id @default("default")
+  rewardPercent Decimal  @default(15) @map("reward_percent") @db.Decimal(5, 2)
+  updatedById   String?  @map("updated_by_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("affiliate_config")
+}
+
 model SubscriptionPlanConfig {
   slug                       String   @id
   title                      String
