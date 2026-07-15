@@ -30,6 +30,42 @@ async function shopifyQuery<T = unknown>(
   return data as T
 }
 
+// Reintenta una request ante conflictos/lock transitorios de Shopify.
+//
+// Completar un draft order deja la orden brevemente bloqueada mientras Shopify la
+// materializa desde el draft. Un POST de transacción (o un GET de la orden) que
+// llega en ese instante choca con el lock y devuelve 409 con cuerpo vacío — y a
+// veces un 5xx transitorio. No es un error permanente: reintentamos con backoff
+// exponencial para que el lock se libere y el paso entre. Sin esto, un 409 dejaba
+// la orden en `pending` de forma permanente (el dispatch queda idempotente y el
+// webhook nunca la vuelve a tocar).
+async function shopifyFetchWithRetry(
+  url: string,
+  init: RequestInit,
+  { retries = 3, baseDelayMs = 600 }: { retries?: number; baseDelayMs?: number } = {}
+): Promise<Response> {
+  let lastRes: Response | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(url, init)
+    } catch (err) {
+      // Error de red: reintentar mientras queden intentos.
+      if (attempt === retries) throw err
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt))
+      continue
+    }
+    // 409 (lock/conflicto de la orden recién creada) o 5xx transitorio → reintentar.
+    if ((res.status === 409 || res.status >= 500) && attempt < retries) {
+      lastRes = res
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt))
+      continue
+    }
+    return res
+  }
+  return lastRes as Response
+}
+
 // Buscar cliente de Shopify por email
 export async function getShopifyCustomerByEmail(email: string) {
   const data = await shopifyQuery<{
@@ -243,10 +279,19 @@ export async function createShopifyOrder(params: {
   const { draft_order } = await draftRes.json()
   const draftId = draft_order.id as number
 
-  // 2. Completar el draft order con payment_pending=true: crea la orden SIN
-  // generar la transacción genérica "manual". El pago real lo registramos en el
-  // paso 3 con el gateway "Mercado Pago", para que Shopify (y Moship/Siigo)
-  // identifiquen el método de pago en vez de mostrar "manual".
+  // 2. Completar el draft order con payment_pending=true: crea la orden en estado
+  // `pending`. OJO: Shopify SÍ genera aquí una transacción `sale` PENDIENTE con
+  // gateway "manual" (el saldo queda por cobrar). En el paso 3 registramos una
+  // transacción `sale/success` con gateway "Mercado Pago" que asienta el pago,
+  // marca la orden como `paid` y deja el método identificado (payment_gateway_names
+  // incluye "Mercado Pago"), que es lo que lee Moship/Siigo.
+  //
+  // IMPORTANTE: ese POST del paso 3 solo es válido en la ventana inmediata a la
+  // creación. Si se pospone (p.ej. tras un 409 por el lock de la orden recién
+  // creada que no se reintentó), Shopify rechaza una nueva `sale` con
+  // 422 "sale is not a valid transaction" y ya no se puede replicar este flujo —
+  // hay que asentar la transacción pendiente vía `markShopifyOrderAsPaid`
+  // (reconciliación desde el admin). Por eso el paso 3 usa shopifyFetchWithRetry.
   const completeRes = await fetch(
     `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders/${draftId}/complete.json?payment_pending=true`,
     {
@@ -274,7 +319,7 @@ export async function createShopifyOrder(params: {
     // 3. Registrar el pago como transacción `sale` con gateway "Mercado Pago".
     // Esto marca financial_status='paid' y deja el método de pago identificado
     // (payment_gateway_names: ["Mercado Pago"]), que es lo que lee Moship.
-    const txRes = await fetch(
+    const txRes = await shopifyFetchWithRetry(
       `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
       {
         method: 'POST',
@@ -298,7 +343,7 @@ export async function createShopifyOrder(params: {
     }
 
     // 4. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
-    const orderRes = await fetch(
+    const orderRes = await shopifyFetchWithRetry(
       `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number`,
       { headers, cache: 'no-store' }
     )
@@ -312,6 +357,61 @@ export async function createShopifyOrder(params: {
     return { id: order.id as number, order_number: order.order_number as number }
   } catch (err) {
     throw new ShopifyPostCreateError(orderId, err instanceof Error ? err.message : String(err))
+  }
+}
+
+// Asienta como pagada una orden que quedó en `pending` porque el paso 3 de
+// createShopifyOrder (POST de la transacción `sale/Mercado Pago`) no se completó a
+// tiempo. La orden ya tiene una transacción `sale` PENDIENTE (gateway "manual")
+// generada al completar el draft; `orderMarkAsPaid` la liquida y deja la orden en
+// `paid`. NO se puede recrear la `sale/Mercado Pago` a posteriori (Shopify la
+// rechaza con 422), así que el método de pago queda como "manual". Idempotente: si
+// la orden ya está pagada, no hace nada.
+export async function markShopifyOrderAsPaid(
+  orderId: string | number
+): Promise<{ orderNumber: number | null; financialStatus: string; alreadyPaid: boolean }> {
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+  }
+
+  const infoRes = await shopifyFetchWithRetry(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}.json?fields=id,order_number,financial_status`,
+    { headers, cache: 'no-store' }
+  )
+  if (!infoRes.ok) {
+    throw new Error(`Shopify order fetch error: ${infoRes.status} ${await infoRes.text()}`)
+  }
+  const { order } = await infoRes.json()
+
+  if (order.financial_status === 'paid') {
+    return { orderNumber: order.order_number ?? null, financialStatus: 'paid', alreadyPaid: true }
+  }
+
+  const data = await shopifyQuery<{
+    orderMarkAsPaid: {
+      order: { id: string; name: string; displayFinancialStatus: string } | null
+      userErrors: { field: string[] | null; message: string }[]
+    }
+  }>(
+    `mutation orderMarkAsPaid($input: OrderMarkAsPaidInput!) {
+      orderMarkAsPaid(input: $input) {
+        order { id name displayFinancialStatus }
+        userErrors { field message }
+      }
+    }`,
+    { input: { id: `gid://shopify/Order/${orderId}` } }
+  )
+
+  const result = data.orderMarkAsPaid
+  if (result.userErrors?.length) {
+    throw new Error(`orderMarkAsPaid userErrors: ${result.userErrors.map((e) => e.message).join('; ')}`)
+  }
+
+  return {
+    orderNumber: order.order_number ?? null,
+    financialStatus: (result.order?.displayFinancialStatus ?? 'PAID').toLowerCase(),
+    alreadyPaid: false,
   }
 }
 

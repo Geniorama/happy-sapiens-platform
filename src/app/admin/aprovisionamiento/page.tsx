@@ -1,12 +1,13 @@
-import { listAffectedSubscriptions, listRecurringCharges } from "./actions"
+import { listAffectedSubscriptions, listRecurringCharges, listPendingReconciliations } from "./actions"
 import { ProvisioningManager } from "@/components/admin/provisioning-manager"
 
 export const dynamic = "force-dynamic"
 
 export default async function AdminProvisioningPage() {
-  const [affectedResult, recurringResult] = await Promise.all([
+  const [affectedResult, recurringResult, reconcileResult] = await Promise.all([
     listAffectedSubscriptions(),
     listRecurringCharges(),
+    listPendingReconciliations(),
   ])
 
   const items = affectedResult.ok ? affectedResult.items : []
@@ -14,6 +15,9 @@ export default async function AdminProvisioningPage() {
 
   const recurring = recurringResult.ok ? recurringResult.items : []
   const recurringError = recurringResult.ok ? null : recurringResult.error
+
+  const reconciliations = reconcileResult.ok ? reconcileResult.items : []
+  const reconcileError = reconcileResult.ok ? null : reconcileResult.error
 
   const pending = items.filter((i) => !i.resolved).length
   const recurringMissing = recurring.filter((r) => r.orderState === "missing").length
@@ -29,12 +33,13 @@ export default async function AdminProvisioningPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
           { label: "Casos (activación)", value: items.length },
           { label: "Pendientes activación", value: pending },
           { label: "Cobros recurrentes", value: recurring.length },
           { label: "Recurrentes sin pedido", value: recurringMissing },
+          { label: "Pedidos por conciliar", value: reconciliations.length },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-zinc-200 p-4">
             <p className="text-2xl font-bold text-zinc-900">{s.value.toLocaleString()}</p>
@@ -48,6 +53,8 @@ export default async function AdminProvisioningPage() {
         loadError={loadError}
         recurring={recurring}
         recurringError={recurringError}
+        reconciliations={reconciliations}
+        reconcileError={reconcileError}
       />
     </div>
   )
