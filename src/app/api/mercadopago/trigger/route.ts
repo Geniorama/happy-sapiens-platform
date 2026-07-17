@@ -202,10 +202,16 @@ export async function POST(req: Request) {
         return NextResponse.json({ logs, warning: `Estado es '${preApproval.status}', no 'authorized'. No se procesará.` })
       }
 
-      const pendingCheckout = await prisma.pendingCheckout.findUnique({
-        where: { email },
-        select: { billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
-      })
+      // email ya no es único en pending_checkout (un usuario puede tener varios
+      // en vuelo). Priorizamos el resuelto por external_reference (por id); si no,
+      // el más reciente de ese email.
+      const pendingCheckout =
+        pendingById ??
+        (await prisma.pendingCheckout.findFirst({
+          where: { email },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
+        }))
 
       logs.push(`pending_checkout: ${pendingCheckout ? 'encontrado' : 'no encontrado'}`)
       if (!referralCode && pendingCheckout?.referralCode) referralCode = pendingCheckout.referralCode
@@ -341,8 +347,12 @@ export async function POST(req: Request) {
       }
 
       try {
-        await prisma.pendingCheckout.delete({ where: { email } })
-        logs.push('pending_checkout eliminado')
+        if (pendingCheckout?.id) {
+          await prisma.pendingCheckout.delete({ where: { id: pendingCheckout.id } })
+          logs.push('pending_checkout eliminado')
+        } else {
+          logs.push('pending_checkout no existía')
+        }
       } catch {
         // si no existe, ignorar (P2025)
         logs.push('pending_checkout no existía')

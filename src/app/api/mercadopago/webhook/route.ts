@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
 import { provisionFromPreApproval, logSubscription as log } from '@/lib/subscription-provisioning'
+import { recomputeUserSubscription, SUB_STATUS } from '@/lib/subscriptions'
 import { createHmac } from 'crypto'
 import { hash } from 'bcryptjs'
 
@@ -39,67 +40,59 @@ async function handlePayment(paymentId: string) {
   // subscription_id existe en runtime pero no está en los tipos del SDK
   const paymentAny = payment as unknown as Record<string, unknown>
   if (paymentAny.subscription_id) {
+    const preapprovalId = paymentAny.subscription_id as string
     const email = payment.payer?.email
     if (!email) return
 
-    // Pago rechazado → marcar suscripción como past_due (no crear orden Shopify).
-    // Solo afecta suscripciones vigentes ('active'/'past_due'); un evento de cobro
-    // extraviado no debe degradar una 'paused'/'cancelled' ni activar una cuenta
-    // inexistente (updateMany no coincide si el usuario aún no se ha creado).
+    // Localizar la suscripción concreta de este cobro por su preapproval de MP.
+    // Con múltiples suscripciones por usuario, el estado/precio/variant a tocar es
+    // el de ESTA fila, no el del usuario entero.
+    const subscription =
+      typeof preapprovalId === 'string' && preapprovalId
+        ? await prisma.subscription.findUnique({
+            where: { mpPreapprovalId: preapprovalId },
+            include: {
+              user: {
+                select: {
+                  id: true, name: true, firstName: true, lastName: true,
+                  billingDocumentType: true, billingDocumentNumber: true,
+                  billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
+                  shippingFullName: true, shippingFirstName: true, shippingLastName: true,
+                  shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
+                },
+              },
+            },
+          })
+        : null
+
+    // Pago rechazado → degradar SOLO esta suscripción a past_due (no crear orden).
+    // No degradar una 'paused'/'cancelled' por un cobro extraviado.
     if (payment.status === 'rejected' || payment.status === 'cancelled') {
-      await prisma.user.updateMany({
-        where: { email, subscriptionStatus: { in: ['active', 'past_due'] } },
-        data: { subscriptionStatus: 'past_due', subscriptionSyncedAt: new Date() },
-      })
-      await log('webhook.payment.rejected', email, { paymentId, status: payment.status })
+      if (
+        subscription &&
+        subscription.status !== SUB_STATUS.PAUSED &&
+        subscription.status !== SUB_STATUS.CANCELLED
+      ) {
+        await prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { status: SUB_STATUS.PAST_DUE, syncedAt: new Date() },
+        })
+        await recomputeUserSubscription(subscription.userId)
+      }
+      await log('webhook.payment.rejected', email, { paymentId, status: payment.status, preapprovalId })
       return
     }
 
     if (payment.status !== 'approved') return
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        subscriptionStatus: true,
-        subscriptionVariantId: true,
-        subscriptionTaxExempt: true,
-        billingDocumentType: true,
-        billingDocumentNumber: true,
-        billingPhone: true,
-        billingAddress: true,
-        billingCity: true,
-        billingDepartment: true,
-        shippingFullName: true,
-        shippingFirstName: true,
-        shippingLastName: true,
-        shippingPhone: true,
-        shippingAddress: true,
-        shippingCity: true,
-        shippingDepartment: true,
-      },
-    })
-
-    // Primer cobro aprobado tras reintentos: si la suscripción quedó "en espera
-    // de pago" (no se activó en el evento de preaprobación por no haber cobro
-    // confirmado), aún no existe el usuario. Este cobro aprobado la activa vía el
-    // flujo de preaprobación, que vuelve a verificar el cobro (ya en summarized)
-    // y crea usuario + email de bienvenida + primer despacho. No se ejecuta el
-    // despacho recurrente de abajo porque el usuario era null al consultarse.
-    if (!user) {
-      const preApprovalId = paymentAny.subscription_id
-      if (typeof preApprovalId === 'string' && preApprovalId) {
-        // Este pago ya está 'approved' (se verificó arriba), así que el cobro
-        // está confirmado: no re-chequear el agregado `summarized`, que llega
-        // rezagado y haría descartar la activación y la orden Shopify.
-        // Un fallo de Shopify se relanza desde provisionFromPreApproval (ya quedó
-        // logueado dentro); lo tragamos aquí para responder 200 y que MP no
-        // reintente en bucle — el admin puede reaprovisionar manualmente.
+    // Primer cobro aprobado tras reintentos: la suscripción aún no está
+    // materializada (no se activó en el preapproval por no haber cobro confirmado).
+    // Este cobro la activa vía el flujo de preaprobación (crea user + email + primer
+    // despacho). No se ejecuta el despacho recurrente porque subscription era null.
+    if (!subscription) {
+      if (typeof preapprovalId === 'string' && preapprovalId) {
         try {
-          await provisionFromPreApproval(preApprovalId, { chargeConfirmed: true })
+          await provisionFromPreApproval(preapprovalId, { chargeConfirmed: true })
         } catch (err) {
           console.error('Error aprovisionando suscripción desde pago:', err)
         }
@@ -107,129 +100,130 @@ async function handlePayment(paymentId: string) {
       return
     }
 
-    if (user) {
-      const recurringPrice = payment.transaction_amount ?? undefined
-      const paymentAnyData = payment as unknown as Record<string, unknown>
-      const nextDate = paymentAnyData.next_payment_date as string | undefined
+    const user = subscription.user
+    const recurringPrice = payment.transaction_amount ?? undefined
+    const paymentAnyData = payment as unknown as Record<string, unknown>
+    const nextDate = paymentAnyData.next_payment_date as string | undefined
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          subscriptionSyncedAt: new Date(),
-          // Un cobro recurrente aprobado restaura la suscripción a 'active'
-          // (p.ej. recuperándose de 'past_due' tras un reintento exitoso de MP).
-          // No se reactivan suscripciones 'paused' ni 'cancelled': un cobro no
-          // debe reanudarlas por sí solo.
-          ...(user.subscriptionStatus !== 'paused' &&
-            user.subscriptionStatus !== 'cancelled' && { subscriptionStatus: 'active' }),
-          ...(recurringPrice !== undefined && { subscriptionPrice: recurringPrice }),
-          ...(nextDate && { subscriptionEndDate: new Date(nextDate) }),
-        },
-      })
+    // Un cobro recurrente aprobado restaura ESTA suscripción a 'active' (p.ej.
+    // recuperándose de 'past_due'). No reactiva 'paused'/'cancelled'.
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        syncedAt: new Date(),
+        ...(subscription.status !== SUB_STATUS.PAUSED &&
+          subscription.status !== SUB_STATUS.CANCELLED && { status: SUB_STATUS.ACTIVE }),
+        ...(recurringPrice !== undefined && { price: recurringPrice }),
+        ...(nextDate && { endDate: new Date(nextDate) }),
+      },
+    })
+    await recomputeUserSubscription(subscription.userId)
 
-      const mpPaymentId = String(payment.id)
-      const currency = (payment as unknown as Record<string, unknown>).currency_id as string ?? 'COP'
-      const paymentDateVal = payment.date_approved ? new Date(payment.date_approved) : new Date()
+    const mpPaymentId = String(payment.id)
+    const currency = (payment as unknown as Record<string, unknown>).currency_id as string ?? 'COP'
+    const paymentDateVal = payment.date_approved ? new Date(payment.date_approved) : new Date()
 
-      await prisma.paymentTransaction.upsert({
-        where: { mercadopagoPaymentId: mpPaymentId },
-        create: {
-          userId: user.id,
-          mercadopagoPaymentId: mpPaymentId,
-          status: payment.status ?? 'approved',
-          amount: recurringPrice ?? null,
-          currency,
-          paymentMethod: payment.payment_type_id ?? null,
-          paymentDate: paymentDateVal,
-        },
-        update: {
-          userId: user.id,
-          status: payment.status ?? 'approved',
-          amount: recurringPrice ?? null,
-          currency,
-          paymentMethod: payment.payment_type_id ?? null,
-          paymentDate: paymentDateVal,
-        },
-      })
+    await prisma.paymentTransaction.upsert({
+      where: { mercadopagoPaymentId: mpPaymentId },
+      create: {
+        userId: user.id,
+        subscriptionRowId: subscription.id,
+        mercadopagoPaymentId: mpPaymentId,
+        status: payment.status ?? 'approved',
+        amount: recurringPrice ?? null,
+        currency,
+        paymentMethod: payment.payment_type_id ?? null,
+        paymentDate: paymentDateVal,
+      },
+      update: {
+        userId: user.id,
+        subscriptionRowId: subscription.id,
+        status: payment.status ?? 'approved',
+        amount: recurringPrice ?? null,
+        currency,
+        paymentMethod: payment.payment_type_id ?? null,
+        paymentDate: paymentDateVal,
+      },
+    })
 
-      // Si la suscripción está pausada, no despachar el producto este mes
-      if (user.subscriptionStatus === 'paused') {
-        await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_paused' })
-        console.log(`Despacho omitido para ${email}: suscripción pausada`)
-        return
-      }
+    // Si esta suscripción está pausada, no despachar este mes.
+    if (subscription.status === SUB_STATUS.PAUSED) {
+      await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_paused', preapprovalId })
+      console.log(`Despacho omitido para ${email}: suscripción pausada`)
+      return
+    }
 
-      if (user.subscriptionVariantId) {
-        const billingAddress = user.billingAddress
-          ? {
-              firstName: user.firstName || undefined,
-              lastName: user.lastName || undefined,
-              phone: user.billingPhone || '',
-              address: user.billingAddress,
-              city: user.billingCity || '',
-              department: user.billingDepartment || '',
-            }
-          : undefined
-
-        const shippingAddress = user.shippingAddress
-          ? {
-              firstName: user.shippingFirstName || user.firstName || undefined,
-              lastName: user.shippingLastName || user.lastName || undefined,
-              fullName: user.shippingFullName || user.name || email,
-              phone: user.shippingPhone || '',
-              address: user.shippingAddress,
-              city: user.shippingCity || '',
-              department: user.shippingDepartment || '',
-            }
-          : undefined
-
-        try {
-          const paymentDateStr = payment.date_approved
-            ? new Date(payment.date_approved).toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
-            : new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
-          const orderNote = `Suscripción mensual — ${paymentDateStr} | Pago MP #${payment.id} | Cobro automático MercadoPago`
-
-          const result = await dispatchShopifyOrder({
-            idempotencyKey: `payment:${mpPaymentId}`,
-            email,
-            userId: user.id,
-            params: {
-              email,
-              name: user.name || email,
-              firstName: user.firstName || undefined,
-              lastName: user.lastName || undefined,
-              variantId: user.subscriptionVariantId,
-              taxExempt: user.subscriptionTaxExempt === true,
-              documentType: user.billingDocumentType,
-              documentNumber: user.billingDocumentNumber,
-              note: orderNote,
-              billing: billingAddress,
-              shipping: shippingAddress,
-            },
-          })
-          if (result.status === 'created') {
-            await log('webhook.payment.shopify_order_created', email, {
-              order_number: result.order.order_number,
-              order_id: result.order.id,
-              paymentId: mpPaymentId,
-            })
-            console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}`)
-          } else {
-            await log('webhook.payment.shopify_order_skipped', email, {
-              reason: 'duplicate_dispatch',
-              paymentId: mpPaymentId,
-              existing: result.existing,
-            })
-            console.log(`Orden Shopify omitida (idempotencia) para ${email}: ya existe dispatch ${result.existing.status}`)
+    if (subscription.variantId) {
+      const billingAddress = user.billingAddress
+        ? {
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+            phone: user.billingPhone || '',
+            address: user.billingAddress,
+            city: user.billingCity || '',
+            department: user.billingDepartment || '',
           }
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err)
-          await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: user.subscriptionVariantId, paymentId: mpPaymentId })
-          console.error('Error creando orden en Shopify:', err)
+        : undefined
+
+      const shippingAddress = user.shippingAddress
+        ? {
+            firstName: user.shippingFirstName || user.firstName || undefined,
+            lastName: user.shippingLastName || user.lastName || undefined,
+            fullName: user.shippingFullName || user.name || email,
+            phone: user.shippingPhone || '',
+            address: user.shippingAddress,
+            city: user.shippingCity || '',
+            department: user.shippingDepartment || '',
+          }
+        : undefined
+
+      try {
+        const paymentDateStr = payment.date_approved
+          ? new Date(payment.date_approved).toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
+          : new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long' })
+        const orderNote = `Suscripción mensual — ${paymentDateStr} | Pago MP #${payment.id} | Cobro automático MercadoPago`
+
+        const result = await dispatchShopifyOrder({
+          idempotencyKey: `payment:${mpPaymentId}`,
+          email,
+          userId: user.id,
+          subscriptionRowId: subscription.id,
+          params: {
+            email,
+            name: user.name || email,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+            variantId: subscription.variantId,
+            taxExempt: subscription.taxExempt === true,
+            documentType: user.billingDocumentType,
+            documentNumber: user.billingDocumentNumber,
+            note: orderNote,
+            billing: billingAddress,
+            shipping: shippingAddress,
+          },
+        })
+        if (result.status === 'created') {
+          await log('webhook.payment.shopify_order_created', email, {
+            order_number: result.order.order_number,
+            order_id: result.order.id,
+            paymentId: mpPaymentId,
+          })
+          console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}`)
+        } else {
+          await log('webhook.payment.shopify_order_skipped', email, {
+            reason: 'duplicate_dispatch',
+            paymentId: mpPaymentId,
+            existing: result.existing,
+          })
+          console.log(`Orden Shopify omitida (idempotencia) para ${email}: ya existe dispatch ${result.existing.status}`)
         }
-      } else {
-        await log('webhook.payment.shopify_skipped', email, { reason: 'subscription_variant_id is null' })
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: subscription.variantId, paymentId: mpPaymentId })
+        console.error('Error creando orden en Shopify:', err)
       }
+    } else {
+      await log('webhook.payment.shopify_skipped', email, { reason: 'subscription variantId is null', preapprovalId })
     }
 
     console.log(`Cobro recurrente procesado: ${email}`)

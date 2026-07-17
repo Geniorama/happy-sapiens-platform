@@ -474,7 +474,7 @@ model ReferralStats {
 
 model PendingCheckout {
   id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
+  email        String
   name         String
   firstName    String?  @map("first_name")
   lastName     String?  @map("last_name")

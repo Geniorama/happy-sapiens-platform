@@ -23,11 +23,13 @@ export async function dispatchShopifyOrder({
   idempotencyKey,
   email,
   userId,
+  subscriptionRowId,
   params,
 }: {
   idempotencyKey: string
   email: string
   userId?: string | null
+  subscriptionRowId?: string | null
   params: CreateShopifyOrderParams
 }): Promise<DispatchResult> {
   try {
@@ -36,6 +38,7 @@ export async function dispatchShopifyOrder({
         idempotencyKey,
         email,
         userId: userId ?? null,
+        subscriptionRowId: subscriptionRowId ?? null,
         status: 'pending',
       },
     })

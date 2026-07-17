@@ -4,6 +4,7 @@ import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { AFFILIATE_ROLE, grantAffiliateReward } from '@/lib/affiliate'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
 import { preApprovalClient, getSubscriptionPlan } from '@/lib/mercadopago'
+import { recomputeUserSubscription, SUB_STATUS } from '@/lib/subscriptions'
 import { randomBytes } from 'crypto'
 import { Prisma } from '@prisma/client'
 
@@ -104,11 +105,13 @@ export async function provisionFromPreApproval(
     }
   }
 
-  const userBySubscription = await prisma.user.findFirst({
-    where: { subscriptionId: preApprovalId },
+  // Suscripción existente para este preapproval (re-entregas y eventos de ciclo
+  // de vida: cancel/pause/past_due). Fuente de datos de plan cuando falta pending.
+  const subByPreapproval = await prisma.subscription.findUnique({
+    where: { mpPreapprovalId: preApprovalId },
     select: {
-      email: true, name: true, firstName: true, lastName: true,
-      subscriptionProduct: true, subscriptionVariantId: true, subscriptionTaxExempt: true,
+      id: true, product: true, variantId: true, taxExempt: true,
+      user: { select: { id: true, email: true, name: true, firstName: true, lastName: true } },
     },
   })
 
@@ -116,19 +119,19 @@ export async function provisionFromPreApproval(
     ? await prisma.pendingCheckout.findUnique({ where: { id: pendingId } })
     : null
 
-  const email = (legacy?.email as string) || pending?.email || userBySubscription?.email || preApproval.payer_email || ''
+  const email = (legacy?.email as string) || pending?.email || subByPreapproval?.user?.email || preApproval.payer_email || ''
   if (!email) return { ok: false, reason: 'no_email' }
 
-  const productId = (legacy?.productId as string) || pending?.productId || userBySubscription?.subscriptionProduct || null
+  const productId = (legacy?.productId as string) || pending?.productId || subByPreapproval?.product || null
   const plan = productId ? await getSubscriptionPlan(productId) : null
 
-  const name = (legacy?.name as string) || pending?.name || userBySubscription?.name || email
-  let firstName = (legacy?.firstName as string) || pending?.firstName || userBySubscription?.firstName || null
-  let lastName = (legacy?.lastName as string) || pending?.lastName || userBySubscription?.lastName || null
+  const name = (legacy?.name as string) || pending?.name || subByPreapproval?.user?.name || email
+  let firstName = (legacy?.firstName as string) || pending?.firstName || subByPreapproval?.user?.firstName || null
+  let lastName = (legacy?.lastName as string) || pending?.lastName || subByPreapproval?.user?.lastName || null
   let referralCode = (legacy?.referralCode as string) || pending?.referralCode || null
-  const shopifyVariantId = plan?.shopifyVariantId || (legacy?.shopifyVariantId as string) || userBySubscription?.subscriptionVariantId || null
+  const shopifyVariantId = plan?.shopifyVariantId || (legacy?.shopifyVariantId as string) || subByPreapproval?.variantId || null
   const shopifyFirstOrderVariantId = plan?.shopifyFirstOrderVariantId || (legacy?.shopifyFirstOrderVariantId as string) || null
-  const taxExempt = plan ? plan.taxExempt : (legacy?.taxExempt === true || userBySubscription?.subscriptionTaxExempt === true)
+  const taxExempt = plan ? plan.taxExempt : (legacy?.taxExempt === true || subByPreapproval?.taxExempt === true)
 
   const status = preApproval.status
 
@@ -165,11 +168,14 @@ export async function provisionFromPreApproval(
       return { ok: false, reason: 'pending_payment', status }
     }
 
-    // Leer datos de facturación/envío del checkout pendiente
-    const pendingCheckout = await prisma.pendingCheckout.findUnique({
-      where: { email },
-      select: { billing: true, shipping: true, referralCode: true, firstName: true, lastName: true },
-    })
+    // Leer datos de facturación/envío del checkout pendiente. Con múltiples
+    // pendings por email, se usa el de este preapproval (por id) o el más reciente.
+    const pendingCheckout =
+      pending ??
+      (await prisma.pendingCheckout.findFirst({
+        where: { email },
+        orderBy: { createdAt: 'desc' },
+      }))
 
     const billingData = pendingCheckout?.billing as Record<string, string> | null
     const shippingData = pendingCheckout?.shipping as Record<string, string> | null
@@ -181,29 +187,20 @@ export async function provisionFromPreApproval(
     if (!lastName && pendingCheckout?.lastName) lastName = pendingCheckout.lastName
 
     let userCreated = false
+    let userId: string
 
-    if (existingUser) {
-      const updateData: Prisma.UserUpdateInput = {
-        subscriptionStatus: 'active',
-        subscriptionId: preApprovalId,
-        subscriptionSyncedAt: new Date(),
-        subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
-        subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
-        subscriptionProduct: productId,
-        subscriptionVariantId: shopifyVariantId,
-        subscriptionTaxExempt: taxExempt,
-        ...(subscriptionPrice !== undefined && { subscriptionPrice }),
-        ...(firstName && { firstName }),
-        ...(lastName && { lastName }),
-        ...(billingData && {
+    const billingUpdate = billingData
+      ? {
           billingDocumentType: billingData.documentType,
           billingDocumentNumber: billingData.documentNumber,
           billingPhone: billingData.phone,
           billingAddress: billingData.address,
           billingCity: billingData.city,
           billingDepartment: billingData.department,
-        }),
-        ...(shippingData && {
+        }
+      : {}
+    const shippingUpdate = shippingData
+      ? {
           shippingFullName: shippingData.fullName,
           shippingFirstName: shippingData.firstName || null,
           shippingLastName: shippingData.lastName || null,
@@ -212,12 +209,23 @@ export async function provisionFromPreApproval(
           shippingCity: shippingData.city,
           shippingDepartment: shippingData.department,
           shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
-        }),
-      }
+        }
+      : {}
 
-      await prisma.user.update({ where: { id: existingUser.id }, data: updateData })
-
-      console.log(`Suscripción reactivada: ${email}`)
+    if (existingUser) {
+      userId = existingUser.id
+      // Actualizar solo datos de contacto/facturación/envío del usuario. La
+      // suscripción vive en su propia fila (upsert más abajo), no en columnas del user.
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(firstName && { firstName }),
+          ...(lastName && { lastName }),
+          ...billingUpdate,
+          ...shippingUpdate,
+        },
+      })
+      console.log(`Suscripción activada para usuario existente: ${email}`)
     } else {
       let referrerId: string | null = null
       let referrerRole: string | null = null
@@ -244,36 +252,11 @@ export async function provisionFromPreApproval(
             lastName,
             email,
             role: 'user',
-            subscriptionStatus: 'active',
-            subscriptionId: preApprovalId,
-            subscriptionSyncedAt: new Date(),
-            subscriptionStartDate: dateCreated ? new Date(dateCreated) : new Date(),
-            subscriptionEndDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
-            subscriptionProduct: productId,
-            subscriptionVariantId: shopifyVariantId,
-            subscriptionTaxExempt: taxExempt,
-            ...(subscriptionPrice !== undefined && { subscriptionPrice }),
             referredBy: referrerId,
             resetToken: resetToken,
             resetTokenExpires: resetTokenExpires,
-            ...(billingData && {
-              billingDocumentType: billingData.documentType,
-              billingDocumentNumber: billingData.documentNumber,
-              billingPhone: billingData.phone,
-              billingAddress: billingData.address,
-              billingCity: billingData.city,
-              billingDepartment: billingData.department,
-            }),
-            ...(shippingData && {
-              shippingFullName: shippingData.fullName,
-              shippingFirstName: shippingData.firstName || null,
-              shippingLastName: shippingData.lastName || null,
-              shippingPhone: shippingData.phone,
-              shippingAddress: shippingData.address,
-              shippingCity: shippingData.city,
-              shippingDepartment: shippingData.department,
-              shippingSameAsBilling: !pendingCheckout?.shipping || shippingData.fullName === name,
-            }),
+            ...billingUpdate,
+            ...shippingUpdate,
           },
           select: { id: true },
         })
@@ -285,6 +268,7 @@ export async function provisionFromPreApproval(
         return { ok: false, reason: 'user_create_error', detail: msg }
       }
 
+      userId = newUser.id
       userCreated = true
 
       await logSubscription('webhook.preapproval.user_created', email, { userId: newUser.id, productId })
@@ -311,7 +295,8 @@ export async function provisionFromPreApproval(
         })
 
         // Afiliados: además de puntos, acumulan una recompensa monetaria en COP
-        // (un % del precio cobrado). Idempotente por referredUserId.
+        // (un % del precio cobrado). Idempotente por referredUserId → una sola
+        // recompensa por referido, aunque luego contrate varios productos.
         if (referrerRole === AFFILIATE_ROLE) {
           const reward = await grantAffiliateReward({
             affiliateId: referrerId,
@@ -333,19 +318,49 @@ export async function provisionFromPreApproval(
       await sendWelcomeEmail(email, name, resetToken)
     }
 
+    // Upsert de la suscripción (fuente de verdad). Keyed por preapproval de MP,
+    // así un usuario puede tener varias suscripciones (una por producto).
+    const subRow = await prisma.subscription.upsert({
+      where: { mpPreapprovalId: preApprovalId },
+      create: {
+        userId,
+        mpPreapprovalId: preApprovalId,
+        status: SUB_STATUS.ACTIVE,
+        product: productId,
+        ...(subscriptionPrice !== undefined && { price: subscriptionPrice }),
+        variantId: shopifyVariantId,
+        taxExempt,
+        startDate: dateCreated ? new Date(dateCreated) : new Date(),
+        endDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
+        syncedAt: new Date(),
+      },
+      update: {
+        status: SUB_STATUS.ACTIVE,
+        product: productId,
+        ...(subscriptionPrice !== undefined && { price: subscriptionPrice }),
+        variantId: shopifyVariantId,
+        taxExempt,
+        ...(dateCreated && { startDate: new Date(dateCreated) }),
+        ...(nextPaymentDate && { endDate: new Date(nextPaymentDate) }),
+        syncedAt: new Date(),
+      },
+      select: { id: true },
+    })
+
+    await recomputeUserSubscription(userId)
+
     // Crear primer pedido en Shopify al activar la suscripción.
     //
-    // Kit de bienvenida: se entrega SOLO en el primer pedido del suscriptor. A
-    // partir del 2º pedido siempre va el variant recurrente. Para decidirlo
-    // miramos si el email ya tiene CUALQUIER despacho exitoso previo (cualquier
-    // clave: `preapproval:` del kit o `payment:` de un recurrente), no solo el del
-    // kit. Así, una reentrega o reaprovisionamiento posterior nunca vuelve a
-    // mandar el kit. Consultamos shopify_order_dispatches en vez de `!existingUser`
-    // porque las reentregas del webhook crean al user en la primera pasada.
+    // Kit de bienvenida: se entrega SOLO en el primer pedido de ESTA suscripción.
+    // A partir del 2º pedido va el variant recurrente. Antes se miraba por email,
+    // pero con múltiples suscripciones por usuario cada producto debe recibir su
+    // propio kit en su primera entrega — por eso el chequeo es por subscription_row_id.
+    // Una reentrega no reenvía el kit porque ya existe un dispatch `created` para
+    // esta suscripción (y además la idempotencia por `preapproval:<id>` lo bloquea).
     const priorOrder = shopifyFirstOrderVariantId
       ? await prisma.shopifyOrderDispatch.findFirst({
           where: {
-            email,
+            subscriptionRowId: subRow.id,
             status: 'created',
           },
           select: { id: true },
@@ -400,6 +415,7 @@ export async function provisionFromPreApproval(
           idempotencyKey: `preapproval:${preApprovalId}`,
           email,
           userId: userForOrder?.id ?? null,
+          subscriptionRowId: subRow.id,
           params: {
             email,
             name,
@@ -445,27 +461,40 @@ export async function provisionFromPreApproval(
       }
     }
 
-    // Limpiar el checkout pendiente
+    // Limpiar el checkout pendiente (por id: puede haber varios por email)
     try {
-      await prisma.pendingCheckout.delete({ where: { email } })
+      if (pendingCheckout?.id) {
+        await prisma.pendingCheckout.delete({ where: { id: pendingCheckout.id } })
+      }
     } catch {
       // si no existe, ignorar (P2025)
     }
 
     return { ok: true, status, userCreated, order: orderOutcome, orderNumber }
   } else if (status === 'cancelled' || status === 'paused' || status === 'past_due') {
-    if (existingUser) {
+    // Evento de ciclo de vida sobre UNA suscripción concreta (por preapproval).
+    // Afecta solo esa fila; el estado derivado del usuario se recalcula (puede
+    // seguir 'active' si tiene otra suscripción vigente).
+    const newStatus =
+      status === 'cancelled' ? SUB_STATUS.CANCELLED
+        : status === 'paused' ? SUB_STATUS.PAUSED
+        : SUB_STATUS.PAST_DUE
+
+    if (subByPreapproval) {
+      await prisma.subscription.update({
+        where: { id: subByPreapproval.id },
+        data: { status: newStatus, syncedAt: new Date() },
+      })
+      await recomputeUserSubscription(subByPreapproval.user.id)
+      console.log(`Suscripción ${status}: ${email}`)
+    } else if (existingUser) {
+      // Suscripción aún no materializada en la tabla (caso borde): reflejar al menos
+      // el estado derivado del usuario.
       await prisma.user.update({
         where: { id: existingUser.id },
-        data: {
-          subscriptionStatus: status === 'cancelled' ? 'cancelled'
-            : status === 'paused' ? 'paused'
-            : 'past_due',
-          subscriptionSyncedAt: new Date(),
-        },
+        data: { subscriptionStatus: newStatus, subscriptionSyncedAt: new Date() },
       })
-
-      console.log(`Suscripción ${status}: ${email}`)
+      console.log(`Suscripción ${status} (sin fila): ${email}`)
     }
     return { ok: false, reason: 'wrong_status', status }
   }
@@ -488,7 +517,7 @@ export async function provisionRecurringOrder(
 ): Promise<RecurringOrderResult> {
   const tx = await prisma.paymentTransaction.findUnique({
     where: { mercadopagoPaymentId: mpPaymentId },
-    select: { amount: true, paymentDate: true, userId: true },
+    select: { amount: true, paymentDate: true, userId: true, subscriptionRowId: true },
   })
   if (!tx || !tx.userId) return { ok: false, reason: 'no_payment' }
 
@@ -504,7 +533,18 @@ export async function provisionRecurringOrder(
     },
   })
   if (!user || !user.email) return { ok: false, reason: 'no_user' }
-  if (!user.subscriptionVariantId) return { ok: false, reason: 'no_variant' }
+
+  // Variant/taxExempt de la suscripción concreta del pago; si no hay fila (legacy),
+  // caer al espejo del usuario.
+  const sub = tx.subscriptionRowId
+    ? await prisma.subscription.findUnique({
+        where: { id: tx.subscriptionRowId },
+        select: { id: true, variantId: true, taxExempt: true },
+      })
+    : null
+  const variantId = sub?.variantId ?? user.subscriptionVariantId
+  const orderTaxExempt = sub ? sub.taxExempt : user.subscriptionTaxExempt === true
+  if (!variantId) return { ok: false, reason: 'no_variant' }
 
   const email = user.email
 
@@ -542,13 +582,14 @@ export async function provisionRecurringOrder(
       idempotencyKey: `payment:${mpPaymentId}`,
       email,
       userId: user.id,
+      subscriptionRowId: sub?.id ?? null,
       params: {
         email,
         name: user.name || email,
         firstName: user.firstName || undefined,
         lastName: user.lastName || undefined,
-        variantId: user.subscriptionVariantId,
-        taxExempt: user.subscriptionTaxExempt === true,
+        variantId,
+        taxExempt: orderTaxExempt,
         documentType: user.billingDocumentType,
         documentNumber: user.billingDocumentNumber,
         note: orderNote,
@@ -576,7 +617,7 @@ export async function provisionRecurringOrder(
     const errMsg = err instanceof Error ? err.message : String(err)
     await logSubscription('webhook.payment.shopify_order_error', email, {
       error: errMsg,
-      variantId: user.subscriptionVariantId,
+      variantId,
       paymentId: mpPaymentId,
       source: 'admin_reprovision',
     })

@@ -52,10 +52,48 @@ const PAUSE_DURATIONS: { months: 1 | 2 | 3; label: string }[] = [
   { months: 3, label: "3 meses" },
 ]
 
-export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }: {
+function ConfirmPanel({
+  action,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  action: NonNullable<Action>
+  pending: Action
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const cfg = CONFIRMATIONS[action]
+  return (
+    <div className={`p-4 ${cfg.bgColor} rounded-lg border ${cfg.borderColor} space-y-3`}>
+      <p className={`text-sm ${cfg.textColor}`}>{cfg.description}</p>
+      <div className="flex gap-2">
+        <button
+          onClick={onConfirm}
+          disabled={pending !== null}
+          className={`inline-flex items-center gap-2 px-4 py-2 ${cfg.btnColor} text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60`}
+        >
+          {pending === action && <Loader2 className="w-4 h-4 animate-spin" />}
+          {cfg.cta}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={pending !== null}
+          className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+        >
+          {action === "cancel" ? "No cancelar" : "Cancelar"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function ManageSubscriptionClient({ status, canCancel, nextBillingDate, subscriptionRowId, productLabel }: {
   status: string
   canCancel: boolean
   nextBillingDate: string | null
+  subscriptionRowId?: string
+  productLabel?: string | null
 }) {
   const router = useRouter()
   const { update: updateSession } = useSession()
@@ -76,13 +114,13 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
 
     let result
     if (action === "pause") {
-      result = await pauseSubscription(pauseMonths)
+      result = await pauseSubscription(pauseMonths, subscriptionRowId)
     } else if (action === "cancel") {
       const reason = cancelReason === "Otro" ? cancelOther.trim() || undefined
         : cancelReason || undefined
-      result = await cancelSubscription(reason)
+      result = await cancelSubscription(reason, subscriptionRowId)
     } else {
-      result = await reactivateSubscription()
+      result = await reactivateSubscription(subscriptionRowId)
     }
 
     if (result && "error" in result) {
@@ -97,32 +135,6 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
     router.refresh()
   }
 
-  function ConfirmPanel({ action }: { action: NonNullable<Action> }) {
-    const cfg = CONFIRMATIONS[action]
-    return (
-      <div className={`p-4 ${cfg.bgColor} rounded-lg border ${cfg.borderColor} space-y-3`}>
-        <p className={`text-sm ${cfg.textColor}`}>{cfg.description}</p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleAction(action)}
-            disabled={pending !== null}
-            className={`inline-flex items-center gap-2 px-4 py-2 ${cfg.btnColor} text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60`}
-          >
-            {pending === action && <Loader2 className="w-4 h-4 animate-spin" />}
-            {cfg.cta}
-          </button>
-          <button
-            onClick={() => setConfirming(null)}
-            disabled={pending !== null}
-            className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
-          >
-            {action === "cancel" ? "No cancelar" : "Cancelar"}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="max-w-lg mx-auto">
       <div className="mb-6">
@@ -134,7 +146,11 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
           Volver a Mi Suscripción
         </Link>
         <h1 className="text-2xl sm:text-3xl font-heading text-zinc-900 mb-1">Gestionar suscripción</h1>
-        <p className="text-sm text-zinc-600">Administra el estado de tu suscripción</p>
+        <p className="text-sm text-zinc-600">
+          {productLabel
+            ? <>Administra el estado de tu suscripción a <span className="font-medium text-zinc-900">{productLabel}</span></>
+            : "Administra el estado de tu suscripción"}
+        </p>
       </div>
 
       {error && (
@@ -222,7 +238,12 @@ export function ManageSubscriptionClient({ status, canCancel, nextBillingDate }:
                   Reanuda los cobros y envíos mensuales desde donde los dejaste.
                 </p>
                 {confirming === "reactivate"
-                  ? <ConfirmPanel action="reactivate" />
+                  ? <ConfirmPanel
+                      action="reactivate"
+                      pending={pending}
+                      onConfirm={() => handleAction("reactivate")}
+                      onCancel={() => setConfirming(null)}
+                    />
                   : <button onClick={() => setConfirming("reactivate")} className="px-4 py-2 border border-green-300 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
                       Reactivar suscripción
                     </button>
