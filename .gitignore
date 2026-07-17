@@ -51,3 +51,6 @@ test-*.json
 MODULO_ANALYTICS.md
 PASOS_ANALYTICS.md
 CLAUDE.md
+
+# reportes de incidencias (internos, no versionados)
+INCIDENCIA_*.md
