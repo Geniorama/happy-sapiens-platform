@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { paymentClient } from '@/lib/mercadopago'
+import { paymentClient, invoiceClient } from '@/lib/mercadopago'
 import { prisma } from '@/lib/db'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
@@ -27,7 +27,39 @@ function verifyMpSignature(req: Request, rawBody: string, dataId: string): boole
   return expected === v1
 }
 
-async function handlePayment(paymentId: string) {
+// El webhook `subscription_authorized_payment` trae en data.id el id de un
+// AUTHORIZED_PAYMENT (recurso "Invoice"), NO el de un pago. Hay que resolverlo con
+// invoiceClient para obtener el preapproval y el id del pago real; recién ahí se
+// puede procesar el cobro. (Pasar el id del authorized_payment a paymentClient.get
+// devolvía 404 y hacía que ningún cobro recurrente generara pedido.)
+async function handleAuthorizedPayment(authorizedPaymentId: string) {
+  let auth: Record<string, unknown>
+  try {
+    auth = (await invoiceClient.get({ id: authorizedPaymentId })) as unknown as Record<string, unknown>
+  } catch (err) {
+    console.error('[webhook] error obteniendo authorized_payment:', authorizedPaymentId, err)
+    return
+  }
+
+  const preapprovalId = (auth.preapproval_id as string) || ''
+  const paymentObj = auth.payment as Record<string, unknown> | undefined
+  const realPaymentId = paymentObj?.id ? String(paymentObj.id) : ''
+
+  await log('webhook.authorized_payment.resolved', 'system', {
+    authorizedPaymentId,
+    preapprovalId: preapprovalId || null,
+    paymentId: realPaymentId || null,
+    payment_status: (paymentObj?.status as string) ?? null,
+    auth_status: (auth.status as string) ?? null,
+  })
+
+  // Sin pago real todavía (p.ej. authorized_payment programado/reintentando): nada que hacer.
+  if (!realPaymentId) return
+
+  await handlePayment(realPaymentId, preapprovalId)
+}
+
+async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
   let payment: Awaited<ReturnType<typeof paymentClient.get>>
   try {
     payment = await paymentClient.get({ id: paymentId })
@@ -36,11 +68,12 @@ async function handlePayment(paymentId: string) {
     return
   }
 
-  // Pago de suscripción recurrente (cobro mensual automático)
-  // subscription_id existe en runtime pero no está en los tipos del SDK
+  // Pago de suscripción recurrente (cobro mensual automático). El preapproval llega
+  // en `subscription_id` del pago o, para el flujo authorized_payment, como hint.
+  // subscription_id existe en runtime pero no está en los tipos del SDK.
   const paymentAny = payment as unknown as Record<string, unknown>
-  if (paymentAny.subscription_id) {
-    const preapprovalId = paymentAny.subscription_id as string
+  const preapprovalId = (paymentAny.subscription_id as string) || preapprovalIdHint || ''
+  if (preapprovalId) {
     const email = payment.payer?.email
     if (!email) return
 
@@ -334,7 +367,10 @@ export async function POST(req: Request) {
       } catch (err) {
         console.error('Error aprovisionando suscripción desde preapproval:', err)
       }
-    } else if (body.type === 'subscription_authorized_payment' || body.type === 'payment') {
+    } else if (body.type === 'subscription_authorized_payment') {
+      // data.id = id de un authorized_payment; se resuelve al pago real antes de procesar.
+      await handleAuthorizedPayment(dataId)
+    } else if (body.type === 'payment') {
       await handlePayment(dataId)
     }
 

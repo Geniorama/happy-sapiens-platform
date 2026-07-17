@@ -1,4 +1,4 @@
-import { MercadoPagoConfig, Preference, Payment, PreApproval } from 'mercadopago'
+import { MercadoPagoConfig, Preference, Payment, PreApproval, Invoice } from 'mercadopago'
 import { prisma } from '@/lib/db'
 
 // Cliente de Mercado Pago
@@ -12,6 +12,11 @@ const client = new MercadoPagoConfig({
 export const preferenceClient = new Preference(client)
 export const paymentClient = new Payment(client)
 export const preApprovalClient = new PreApproval(client)
+// Authorized payments (cobros recurrentes de una suscripción). En el SDK, el
+// recurso "Invoice" mapea a GET /authorized_payments/{id}. El webhook
+// subscription_authorized_payment trae el id de este recurso (no el del pago),
+// y desde aquí se resuelve el preapproval y el pago real asociado.
+export const invoiceClient = new Invoice(client)
 
 export type SubscriptionPlan = {
   id: string
