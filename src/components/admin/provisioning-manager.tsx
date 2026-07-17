@@ -2,12 +2,15 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, RefreshCw, AlertTriangle, CheckCircle2, PackagePlus, Repeat } from "lucide-react"
+import { Loader2, RefreshCw, AlertTriangle, CheckCircle2, PackagePlus, Repeat, CreditCard } from "lucide-react"
 import {
   reprovisionSubscription,
   reprovisionRecurringOrder,
+  reconcileShopifyOrder,
+  reconcileAllPendingOrders,
   type AffectedSubscription,
   type RecurringCharge,
+  type PendingReconciliation,
 } from "@/app/admin/aprovisionamiento/actions"
 
 const ACTION_LABELS: Record<string, string> = {
@@ -360,20 +363,157 @@ function RecurringSection({
   )
 }
 
+function ReconciliationRow({ item }: { item: PendingReconciliation }) {
+  const router = useRouter()
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  const reconcile = () => {
+    setResult(null)
+    startTransition(async () => {
+      const r = await reconcileShopifyOrder(item.shopifyOrderId)
+      setResult(r)
+      if (r.ok) router.refresh()
+    })
+  }
+
+  return (
+    <>
+      <tr>
+        <td className="px-4 py-3 align-top">
+          <p className="text-sm font-medium text-zinc-900 break-all">{item.email}</p>
+          <p className="text-xs text-zinc-400 break-all mt-0.5">
+            {item.shopifyOrderNumber ? `#${item.shopifyOrderNumber} · ` : ""}
+            {item.idempotencyKey}
+          </p>
+        </td>
+        <td className="px-4 py-3 align-top">
+          <p className="text-xs text-amber-700 break-words max-w-md">{item.errorMessage}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{new Date(item.createdAt).toLocaleString("es-CO")}</p>
+        </td>
+        <td className="px-4 py-3 align-top text-right">
+          <button
+            onClick={reconcile}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg px-3 py-1.5 transition-colors cursor-pointer"
+          >
+            {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+            Marcar pagada
+          </button>
+        </td>
+      </tr>
+      {result && (
+        <tr>
+          <td colSpan={3} className="px-4 pb-3">
+            <Feedback result={result} />
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function ReconciliationSection({
+  reconciliations,
+  reconcileError,
+}: {
+  reconciliations: PendingReconciliation[]
+  reconcileError: string | null
+}) {
+  const router = useRouter()
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  const reconcileAll = () => {
+    setResult(null)
+    startTransition(async () => {
+      const r = await reconcileAllPendingOrders()
+      setResult(r)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-zinc-200 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+            <CreditCard className="w-4 h-4 text-amber-600" />
+            Pedidos por conciliar (pago no asentado)
+          </h2>
+          <p className="text-sm text-zinc-500 mt-0.5">
+            La orden se creó en Shopify pero quedó en <span className="font-medium">Pendiente</span> porque falló
+            el registro de la transacción de pago (p.ej. 409 por el lock de la orden recién creada). «Marcar
+            pagada» asienta la transacción vía <code>orderMarkAsPaid</code>. Idempotente.
+          </p>
+        </div>
+        {reconciliations.length > 0 && (
+          <button
+            onClick={reconcileAll}
+            disabled={isPending}
+            className="shrink-0 inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg px-3 py-1.5 transition-colors cursor-pointer"
+          >
+            {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Conciliar todos
+          </button>
+        )}
+      </div>
+
+      {reconcileError && (
+        <div className="px-5 py-3 text-sm text-red-700 bg-red-50">No se pudo cargar: {reconcileError}</div>
+      )}
+      {result && (
+        <div className="px-5 pt-3">
+          <Feedback result={result} />
+        </div>
+      )}
+
+      {reconciliations.length === 0 ? (
+        <div className="px-5 py-10 text-center text-sm text-zinc-400">
+          No hay pedidos por conciliar. 🎉
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-zinc-200 text-left">
+                <th className="px-4 py-2.5 text-xs font-medium text-zinc-500">Suscriptor / Pedido</th>
+                <th className="px-4 py-2.5 text-xs font-medium text-zinc-500">Error registrado</th>
+                <th className="px-4 py-2.5 text-xs font-medium text-zinc-500 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {reconciliations.map((item) => (
+                <ReconciliationRow key={item.idempotencyKey} item={item} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ProvisioningManager({
   items,
   loadError,
   recurring,
   recurringError,
+  reconciliations,
+  reconcileError,
 }: {
   items: AffectedSubscription[]
   loadError: string | null
   recurring: RecurringCharge[]
   recurringError: string | null
+  reconciliations: PendingReconciliation[]
+  reconcileError: string | null
 }) {
   return (
     <div className="space-y-6">
       <ManualReprovision />
+
+      <ReconciliationSection reconciliations={reconciliations} reconcileError={reconcileError} />
 
       {loadError && (
         <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

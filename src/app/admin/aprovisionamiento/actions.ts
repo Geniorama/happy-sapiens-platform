@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { logAdminAction } from "@/lib/log"
 import { provisionFromPreApproval, provisionRecurringOrder } from "@/lib/subscription-provisioning"
+import { markShopifyOrderAsPaid } from "@/lib/shopify"
 import { revalidatePath } from "next/cache"
 
 async function getAdminSession() {
@@ -364,5 +365,151 @@ export async function reprovisionRecurringOrder(
       result.order === "created"
         ? `Pedido recurrente creado en Shopify (#${result.orderNumber}).`
         : `El pedido recurrente ya existía (#${result.orderNumber ?? "n/a"}), no se duplicó.`,
+  }
+}
+
+export type PendingReconciliation = {
+  idempotencyKey: string
+  email: string
+  shopifyOrderId: string
+  shopifyOrderNumber: number | null
+  errorMessage: string
+  createdAt: string
+}
+
+// Lista los pedidos que se crearon en Shopify pero quedaron "asentados a medias":
+// el dispatch está `created` con un `errorMessage` y tiene shopifyOrderId. Es el
+// caso clásico en que el paso 3 (registrar la transacción de pago) falló —p.ej.
+// 409 por el lock de la orden recién creada— y la orden quedó en `pending` para
+// siempre, porque la idempotencia impide que el webhook la vuelva a tocar.
+export async function listPendingReconciliations(): Promise<
+  { ok: true; items: PendingReconciliation[] } | { ok: false; error: string }
+> {
+  const session = await getAdminSession()
+  if (!session) return { ok: false, error: "No autorizado" }
+
+  const rows = await prisma.shopifyOrderDispatch.findMany({
+    where: {
+      errorMessage: { not: null },
+      shopifyOrderId: { not: null },
+    },
+    select: {
+      idempotencyKey: true,
+      email: true,
+      shopifyOrderId: true,
+      shopifyOrderNumber: true,
+      errorMessage: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  })
+
+  const items: PendingReconciliation[] = rows.map((r) => ({
+    idempotencyKey: r.idempotencyKey,
+    email: r.email,
+    shopifyOrderId: r.shopifyOrderId as string,
+    shopifyOrderNumber: r.shopifyOrderNumber,
+    errorMessage: r.errorMessage as string,
+    createdAt: r.createdAt.toISOString(),
+  }))
+
+  return { ok: true, items }
+}
+
+// Concilia UN pedido: asienta la transacción pendiente vía orderMarkAsPaid y limpia
+// el errorMessage del dispatch (fijando el order_number). Idempotente: si la orden
+// ya está pagada, solo reconcilia la fila.
+export async function reconcileShopifyOrder(
+  shopifyOrderId: string
+): Promise<{ ok: boolean; message: string }> {
+  const session = await getAdminSession()
+  if (!session) return { ok: false, message: "No autorizado" }
+
+  const orderId = shopifyOrderId?.trim()
+  if (!orderId) return { ok: false, message: "Falta el ID de la orden de Shopify" }
+
+  await logAdminAction({
+    actorId: session.user.id,
+    actorEmail: session.user.email ?? "admin",
+    action: "admin.shopify.reconcile_attempt",
+    entityType: "shopify_order",
+    entityId: orderId,
+    metadata: { shopifyOrderId: orderId },
+  })
+
+  let paid
+  try {
+    paid = await markShopifyOrderAsPaid(orderId)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await logAdminAction({
+      actorId: session.user.id,
+      actorEmail: session.user.email ?? "admin",
+      action: "admin.shopify.reconcile_error",
+      entityType: "shopify_order",
+      entityId: orderId,
+      metadata: { error: msg },
+    })
+    revalidatePath("/admin/aprovisionamiento")
+    return { ok: false, message: `No se pudo marcar como pagada la orden ${orderId}: ${msg}` }
+  }
+
+  // Reconciliar la(s) fila(s) de dispatch: limpiar el error y fijar el order_number.
+  await prisma.shopifyOrderDispatch.updateMany({
+    where: { shopifyOrderId: orderId },
+    data: { errorMessage: null, ...(paid.orderNumber !== null && { shopifyOrderNumber: paid.orderNumber }) },
+  })
+
+  await logAdminAction({
+    actorId: session.user.id,
+    actorEmail: session.user.email ?? "admin",
+    action: "admin.shopify.reconcile_result",
+    entityType: "shopify_order",
+    entityId: orderId,
+    metadata: { ...paid },
+  })
+
+  revalidatePath("/admin/aprovisionamiento")
+
+  return {
+    ok: true,
+    message: paid.alreadyPaid
+      ? `La orden #${paid.orderNumber ?? orderId} ya estaba pagada; se reconcilió el registro.`
+      : `Orden #${paid.orderNumber ?? orderId} marcada como pagada.`,
+  }
+}
+
+// Concilia en lote todos los pedidos pendientes detectados. Devuelve un resumen.
+export async function reconcileAllPendingOrders(): Promise<{
+  ok: boolean
+  message: string
+}> {
+  const session = await getAdminSession()
+  if (!session) return { ok: false, message: "No autorizado" }
+
+  const list = await listPendingReconciliations()
+  if (!list.ok) return { ok: false, message: list.error }
+  if (list.items.length === 0) return { ok: true, message: "No hay pedidos por conciliar." }
+
+  let fixed = 0
+  let failed = 0
+  const errors: string[] = []
+  // Secuencial para no saturar la API de Shopify ni disparar rate limits.
+  for (const item of list.items) {
+    const r = await reconcileShopifyOrder(item.shopifyOrderId)
+    if (r.ok) fixed++
+    else {
+      failed++
+      if (errors.length < 5) errors.push(`#${item.shopifyOrderNumber ?? item.shopifyOrderId}: ${r.message}`)
+    }
+  }
+
+  revalidatePath("/admin/aprovisionamiento")
+
+  const base = `Conciliación completada: ${fixed} pagada(s)${failed > 0 ? `, ${failed} con error` : ""}.`
+  return {
+    ok: failed === 0,
+    message: errors.length > 0 ? `${base} ${errors.join(" | ")}` : base,
   }
 }
