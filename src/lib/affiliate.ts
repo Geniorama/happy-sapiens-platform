@@ -9,6 +9,13 @@ export const AFFILIATE_ROLE = "afiliado"
 
 const AFFILIATE_CONFIG_ID = "default"
 const DEFAULT_REWARD_PERCENT = 15
+// Porcentaje por defecto para comisiones por compras en la tienda (separado del de
+// suscripciones). Configurable en /admin/afiliados.
+const DEFAULT_SHOPIFY_REWARD_PERCENT = 10
+
+// Patrón del código de referido (ver src/lib/referral-code.ts): HSP- + 6 chars del
+// alfabeto sin ambigüedades. Se usa para extraer el código de la nota de un pedido.
+const REFERRAL_CODE_RE = /HSP-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}/i
 
 // Fallback de porcentaje desde variable de entorno (cuando no hay config en BD).
 function getRewardPercentFromEnv(): number {
@@ -54,6 +61,150 @@ export async function setAffiliateRewardPercent(
   } catch (err) {
     console.error("setAffiliateRewardPercent exception:", err)
     return { success: false, error: "No se pudo guardar el porcentaje" }
+  }
+}
+
+// Fallback del % de tienda desde variable de entorno.
+function getShopifyRewardPercentFromEnv(): number {
+  const raw = Number(process.env.AFFILIATE_SHOPIFY_REWARD_PERCENT)
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_SHOPIFY_REWARD_PERCENT
+  return raw
+}
+
+// Porcentaje del subtotal del pedido que se abona al afiliado por una compra en la
+// tienda de Shopify. Prioridad: config en BD → variable de entorno → 10.
+export async function getAffiliateShopifyRewardPercent(): Promise<number> {
+  try {
+    const config = await prisma.affiliateConfig.findUnique({
+      where: { id: AFFILIATE_CONFIG_ID },
+      select: { shopifyRewardPercent: true },
+    })
+    if (config?.shopifyRewardPercent != null) {
+      const n = Number(config.shopifyRewardPercent)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+  } catch {
+    // Sin BD disponible: usar el fallback de entorno.
+  }
+  return getShopifyRewardPercentFromEnv()
+}
+
+/** Guarda el porcentaje de comisión por compras en la tienda (admin). */
+export async function setAffiliateShopifyRewardPercent(
+  percent: number,
+  updatedById?: string
+): Promise<{ success: boolean; error?: string }> {
+  const value = Number(percent)
+  if (!Number.isFinite(value) || value <= 0 || value > 100) {
+    return { success: false, error: "El porcentaje debe estar entre 0 y 100" }
+  }
+  try {
+    await prisma.affiliateConfig.upsert({
+      where: { id: AFFILIATE_CONFIG_ID },
+      create: { id: AFFILIATE_CONFIG_ID, shopifyRewardPercent: value, updatedById: updatedById ?? null },
+      update: { shopifyRewardPercent: value, updatedById: updatedById ?? null },
+    })
+    return { success: true }
+  } catch (err) {
+    console.error("setAffiliateShopifyRewardPercent exception:", err)
+    return { success: false, error: "No se pudo guardar el porcentaje" }
+  }
+}
+
+/**
+ * Extrae un código de afiliado (HSP-XXXXXX) del primer texto donde aparezca.
+ * Se usa sobre la nota del pedido de Shopify y sus note_attributes.
+ */
+export function extractAffiliateCode(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    if (!t) continue
+    const m = t.match(REFERRAL_CODE_RE)
+    if (m) return m[0].toUpperCase()
+  }
+  return null
+}
+
+/**
+ * Abona la comisión a un afiliado por una compra en la tienda de Shopify.
+ *
+ * Idempotente por `shopifyOrderId` (una comisión por pedido). El monto es un % del
+ * subtotal de productos del pedido. No abona si: el código no corresponde a un
+ * afiliado activo, el comprador es el propio afiliado, o el subtotal es inválido.
+ */
+export async function grantAffiliateOrderReward(opts: {
+  code: string
+  shopifyOrderId: string
+  shopifyOrderNumber?: number | null
+  customerEmail?: string | null
+  orderSubtotal: number | null | undefined
+}): Promise<{ success: boolean; amount?: number; skipped?: string; error?: string }> {
+  const code = opts.code.trim().toUpperCase()
+
+  const affiliate = await prisma.user.findFirst({
+    where: { referralCode: code, role: AFFILIATE_ROLE },
+    select: { id: true, email: true },
+  })
+  if (!affiliate) return { success: false, skipped: "affiliate_not_found" }
+
+  // No auto-comisión: el comprador no puede ser el propio afiliado.
+  if (
+    opts.customerEmail &&
+    affiliate.email &&
+    opts.customerEmail.toLowerCase() === affiliate.email.toLowerCase()
+  ) {
+    return { success: false, skipped: "self_purchase" }
+  }
+
+  const subtotal = Number(opts.orderSubtotal)
+  if (!Number.isFinite(subtotal) || subtotal <= 0) {
+    return { success: false, skipped: "invalid_subtotal" }
+  }
+
+  const percent = await getAffiliateShopifyRewardPercent()
+  const amount = Math.round((subtotal * percent) / 100)
+
+  try {
+    await prisma.affiliateOrderReward.upsert({
+      where: { shopifyOrderId: opts.shopifyOrderId },
+      create: {
+        affiliateId: affiliate.id,
+        shopifyOrderId: opts.shopifyOrderId,
+        shopifyOrderNumber: opts.shopifyOrderNumber ?? null,
+        customerEmail: opts.customerEmail ?? null,
+        code,
+        orderAmount: subtotal,
+        amount,
+        rewardPercent: percent,
+        status: "granted",
+        note: `Comisión por compra en tienda (${percent}% de ${subtotal.toLocaleString("es-CO")})`,
+      },
+      // Ya existe: no reabonar (idempotente por pedido).
+      update: {},
+    })
+    return { success: true, amount }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error al abonar la comisión"
+    console.error("grantAffiliateOrderReward exception:", err)
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Anula la comisión de un pedido (p.ej. al cancelarse/reembolsarse en Shopify).
+ * Idempotente: solo afecta filas en estado `granted`.
+ */
+export async function cancelAffiliateOrderReward(
+  shopifyOrderId: string
+): Promise<{ success: boolean; cancelled: boolean }> {
+  try {
+    const res = await prisma.affiliateOrderReward.updateMany({
+      where: { shopifyOrderId, status: "granted" },
+      data: { status: "cancelled" },
+    })
+    return { success: true, cancelled: res.count > 0 }
+  } catch (err) {
+    console.error("cancelAffiliateOrderReward exception:", err)
+    return { success: false, cancelled: false }
   }
 }
 
@@ -117,6 +268,18 @@ export interface AffiliateRewardRow {
   } | null
 }
 
+export interface AffiliateOrderRewardRow {
+  id: string
+  amount: number
+  orderAmount: number | null
+  rewardPercent: number | null
+  status: string
+  shopifyOrderNumber: number | null
+  customerEmail: string | null
+  code: string | null
+  createdAt: string
+}
+
 export const PAYOUT_STATUS = {
   PENDING: "pending",
   PAID: "paid",
@@ -139,12 +302,17 @@ export interface AffiliateSummary {
   totalReferrals: number
   activeReferrals: number
   totalEarned: number
+  totalEarnedSubscriptions: number
+  totalEarnedOrders: number
+  storeOrders: number
   totalPaid: number
   pendingPayout: number
   availableBalance: number
   currency: string
   rewardPercent: number
+  shopifyRewardPercent: number
   rewards: AffiliateRewardRow[]
+  orderRewards: AffiliateOrderRewardRow[]
   payouts: AffiliatePayoutRow[]
 }
 
@@ -158,8 +326,17 @@ function toNumber(value: Prisma.Decimal | number | null | undefined): number {
  * total ganado y saldo disponible (= total ganado, sin flujo de redención por ahora).
  */
 export async function getAffiliateSummary(affiliateId: string): Promise<AffiliateSummary> {
-  const [totalReferrals, activeReferrals, rewards, earnedAgg, payouts, rewardPercent] =
-    await Promise.all([
+  const [
+    totalReferrals,
+    activeReferrals,
+    rewards,
+    earnedAgg,
+    orderRewards,
+    orderEarnedAgg,
+    payouts,
+    rewardPercent,
+    shopifyRewardPercent,
+  ] = await Promise.all([
       prisma.user.count({ where: { referredBy: affiliateId } }),
       prisma.user.count({ where: { referredBy: affiliateId, subscriptionStatus: "active" } }),
       prisma.affiliateReward.findMany({
@@ -182,15 +359,27 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
         where: { affiliateId },
         _sum: { amount: true },
       }),
+      prisma.affiliateOrderReward.findMany({
+        where: { affiliateId },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+      prisma.affiliateOrderReward.aggregate({
+        where: { affiliateId, status: "granted" },
+        _sum: { amount: true },
+      }),
       prisma.affiliatePayout.findMany({
         where: { affiliateId },
         orderBy: { createdAt: "desc" },
         take: 100,
       }),
       getAffiliateRewardPercent(),
+      getAffiliateShopifyRewardPercent(),
     ])
 
-  const totalEarned = toNumber(earnedAgg._sum.amount)
+  const totalEarnedSubscriptions = toNumber(earnedAgg._sum.amount)
+  const totalEarnedOrders = toNumber(orderEarnedAgg._sum.amount)
+  const totalEarned = totalEarnedSubscriptions + totalEarnedOrders
 
   // Resolver el título legible del plan de cada recompensa. Prioridad: el producto
   // guardado al momento de la conversión → el producto actual del referido.
@@ -223,11 +412,26 @@ export async function getAffiliateSummary(affiliateId: string): Promise<Affiliat
     totalReferrals,
     activeReferrals,
     totalEarned,
+    totalEarnedSubscriptions,
+    totalEarnedOrders,
+    storeOrders: orderRewards.filter((o) => o.status === "granted").length,
     totalPaid,
     pendingPayout,
     availableBalance: totalEarned - totalPaid - pendingPayout,
     currency: "COP",
     rewardPercent,
+    shopifyRewardPercent,
+    orderRewards: orderRewards.map((o) => ({
+      id: o.id,
+      amount: toNumber(o.amount),
+      orderAmount: o.orderAmount == null ? null : toNumber(o.orderAmount),
+      rewardPercent: o.rewardPercent == null ? null : toNumber(o.rewardPercent),
+      status: o.status,
+      shopifyOrderNumber: o.shopifyOrderNumber,
+      customerEmail: o.customerEmail,
+      code: o.code,
+      createdAt: o.createdAt.toISOString(),
+    })),
     rewards: rewards.map((r) => {
       const slug = r.planProduct ?? r.referredUser?.subscriptionProduct ?? null
       return {
@@ -299,7 +503,7 @@ export async function getAffiliatesReport(): Promise<AffiliatesReport> {
     return { totals: { affiliates: 0, referrals: 0, earned: 0, paid: 0, pending: 0 }, affiliates: [] }
   }
 
-  const [referralsBy, activeReferralsBy, earnedBy, payoutsBy] = await Promise.all([
+  const [referralsBy, activeReferralsBy, earnedBy, orderEarnedBy, payoutsBy] = await Promise.all([
     prisma.user.groupBy({
       by: ["referredBy"],
       where: { referredBy: { in: ids } },
@@ -315,6 +519,11 @@ export async function getAffiliatesReport(): Promise<AffiliatesReport> {
       where: { affiliateId: { in: ids } },
       _sum: { amount: true },
     }),
+    prisma.affiliateOrderReward.groupBy({
+      by: ["affiliateId"],
+      where: { affiliateId: { in: ids }, status: "granted" },
+      _sum: { amount: true },
+    }),
     prisma.affiliatePayout.groupBy({
       by: ["affiliateId", "status"],
       where: { affiliateId: { in: ids } },
@@ -328,6 +537,10 @@ export async function getAffiliatesReport(): Promise<AffiliatesReport> {
   for (const r of activeReferralsBy) if (r.referredBy) activeMap.set(r.referredBy, r._count._all)
   const earnedMap = new Map<string, number>()
   for (const r of earnedBy) earnedMap.set(r.affiliateId, toNumber(r._sum.amount))
+  // Sumar las comisiones por compras en la tienda (además de las de suscripción).
+  for (const r of orderEarnedBy) {
+    earnedMap.set(r.affiliateId, (earnedMap.get(r.affiliateId) ?? 0) + toNumber(r._sum.amount))
+  }
   const paidMap = new Map<string, number>()
   const pendingMap = new Map<string, number>()
   for (const r of payoutsBy) {
@@ -401,9 +614,13 @@ export async function getPendingPayouts(): Promise<PendingPayoutRow[]> {
  * Saldo disponible de un afiliado = recompensas ganadas - retiros pagados - retiros pendientes.
  */
 export async function getAffiliateAvailableBalance(affiliateId: string): Promise<number> {
-  const [earnedAgg, reservedAgg] = await Promise.all([
+  const [earnedAgg, orderEarnedAgg, reservedAgg] = await Promise.all([
     prisma.affiliateReward.aggregate({
       where: { affiliateId },
+      _sum: { amount: true },
+    }),
+    prisma.affiliateOrderReward.aggregate({
+      where: { affiliateId, status: "granted" },
       _sum: { amount: true },
     }),
     prisma.affiliatePayout.aggregate({
@@ -411,7 +628,11 @@ export async function getAffiliateAvailableBalance(affiliateId: string): Promise
       _sum: { amount: true },
     }),
   ])
-  return toNumber(earnedAgg._sum.amount) - toNumber(reservedAgg._sum.amount)
+  return (
+    toNumber(earnedAgg._sum.amount) +
+    toNumber(orderEarnedAgg._sum.amount) -
+    toNumber(reservedAgg._sum.amount)
+  )
 }
 
 /**
@@ -431,9 +652,13 @@ export async function requestAffiliatePayout(opts: {
 
   try {
     const payoutId = await prisma.$transaction(async (tx) => {
-      const [earnedAgg, reservedAgg] = await Promise.all([
+      const [earnedAgg, orderEarnedAgg, reservedAgg] = await Promise.all([
         tx.affiliateReward.aggregate({
           where: { affiliateId: opts.affiliateId },
+          _sum: { amount: true },
+        }),
+        tx.affiliateOrderReward.aggregate({
+          where: { affiliateId: opts.affiliateId, status: "granted" },
           _sum: { amount: true },
         }),
         tx.affiliatePayout.aggregate({
@@ -444,7 +669,10 @@ export async function requestAffiliatePayout(opts: {
           _sum: { amount: true },
         }),
       ])
-      const available = toNumber(earnedAgg._sum.amount) - toNumber(reservedAgg._sum.amount)
+      const available =
+        toNumber(earnedAgg._sum.amount) +
+        toNumber(orderEarnedAgg._sum.amount) -
+        toNumber(reservedAgg._sum.amount)
       if (amount > available) {
         throw new Error(
           `Saldo insuficiente: disponible ${available.toLocaleString("es-CO")}, solicitado ${amount.toLocaleString("es-CO")}`

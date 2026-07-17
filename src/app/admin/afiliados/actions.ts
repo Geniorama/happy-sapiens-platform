@@ -3,7 +3,7 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { logAdminAction } from "@/lib/log"
-import { PAYOUT_STATUS, setAffiliateRewardPercent } from "@/lib/affiliate"
+import { PAYOUT_STATUS, setAffiliateRewardPercent, setAffiliateShopifyRewardPercent } from "@/lib/affiliate"
 import { revalidatePath } from "next/cache"
 
 async function getAdminSession() {
@@ -91,6 +91,30 @@ export async function updateRewardPercent(
     actorId: session.user.id,
     actorEmail: session.user.email!,
     action: "affiliate.reward_percent_changed",
+    entityType: "affiliate_config",
+    metadata: { percent: Number(percent) },
+  })
+
+  revalidatePath("/admin/afiliados")
+  return { success: true }
+}
+
+/** Actualiza el porcentaje de comisión por compras en la tienda (config editable). */
+export async function updateShopifyRewardPercent(
+  percent: number
+): Promise<{ success: true } | { error: string }> {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+
+  const result = await setAffiliateShopifyRewardPercent(percent, session.user.id)
+  if (!result.success) {
+    return { error: result.error ?? "No se pudo guardar el porcentaje" }
+  }
+
+  await logAdminAction({
+    actorId: session.user.id,
+    actorEmail: session.user.email!,
+    action: "affiliate.shopify_reward_percent_changed",
     entityType: "affiliate_config",
     metadata: { percent: Number(percent) },
   })

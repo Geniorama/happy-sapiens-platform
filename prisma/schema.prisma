@@ -94,9 +94,10 @@ model User {
   userPoints          UserPoints?
   referralStats       ReferralStats?
   systemLogs          SystemLog[]
-  affiliateRewards    AffiliateReward[]     @relation("AffiliateRewards")
-  affiliateReferrals  AffiliateReward[]     @relation("AffiliateReferredUser")
-  affiliatePayouts    AffiliatePayout[]     @relation("AffiliatePayouts")
+  affiliateRewards      AffiliateReward[]      @relation("AffiliateRewards")
+  affiliateReferrals    AffiliateReward[]      @relation("AffiliateReferredUser")
+  affiliatePayouts      AffiliatePayout[]      @relation("AffiliatePayouts")
+  affiliateOrderRewards AffiliateOrderReward[] @relation("AffiliateOrderRewards")
   subscriptions       Subscription[]
 
   @@index([email])
@@ -590,13 +591,44 @@ model AffiliatePayout {
 }
 
 model AffiliateConfig {
-  id            String   @id @default("default")
-  rewardPercent Decimal  @default(15) @map("reward_percent") @db.Decimal(5, 2)
-  updatedById   String?  @map("updated_by_id") @db.Uuid
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                   String   @id @default("default")
+  rewardPercent        Decimal  @default(15) @map("reward_percent") @db.Decimal(5, 2)
+  // Porcentaje separado para comisiones por compras en la tienda de Shopify.
+  shopifyRewardPercent Decimal  @default(10) @map("shopify_reward_percent") @db.Decimal(5, 2)
+  updatedById          String?  @map("updated_by_id") @db.Uuid
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("affiliate_config")
+}
+
+// Comisión que gana un afiliado cuando un cliente compra en la tienda de Shopify
+// usando su código. A diferencia de AffiliateReward (una vez por referido), esta
+// es POR PEDIDO: idempotente por shopifyOrderId. El código de afiliado viaja en la
+// nota del pedido (order.note / note_attributes), ya que el checkout de Shopify no
+// se puede modificar. El monto es un % del subtotal de productos del pedido.
+model AffiliateOrderReward {
+  id                 String   @id @default(uuid()) @db.Uuid
+  affiliateId        String   @map("affiliate_id") @db.Uuid
+  shopifyOrderId     String   @unique @map("shopify_order_id")
+  shopifyOrderNumber Int?     @map("shopify_order_number")
+  customerEmail      String?  @map("customer_email")
+  code               String?
+  orderAmount        Decimal? @map("order_amount") @db.Decimal(12, 2)
+  amount             Decimal  @db.Decimal(12, 2)
+  rewardPercent      Decimal? @map("reward_percent") @db.Decimal(5, 2)
+  currency           String   @default("COP")
+  status             String   @default("granted") // granted | cancelled
+  note               String?
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  affiliate User @relation("AffiliateOrderRewards", fields: [affiliateId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("affiliate_order_rewards")
 }
 
 model SubscriptionPlanConfig {

@@ -4,6 +4,7 @@ import { randomBytes } from "crypto"
 import { prisma } from "@/lib/db"
 import { getShopifyCustomerById } from "@/lib/shopify"
 import { sendEmail } from "@/lib/email"
+import { extractAffiliateCode, grantAffiliateOrderReward, cancelAffiliateOrderReward } from "@/lib/affiliate"
 
 function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
   const secret = process.env.SHOPIFY_CLIENT_SECRET
@@ -22,6 +23,61 @@ function isSubscriptionOrder(payload: Record<string, unknown>): boolean {
       (item.properties as Array<{ name: string }> | undefined)?.some(
         (p) => p.name === "_selling_plan_id" || p.name === "selling_plan_id"
       )
+  )
+}
+
+// Comisión de afiliado por una compra en la tienda de Shopify.
+//
+// El código del afiliado viaja en la NOTA del pedido (order.note / note_attributes),
+// porque el checkout de Shopify no se puede personalizar. Se aplica solo a pedidos
+// que NO son de suscripción (esos pagan comisión por el flujo de Mercado Pago, una
+// vez por referido) ni creados por la propia app. Es idempotente por id de pedido.
+async function handleAffiliateOrderCommission(
+  topic: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  if (isSubscriptionOrder(payload)) return
+  if (((payload.source_name as string) || "") === "Happy Sapiens Suscriptions") return
+
+  const orderId = payload.id != null ? String(payload.id) : ""
+  if (!orderId) return
+
+  // Cancelación/reembolso: anular la comisión del pedido (si existía).
+  if (topic === "orders/cancelled") {
+    await cancelAffiliateOrderReward(orderId)
+    return
+  }
+
+  // orders/paid: buscar el código en la nota y sus atributos.
+  const note = (payload.note as string) || ""
+  const noteAttributes =
+    (payload.note_attributes as Array<{ name?: string; value?: string }> | undefined) || []
+  const attrText = noteAttributes.map((a) => `${a?.name ?? ""} ${a?.value ?? ""}`).join(" ")
+
+  const code = extractAffiliateCode(note, attrText)
+  if (!code) return
+
+  const customer = payload.customer as Record<string, unknown> | undefined
+  const customerEmail = (payload.email as string) || (customer?.email as string) || null
+  const orderNumber = payload.order_number != null ? Number(payload.order_number) : null
+
+  // Subtotal de productos (sin envío ni impuestos).
+  const subtotalRaw =
+    (payload.subtotal_price as string | undefined) ??
+    (payload.current_subtotal_price as string | undefined) ??
+    (payload.total_line_items_price as string | undefined)
+  const subtotal = subtotalRaw != null ? Number(subtotalRaw) : null
+
+  const result = await grantAffiliateOrderReward({
+    code,
+    shopifyOrderId: orderId,
+    shopifyOrderNumber: orderNumber,
+    customerEmail,
+    orderSubtotal: subtotal,
+  })
+  console.log(
+    `[shopify][afiliado] pedido ${orderNumber ?? orderId} código ${code} →`,
+    JSON.stringify(result)
   )
 }
 
@@ -70,7 +126,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // Solo procesar órdenes de suscripción
+  // Comisión de afiliado por compra en la tienda (pedidos que no son de suscripción).
+  // Se maneja aparte y no debe romper el flujo de suscripción si falla.
+  try {
+    await handleAffiliateOrderCommission(topic, payload)
+  } catch (error) {
+    console.error("Error procesando comisión de afiliado (Shopify):", error)
+  }
+
+  // El resto del handler solo aplica a órdenes de suscripción.
   if (!isSubscriptionOrder(payload)) {
     return NextResponse.json({ ok: true })
   }

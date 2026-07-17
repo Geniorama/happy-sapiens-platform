@@ -29,6 +29,34 @@ disponible.
 > Solo se abona recompensa monetaria si el **referidor tiene rol `afiliado`**. Los
 > usuarios normales siguen recibiendo únicamente puntos (`REFERRAL_SUBSCRIBED`).
 
+## 🛒 Comisión por compras en la tienda (Shopify)
+
+Además de las suscripciones, el afiliado gana comisión cuando un cliente **compra
+en la tienda de Shopify** usando su código.
+
+- **Cómo viaja el código:** el checkout de Shopify no se puede personalizar, así que
+  el cliente escribe el código del afiliado (`HSP-XXXXXX`) en la **nota del pedido**.
+  El webhook lo extrae de `order.note` y `order.note_attributes`.
+- **Cuándo se abona:** al recibir el webhook `orders/paid` (`/api/webhooks/shopify`),
+  para pedidos que **no** son de suscripción ni creados por la app.
+- **Monto:** **porcentaje del subtotal de productos** del pedido (sin envío ni
+  impuestos), redondeado al peso.
+- **Es por cada compra** (no one-time). Idempotente: la fila se llavea por
+  `shopify_order_id` (unique), así re-entregas del webhook no duplican la comisión.
+- **Cancelaciones/reembolsos:** el webhook `orders/cancelled` marca la comisión de
+  ese pedido como `cancelled` (deja de contar al saldo).
+- **Porcentaje separado y configurable:** `/admin/afiliados` → "Comisión por compra
+  en la tienda". Prioridad de lectura: **config en BD (`affiliate_config.shopify_reward_percent`)
+  → variable de entorno `AFFILIATE_SHOPIFY_REWARD_PERCENT` → 10**.
+- **Guardas:** el código debe corresponder a un usuario con rol `afiliado`, y el
+  comprador no puede ser el propio afiliado (no auto-comisión).
+
+Tabla `affiliate_order_rewards` (modelo `AffiliateOrderReward`): `affiliate_id`,
+`shopify_order_id` (unique), `shopify_order_number`, `customer_email`, `code`,
+`order_amount`, `amount`, `reward_percent`, `currency`, `status` (`granted|cancelled`),
+`note`. El saldo del afiliado suma las comisiones `granted` de esta tabla más las
+recompensas de suscripción.
+
 ## 💵 Redención / retiro del saldo
 
 - El afiliado ve su **saldo disponible** y solicita un retiro desde su panel

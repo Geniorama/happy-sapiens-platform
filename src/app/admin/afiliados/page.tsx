@@ -1,5 +1,5 @@
 import { Users, Wallet, Banknote, Clock, Hourglass } from "lucide-react"
-import { getAffiliatesReport, getPendingPayouts, getAffiliateRewardPercent } from "@/lib/affiliate"
+import { getAffiliatesReport, getPendingPayouts, getAffiliateRewardPercent, getAffiliateShopifyRewardPercent } from "@/lib/affiliate"
 import { PayoutsManager } from "@/components/admin/payouts-manager"
 import { AffiliateConfigForm } from "@/components/admin/affiliate-config-form"
 
@@ -18,10 +18,11 @@ function formatInt(value: number): string {
 }
 
 export default async function AdminAfiliadosPage() {
-  const [report, pendingPayouts, rewardPercent] = await Promise.all([
+  const [report, pendingPayouts, rewardPercent, shopifyRewardPercent] = await Promise.all([
     getAffiliatesReport(),
     getPendingPayouts(),
     getAffiliateRewardPercent(),
+    getAffiliateShopifyRewardPercent(),
   ])
   const { totals, affiliates } = report
 
@@ -58,8 +59,8 @@ export default async function AdminAfiliadosPage() {
         })}
       </div>
 
-      {/* Config: porcentaje de recompensa */}
-      <AffiliateConfigForm current={rewardPercent} />
+      {/* Config: porcentajes de comisión */}
+      <AffiliateConfigForm subscriptionPercent={rewardPercent} shopifyPercent={shopifyRewardPercent} />
 
       {/* Solicitudes de retiro pendientes */}
       <div className="bg-white rounded-xl border border-zinc-200">
