@@ -12,7 +12,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
     "db:deploy": "dotenv -e .env.local -- prisma migrate deploy",
-    "db:studio": "dotenv -e .env.local -- prisma studio"
+    "db:studio": "dotenv -e .env.local -- prisma studio",
+    "afiliados:sync-shopify": "dotenv -e .env.local -- node scripts/sync-afiliados-shopify-discounts.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.980.0",

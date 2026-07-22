@@ -28,10 +28,12 @@ function isSubscriptionOrder(payload: Record<string, unknown>): boolean {
 
 // Comisión de afiliado por una compra en la tienda de Shopify.
 //
-// El código del afiliado viaja en la NOTA del pedido (order.note / note_attributes),
-// porque el checkout de Shopify no se puede personalizar. Se aplica solo a pedidos
-// que NO son de suscripción (esos pagan comisión por el flujo de Mercado Pago, una
-// vez por referido) ni creados por la propia app. Es idempotente por id de pedido.
+// El código del afiliado viaja como CÓDIGO DE DESCUENTO del pedido (order.discount_codes),
+// un descuento de 0% que se crea automáticamente en Shopify por cada afiliado. Como
+// fallback (compatibilidad hacia atrás) también se busca en la nota del pedido
+// (order.note / note_attributes). Se aplica solo a pedidos que NO son de suscripción
+// (esos pagan comisión por el flujo de Mercado Pago, una vez por referido) ni creados
+// por la propia app. Es idempotente por id de pedido.
 async function handleAffiliateOrderCommission(
   topic: string,
   payload: Record<string, unknown>
@@ -48,13 +50,27 @@ async function handleAffiliateOrderCommission(
     return
   }
 
-  // orders/paid: buscar el código en la nota y sus atributos.
+  // orders/paid: el código viaja como código de descuento (fuente principal); la nota
+  // y sus atributos quedan como fallback por compatibilidad.
+  //
+  // Se leen dos campos porque Shopify no siempre los llena igual: `discount_codes`
+  // (legacy) y `discount_applications` (los descuentos por código nuevos suelen
+  // aparecer aquí, con `code` para type=discount_code o `title`).
+  const discountCodes =
+    (payload.discount_codes as Array<{ code?: string }> | undefined) || []
+  const discountApplications =
+    (payload.discount_applications as Array<{ code?: string; title?: string }> | undefined) || []
+  const discountText = [
+    ...discountCodes.map((d) => d?.code ?? ""),
+    ...discountApplications.map((d) => `${d?.code ?? ""} ${d?.title ?? ""}`),
+  ].join(" ")
+
   const note = (payload.note as string) || ""
   const noteAttributes =
     (payload.note_attributes as Array<{ name?: string; value?: string }> | undefined) || []
   const attrText = noteAttributes.map((a) => `${a?.name ?? ""} ${a?.value ?? ""}`).join(" ")
 
-  const code = extractAffiliateCode(note, attrText)
+  const code = extractAffiliateCode(discountText, note, attrText)
   if (!code) return
 
   const customer = payload.customer as Record<string, unknown> | undefined

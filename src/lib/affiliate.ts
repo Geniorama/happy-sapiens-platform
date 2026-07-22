@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { ensureReferralCode } from "@/lib/referral-code"
+import { createShopifyDiscountCode } from "@/lib/shopify"
 
 // Rol interno del perfil de afiliado. Un afiliado recomienda la plataforma con su
 // referralCode y gana una recompensa en COP cada vez que un referido paga su
@@ -108,6 +110,44 @@ export async function setAffiliateShopifyRewardPercent(
   } catch (err) {
     console.error("setAffiliateShopifyRewardPercent exception:", err)
     return { success: false, error: "No se pudo guardar el porcentaje" }
+  }
+}
+
+/**
+ * Asegura que un afiliado tenga (a) su `referralCode` y (b) el código de descuento
+ * espejo en Shopify (0%, solo tracking). Se invoca al crear un usuario afiliado o al
+ * promover un usuario existente al rol `afiliado`.
+ *
+ * Idempotente y tolerante a fallos: si Shopify falla (o falta el scope
+ * `write_discounts`), NO rompe la creación/cambio de rol — solo registra el error.
+ * El descuento se puede recrear luego reejecutando esta función.
+ */
+export async function ensureAffiliateShopifyDiscount(
+  userId: string
+): Promise<{ ok: boolean; code?: string; error?: string }> {
+  let code: string
+  try {
+    code = await ensureReferralCode(userId)
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error("[afiliado] no se pudo asegurar el referralCode:", error)
+    return { ok: false, error }
+  }
+
+  try {
+    const res = await createShopifyDiscountCode(code, { percentage: 0 })
+    if (!res.ok) {
+      console.error(`[afiliado] Shopify rechazó el descuento ${code}:`, res.error)
+      return { ok: false, code, error: res.error }
+    }
+    console.log(
+      `[afiliado] descuento Shopify ${code} ${res.alreadyExists ? "ya existía" : "creado"}`
+    )
+    return { ok: true, code }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error(`[afiliado] error creando descuento Shopify ${code}:`, error)
+    return { ok: false, code, error }
   }
 }
 

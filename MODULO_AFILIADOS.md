@@ -34,9 +34,15 @@ disponible.
 Además de las suscripciones, el afiliado gana comisión cuando un cliente **compra
 en la tienda de Shopify** usando su código.
 
-- **Cómo viaja el código:** el checkout de Shopify no se puede personalizar, así que
-  el cliente escribe el código del afiliado (`HSP-XXXXXX`) en la **nota del pedido**.
-  El webhook lo extrae de `order.note` y `order.note_attributes`.
+- **Cómo viaja el código:** por cada afiliado se crea automáticamente un **código de
+  descuento en Shopify** (0%, solo tracking) igual a su `HSP-XXXXXX`. El cliente lo
+  escribe en el campo "código de descuento" del checkout (que siempre existe, a
+  diferencia del de notas). El webhook lo extrae de `order.discount_codes`. Fallback
+  por compatibilidad: `order.note` y `order.note_attributes`.
+  - El descuento se crea en `ensureAffiliateShopifyDiscount()` (`src/lib/affiliate.ts`),
+    invocado al crear un usuario `afiliado` o al promover a ese rol (`admin/users/actions.ts`).
+    Es idempotente y tolerante a fallos (no rompe la creación/cambio de rol si Shopify falla).
+  - Requiere que el token de la app de Shopify tenga el scope **`write_discounts`**.
 - **Cuándo se abona:** al recibir el webhook `orders/paid` (`/api/webhooks/shopify`),
   para pedidos que **no** son de suscripción ni creados por la app.
 - **Monto:** **porcentaje del subtotal de productos** del pedido (sin envío ni

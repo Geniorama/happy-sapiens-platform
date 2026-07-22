@@ -6,6 +6,7 @@ import { logAdminAction } from "@/lib/log"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
 import { ensureReferralCode } from "@/lib/referral-code"
+import { ensureAffiliateShopifyDiscount } from "@/lib/affiliate"
 import { sendSetPasswordInvite } from "@/lib/set-password-invite"
 
 async function getAdminSession() {
@@ -229,6 +230,12 @@ export async function createUser(data: {
     console.error("Error generando código de referido:", err)
   }
 
+  // Afiliado nuevo: crear su código de descuento espejo (0%) en Shopify para trackear
+  // compras en la tienda. No bloquea la creación si Shopify falla (registra el error).
+  if (created.role === "afiliado") {
+    await ensureAffiliateShopifyDiscount(created.id)
+  }
+
   const inviteResult = await sendSetPasswordInvite({
     userId: created.id,
     email: created.email!,
@@ -355,6 +362,12 @@ export async function changeUserRole(userId: string, role: "user" | "coach" | "a
   } catch (err) {
     console.error("Error cambiando rol:", err)
     return { error: "Error al cambiar el rol" }
+  }
+
+  // Promovido a afiliado: asegurar su referralCode + código de descuento en Shopify.
+  // Tolerante a fallos (no revierte el cambio de rol si Shopify falla).
+  if (role === "afiliado") {
+    await ensureAffiliateShopifyDiscount(userId)
   }
 
   await logAdminAction({

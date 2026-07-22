@@ -30,6 +30,63 @@ async function shopifyQuery<T = unknown>(
   return data as T
 }
 
+// Crea un código de descuento en Shopify que espeja el código de un afiliado.
+//
+// Es un descuento de 0% (no altera el precio): existe solo para que el código del
+// afiliado (HSP-XXXXXX) viaje dentro del pedido en `order.discount_codes`, ya que el
+// checkout de Shopify no expone un campo de nota que el cliente pueda llenar. El
+// webhook orders/paid lee ese código y abona la comisión.
+//
+// Idempotente: si el código ya existe en Shopify (re-ejecución o afiliado ya
+// registrado) se considera OK. Requiere que el token de la app tenga scope
+// `write_discounts`.
+export async function createShopifyDiscountCode(
+  code: string,
+  { percentage = 0 }: { percentage?: number } = {}
+): Promise<{ ok: boolean; alreadyExists?: boolean; error?: string }> {
+  const data = await shopifyQuery<{
+    discountCodeBasicCreate: {
+      codeDiscountNode: { id: string } | null
+      userErrors: { field: string[] | null; code: string | null; message: string }[]
+    }
+  }>(
+    `mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode { id }
+        userErrors { field code message }
+      }
+    }`,
+    {
+      basicCodeDiscount: {
+        title: `Afiliado ${code}`,
+        code,
+        startsAt: new Date().toISOString(),
+        customerSelection: { all: true },
+        customerGets: {
+          // percentage es una fracción 0..1 (0.1 = 10%). 0 = solo tracking.
+          value: { percentage: percentage / 100 },
+          items: { all: true },
+        },
+        appliesOncePerCustomer: false,
+        // Que se pueda combinar con otras promos: nunca debe bloquear un descuento real.
+        combinesWith: { orderDiscounts: true, productDiscounts: true, shippingDiscounts: true },
+      },
+    }
+  )
+
+  const errors = data.discountCodeBasicCreate.userErrors ?? []
+  if (errors.length) {
+    // El código ya existe → idempotente, lo tratamos como éxito.
+    const taken = errors.some(
+      (e) => e.code === "TAKEN" || /taken|exist|unique/i.test(e.message)
+    )
+    if (taken) return { ok: true, alreadyExists: true }
+    return { ok: false, error: errors.map((e) => e.message).join("; ") }
+  }
+
+  return { ok: true }
+}
+
 // Reintenta una request ante conflictos/lock transitorios de Shopify.
 //
 // Completar un draft order deja la orden brevemente bloqueada mientras Shopify la
