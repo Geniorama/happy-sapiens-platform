@@ -129,6 +129,11 @@ export async function getSubscriptionPlan(slug: string): Promise<SubscriptionPla
   try {
     const row = await prisma.subscriptionPlanConfig.findUnique({ where: { slug } })
     if (row) return rowToPlan(row)
+    // La tabla respondió pero no tiene el slug. Solo se recurre al fallback si
+    // la tabla está vacía (migración/seed pendiente); si tiene registros, el
+    // plan fue eliminado a propósito desde el admin y no debe revivir.
+    const total = await prisma.subscriptionPlanConfig.count()
+    if (total > 0) return null
   } catch (err) {
     console.error(`getSubscriptionPlan(${slug}): fallback to defaults`, err)
   }

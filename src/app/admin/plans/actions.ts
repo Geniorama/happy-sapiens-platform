@@ -20,8 +20,32 @@ export interface PlanUpdateData {
   currency: string
   taxExempt: boolean
   isActive: boolean
+  sortOrder: number
   shopifyVariantId: string | null
   shopifyFirstOrderVariantId: string | null
+}
+
+export interface PlanCreateData extends PlanUpdateData {
+  slug: string
+}
+
+// El slug es la identidad del plan: se guarda en `users.subscription_product`,
+// viaja en el external_reference de Mercado Pago y se usa en las URLs de
+// checkout. Por eso es inmutable una vez creado y se restringe a kebab-case.
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+function validatePlanFields(data: PlanUpdateData): string | null {
+  if (!data.title?.trim()) return "El título es requerido"
+  if (!data.description?.trim()) return "La descripción es requerida"
+  if (!Number.isFinite(data.price) || data.price <= 0) {
+    return "El precio debe ser un número mayor a 0"
+  }
+  if (!data.currency?.trim()) return "La moneda es requerida"
+  if (!/^[A-Za-z]{3}$/.test(data.currency.trim())) {
+    return "La moneda debe ser un código de 3 letras (ej: COP)"
+  }
+  if (!Number.isInteger(data.sortOrder)) return "El orden debe ser un número entero"
+  return null
 }
 
 // Estados de suscripción cuyo cobro recurrente sigue vigente en Mercado Pago y,
@@ -99,12 +123,8 @@ export async function updateSubscriptionPlan(
   if (!session) return { error: "No autorizado" }
 
   if (!slug) return { error: "Plan no válido" }
-  if (!data.title?.trim()) return { error: "El título es requerido" }
-  if (!data.description?.trim()) return { error: "La descripción es requerida" }
-  if (!Number.isFinite(data.price) || data.price <= 0) {
-    return { error: "El precio debe ser un número mayor a 0" }
-  }
-  if (!data.currency?.trim()) return { error: "La moneda es requerida" }
+  const errMsg = validatePlanFields(data)
+  if (errMsg) return { error: errMsg }
 
   try {
     const existing = await prisma.subscriptionPlanConfig.findUnique({ where: { slug } })
@@ -119,6 +139,7 @@ export async function updateSubscriptionPlan(
         currency: data.currency.trim().toUpperCase(),
         taxExempt: data.taxExempt,
         isActive: data.isActive,
+        sortOrder: data.sortOrder,
         shopifyVariantId: data.shopifyVariantId?.trim() || null,
         shopifyFirstOrderVariantId: data.shopifyFirstOrderVariantId?.trim() || null,
       },
@@ -188,6 +209,117 @@ export async function updateSubscriptionPlan(
   revalidatePath("/subscribe")
   revalidatePath("/dashboard/subscription")
   return { success: true as const, applied }
+}
+
+export async function createSubscriptionPlan(data: PlanCreateData) {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+
+  const slug = data.slug?.trim().toLowerCase() ?? ""
+  if (!slug) return { error: "El identificador (slug) es requerido" }
+  if (!SLUG_PATTERN.test(slug)) {
+    return {
+      error:
+        "El identificador solo admite minúsculas, números y guiones (ej: happy-blend)",
+    }
+  }
+
+  const errMsg = validatePlanFields(data)
+  if (errMsg) return { error: errMsg }
+
+  try {
+    const existing = await prisma.subscriptionPlanConfig.findUnique({ where: { slug } })
+    if (existing) return { error: "Ya existe un plan con ese identificador" }
+
+    await prisma.subscriptionPlanConfig.create({
+      data: {
+        slug,
+        title: data.title.trim(),
+        description: data.description.trim(),
+        price: data.price,
+        currency: data.currency.trim().toUpperCase(),
+        taxExempt: data.taxExempt,
+        isActive: data.isActive,
+        sortOrder: data.sortOrder,
+        shopifyVariantId: data.shopifyVariantId?.trim() || null,
+        shopifyFirstOrderVariantId: data.shopifyFirstOrderVariantId?.trim() || null,
+      },
+    })
+
+    await logAdminAction({
+      actorId: session.user.id!,
+      actorEmail: session.user.email ?? "",
+      action: "subscription_plan.create",
+      entityType: "subscription_plan",
+      entityId: slug,
+      metadata: {
+        title: data.title.trim(),
+        price: data.price,
+        currency: data.currency.trim().toUpperCase(),
+        isActive: data.isActive,
+      },
+    })
+  } catch (err) {
+    console.error("Error creando plan:", err)
+    return { error: "No se pudo crear el plan" }
+  }
+
+  revalidatePath("/admin/plans")
+  revalidatePath("/subscribe")
+  revalidatePath("/dashboard/subscription")
+  return { success: true as const }
+}
+
+// Solo se permite borrar planes sin historial: si algún usuario tiene el slug en
+// `subscriptionProduct`, borrarlo dejaría su suscripción sin plan asociado (el
+// panel y los reportes lo mostrarían huérfano). En ese caso la salida correcta
+// es desactivarlo para retirarlo de la venta conservando a los suscriptores.
+export async function deleteSubscriptionPlan(slug: string) {
+  const session = await getAdminSession()
+  if (!session) return { error: "No autorizado" }
+  if (!slug) return { error: "Plan no válido" }
+
+  try {
+    const existing = await prisma.subscriptionPlanConfig.findUnique({ where: { slug } })
+    if (!existing) return { error: "El plan no existe" }
+
+    // Se revisan las dos fuentes: `subscriptions` es la autoritativa (un usuario
+    // puede tener varias), y `users.subscription_product` es el espejo de la
+    // primaria — un plan viejo podría quedar solo en una de las dos.
+    const [subscriptions, users] = await Promise.all([
+      prisma.subscription.count({ where: { product: slug } }),
+      prisma.user.count({ where: { subscriptionProduct: slug } }),
+    ])
+    const subscribers = Math.max(subscriptions, users)
+    if (subscribers > 0) {
+      return {
+        error: `No se puede eliminar: ${subscribers} suscripción(es) usan este plan. Desactívalo para retirarlo de la venta.`,
+      }
+    }
+
+    await prisma.subscriptionPlanConfig.delete({ where: { slug } })
+
+    await logAdminAction({
+      actorId: session.user.id!,
+      actorEmail: session.user.email ?? "",
+      action: "subscription_plan.delete",
+      entityType: "subscription_plan",
+      entityId: slug,
+      metadata: {
+        title: existing.title,
+        price: Number(existing.price),
+        currency: existing.currency,
+      },
+    })
+  } catch (err) {
+    console.error("Error eliminando plan:", err)
+    return { error: "No se pudo eliminar el plan" }
+  }
+
+  revalidatePath("/admin/plans")
+  revalidatePath("/subscribe")
+  revalidatePath("/dashboard/subscription")
+  return { success: true as const }
 }
 
 export async function toggleSubscriptionPlanActive(slug: string, isActive: boolean) {
