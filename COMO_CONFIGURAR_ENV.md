@@ -72,6 +72,14 @@ NEXT_PUBLIC_GTM_ID="GTM-P99DWVK9"
 # suscribe. FALLBACK: normalmente se edita desde /admin/afiliados (tabla
 # affiliate_config). Este valor solo se usa si no hay config en BD. Default 15.
 AFFILIATE_REWARD_PERCENT="15"
+
+# ============================================
+# NOTIFICACIONES INTERNAS (OPCIONAL)
+# ============================================
+# Destinatarios de los avisos al equipo (p.ej. nueva suscripción activada).
+# Lista separada por comas. Si se omite, se notifica a todos los usuarios con
+# rol `admin` en la base de datos.
+ADMIN_NOTIFICATION_EMAILS=""
 ```
 
 ### 3. Reiniciar el servidor

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { paymentClient, invoiceClient } from '@/lib/mercadopago'
+import { paymentClient, invoiceClient, getSubscriptionPlan } from '@/lib/mercadopago'
+import { notifyAdminsRecurringOrder, type RecurringOrderNotification } from '@/lib/admin-notifications'
 import { prisma } from '@/lib/db'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
@@ -186,6 +187,24 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
       return
     }
 
+    // Aviso interno del cobro mensual. Solo cuando efectivamente se genera (o se
+    // intenta generar) el pedido de reposición: una re-entrega del webhook cae en
+    // `skipped` por idempotencia y no vuelve a notificar.
+    const notifyAdmins = async (order: RecurringOrderNotification['order']) => {
+      const plan = subscription.product ? await getSubscriptionPlan(subscription.product) : null
+      await notifyAdminsRecurringOrder({
+        email,
+        name: user.name || email,
+        planTitle: plan?.title ?? null,
+        productId: subscription.product,
+        amount: recurringPrice ?? null,
+        currency,
+        mpPaymentId,
+        nextChargeDate: nextDate ? new Date(nextDate) : subscription.endDate,
+        order,
+      })
+    }
+
     if (subscription.variantId) {
       const billingAddress = user.billingAddress
         ? {
@@ -242,6 +261,7 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
             paymentId: mpPaymentId,
           })
           console.log(`Orden Shopify creada: #${result.order.order_number} para ${email}`)
+          await notifyAdmins({ status: 'created', orderNumber: result.order.order_number })
         } else {
           await log('webhook.payment.shopify_order_skipped', email, {
             reason: 'duplicate_dispatch',
@@ -254,9 +274,12 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
         const errMsg = err instanceof Error ? err.message : String(err)
         await log('webhook.payment.shopify_order_error', email, { error: errMsg, variantId: subscription.variantId, paymentId: mpPaymentId })
         console.error('Error creando orden en Shopify:', err)
+        await notifyAdmins({ status: 'error', error: errMsg })
       }
     } else {
       await log('webhook.payment.shopify_skipped', email, { reason: 'subscription variantId is null', preapprovalId })
+      // Se cobró la mensualidad pero no hay qué despachar: el equipo debe saberlo.
+      await notifyAdmins({ status: 'no_variant' })
     }
 
     console.log(`Cobro recurrente procesado: ${email}`)

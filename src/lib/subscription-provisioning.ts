@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { notifyAdminsNewSubscription, type NewSubscriptionNotification } from '@/lib/admin-notifications'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
 import { AFFILIATE_ROLE, grantAffiliateReward } from '@/lib/affiliate'
 import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
@@ -372,6 +373,27 @@ export async function provisionFromPreApproval(
     let orderOutcome: 'created' | 'skipped' | 'none' = 'none'
     let orderNumber: number | null = null
 
+    // Aviso interno al equipo. Solo para suscripciones NUEVAS: `subByPreapproval`
+    // se consultó por mpPreapprovalId antes del upsert, así que si venía vacío es
+    // la primera vez que vemos esta preaprobación. Las re-entregas del webhook y
+    // los cobros recurrentes ya la encuentran y no vuelven a notificar.
+    const isNewSubscription = !subByPreapproval
+    const notifyAdmins = async (order: NewSubscriptionNotification['order']) => {
+      if (!isNewSubscription) return
+      await notifyAdminsNewSubscription({
+        email,
+        name,
+        planTitle: plan?.title ?? null,
+        productId,
+        price: subscriptionPrice ?? plan?.price ?? null,
+        currency: plan?.currency,
+        userCreated,
+        preApprovalId,
+        referralCode,
+        order,
+      })
+    }
+
     if (firstOrderVariantId) {
       // Releer el User: pending_checkout se borra al final del handler, así que
       // en reentregas la única fuente confiable de direcciones es la fila users.
@@ -457,9 +479,16 @@ export async function provisionFromPreApproval(
         const errMsg = err instanceof Error ? err.message : String(err)
         await logSubscription('webhook.preapproval.shopify_order_error', email, { error: errMsg, variantId: firstOrderVariantId, preApprovalId })
         console.error('Error creando orden en Shopify:', err)
+        // La suscripción quedó activa aunque el pedido falló: el equipo debe
+        // enterarse igual, con el error a la vista, antes de propagar.
+        await notifyAdmins({ status: 'error', error: errMsg })
         throw err
       }
     }
+
+    await notifyAdmins(
+      orderOutcome === 'none' ? { status: 'none' } : { status: orderOutcome, orderNumber }
+    )
 
     // Limpiar el checkout pendiente (por id: puede haber varios por email)
     try {
