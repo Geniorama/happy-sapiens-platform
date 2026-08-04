@@ -167,6 +167,102 @@ export async function getShopifyCustomerById(numericId: number) {
   return data.customer
 }
 
+// Nombre del gateway con el que queremos que quede identificado el pago en Shopify.
+const PAYMENT_GATEWAY = 'Mercado Pago'
+
+type ShopifyTransaction = {
+  id: number
+  kind: string
+  status: string
+  gateway: string
+  amount: string
+  currency: string | null
+  parent_id: number | null
+}
+
+async function getShopifyOrderTransactions(
+  orderId: number | string,
+  headers: Record<string, string>
+): Promise<ShopifyTransaction[]> {
+  const res = await shopifyFetchWithRetry(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
+    { headers, cache: 'no-store' }
+  )
+  if (!res.ok) {
+    throw new Error(`Shopify order transactions fetch error: ${res.status} ${await res.text()}`)
+  }
+  const { transactions } = await res.json()
+  return (transactions ?? []) as ShopifyTransaction[]
+}
+
+// Asienta el pago de una orden recién creada desde un draft con payment_pending=true.
+//
+// Al completar el draft, Shopify crea EN EL MISMO INSTANTE una transacción `sale`
+// en estado `pending` con gateway "manual". Con esa pendiente ya presente, la API
+// rechaza cualquier `sale` independiente con
+// 422 {"errors":{"kind":["sale is not a valid transaction"]}} — no es una carrera
+// que se pueda ganar con reintentos: es el estado normal de la orden. La única
+// transacción válida es una HIJA de la pendiente (`parent_id`), que es lo mismo
+// que hace "Marcar como pagado" en el admin.
+//
+// Idempotente: si la orden ya tiene una transacción exitosa, no hace nada.
+// Si el POST REST falla, cae a `orderMarkAsPaid` (GraphQL) para que la orden quede
+// `paid` igualmente, aunque el gateway se quede en "manual".
+async function settleShopifyOrderPayment(
+  orderId: number,
+  headers: Record<string, string>,
+  fallback: { amount: string; currency: string }
+): Promise<void> {
+  const transactions = await getShopifyOrderTransactions(orderId, headers)
+
+  const alreadySettled = transactions.some(
+    (t) => t.status === 'success' && (t.kind === 'sale' || t.kind === 'capture')
+  )
+  if (alreadySettled) return
+
+  const pending = transactions.find(
+    (t) => t.status === 'pending' && (t.kind === 'sale' || t.kind === 'authorization')
+  )
+
+  const transaction = pending
+    ? {
+        // Una `authorization` pendiente se liquida con `capture`; una `sale`
+        // pendiente, con otra `sale` hija.
+        kind: pending.kind === 'authorization' ? 'capture' : 'sale',
+        status: 'success',
+        parent_id: pending.id,
+        gateway: PAYMENT_GATEWAY,
+        amount: pending.amount,
+        currency: pending.currency ?? fallback.currency,
+      }
+    : {
+        // Sin transacción pendiente (orden creada por otra vía): `sale` directa.
+        kind: 'sale',
+        status: 'success',
+        gateway: PAYMENT_GATEWAY,
+        amount: fallback.amount,
+        currency: fallback.currency,
+      }
+
+  const txRes = await shopifyFetchWithRetry(
+    `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
+    { method: 'POST', headers, body: JSON.stringify({ transaction }), cache: 'no-store' }
+  )
+
+  if (txRes.ok) return
+
+  const detail = `${txRes.status} ${await txRes.text()}`
+  try {
+    await markShopifyOrderAsPaid(orderId)
+  } catch (err) {
+    throw new Error(
+      `Shopify order transaction error: ${detail}; orderMarkAsPaid también falló: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+  }
+}
+
 // Error lanzado cuando la orden ya se creó en Shopify pero falló un paso
 // posterior (registrar el pago o leer el order_number). Carga el orderId para que
 // el despacho confirme la fila como creada y no la borre (evita duplicar la orden).
@@ -191,7 +287,7 @@ export class ShopifyPostCreateError extends Error {
 // IVA con la configuración del variant; respetamos tax_exempt cuando aplica.
 //
 // Flujo: POST /draft_orders → PUT /draft_orders/{id}/complete?payment_pending=true →
-// POST /orders/{order_id}/transactions (gateway "Mercado Pago") → GET /orders/{order_id}.
+// liquidar la transacción pendiente (settleShopifyOrderPayment) → GET /orders/{order_id}.
 export async function createShopifyOrder(params: {
   email: string
   name: string
@@ -337,18 +433,8 @@ export async function createShopifyOrder(params: {
   const draftId = draft_order.id as number
 
   // 2. Completar el draft order con payment_pending=true: crea la orden en estado
-  // `pending`. OJO: Shopify SÍ genera aquí una transacción `sale` PENDIENTE con
-  // gateway "manual" (el saldo queda por cobrar). En el paso 3 registramos una
-  // transacción `sale/success` con gateway "Mercado Pago" que asienta el pago,
-  // marca la orden como `paid` y deja el método identificado (payment_gateway_names
-  // incluye "Mercado Pago"), que es lo que lee Moship/Siigo.
-  //
-  // IMPORTANTE: ese POST del paso 3 solo es válido en la ventana inmediata a la
-  // creación. Si se pospone (p.ej. tras un 409 por el lock de la orden recién
-  // creada que no se reintentó), Shopify rechaza una nueva `sale` con
-  // 422 "sale is not a valid transaction" y ya no se puede replicar este flujo —
-  // hay que asentar la transacción pendiente vía `markShopifyOrderAsPaid`
-  // (reconciliación desde el admin). Por eso el paso 3 usa shopifyFetchWithRetry.
+  // `pending` y, en el mismo instante, una transacción `sale` PENDIENTE con gateway
+  // "manual" (el saldo queda por cobrar). El paso 3 liquida ESA transacción.
   const completeRes = await fetch(
     `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/draft_orders/${draftId}/complete.json?payment_pending=true`,
     {
@@ -373,31 +459,12 @@ export async function createShopifyOrder(params: {
   // un fallo, lanzamos un ShopifyPostCreateError que carga el orderId para que el
   // despacho confirme la fila como 'created' (idempotente) en lugar de borrarla.
   try {
-    // 3. Registrar el pago como transacción `sale` con gateway "Mercado Pago".
-    // Esto marca financial_status='paid' y deja el método de pago identificado
-    // (payment_gateway_names: ["Mercado Pago"]), que es lo que lee Moship.
-    const txRes = await shopifyFetchWithRetry(
-      `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/orders/${orderId}/transactions.json`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          transaction: {
-            kind: 'sale',
-            status: 'success',
-            gateway: 'Mercado Pago',
-            amount: completed.total_price,
-            currency: completed.currency,
-          },
-        }),
-        cache: 'no-store',
-      }
-    )
-
-    if (!txRes.ok) {
-      const errorBody = await txRes.text()
-      throw new Error(`Shopify order transaction error: ${txRes.status} ${errorBody}`)
-    }
+    // 3. Asentar el pago liquidando la transacción pendiente que dejó el paso 2.
+    // Esto marca financial_status='paid', que es lo que destraba el fulfillment.
+    await settleShopifyOrderPayment(orderId, headers, {
+      amount: completed.total_price,
+      currency: completed.currency,
+    })
 
     // 4. Traer el order_number para logging operativo (el draft tiene su propio `name` tipo #D1).
     const orderRes = await shopifyFetchWithRetry(
@@ -418,12 +485,13 @@ export async function createShopifyOrder(params: {
 }
 
 // Asienta como pagada una orden que quedó en `pending` porque el paso 3 de
-// createShopifyOrder (POST de la transacción `sale/Mercado Pago`) no se completó a
-// tiempo. La orden ya tiene una transacción `sale` PENDIENTE (gateway "manual")
-// generada al completar el draft; `orderMarkAsPaid` la liquida y deja la orden en
-// `paid`. NO se puede recrear la `sale/Mercado Pago` a posteriori (Shopify la
-// rechaza con 422), así que el método de pago queda como "manual". Idempotente: si
-// la orden ya está pagada, no hace nada.
+// createShopifyOrder no se completó. La orden ya tiene una transacción `sale`
+// PENDIENTE (gateway "manual") generada al completar el draft; `orderMarkAsPaid`
+// la liquida y deja la orden en `paid`, con el gateway heredado ("manual").
+// Idempotente: si la orden ya está pagada, no hace nada.
+//
+// Es la red de seguridad de reconciliación desde el admin y el fallback de
+// settleShopifyOrderPayment.
 export async function markShopifyOrderAsPaid(
   orderId: string | number
 ): Promise<{ orderNumber: number | null; financialStatus: string; alreadyPaid: boolean }> {
