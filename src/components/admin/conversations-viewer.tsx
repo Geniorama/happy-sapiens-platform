@@ -13,6 +13,7 @@ import {
   Ticket as TicketIcon,
 } from 'lucide-react'
 import { loadConversation } from '@/app/admin/conversaciones/actions'
+import { formatDateCO, formatDateTimeCO } from '@/lib/format-date-co'
 import {
   formatPhone,
   agentLabel,
@@ -34,28 +35,10 @@ function stageBadgeClass(stage: string) {
   return 'bg-blue-100 text-blue-700'
 }
 
-function formatDateTime(date: Date | null) {
-  if (!date) return null
-  return new Date(date).toLocaleString('es-CO', {
-    timeZone: 'America/Bogota',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function relativeDay(date: Date | null) {
-  if (!date) return '—'
-  const value = new Date(date)
-  const today = new Date()
-  const sameDay = value.toDateString() === today.toDateString()
-  if (sameDay) {
-    return value.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' })
-  }
-  return value.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short' })
-}
+// Las fechas se formatean con los helpers deterministas de format-date-co: el
+// formateo por locale de Intl difiere entre Node y el navegador y rompe la
+// hidratación. Por lo mismo la lista muestra siempre la fecha completa en vez de
+// un «hoy/ayer» relativo, que dependería de la hora actual de cada lado.
 
 export function ConversationsViewer({
   conversations,
@@ -225,7 +208,7 @@ export function ConversationsViewer({
                       {conversation.contactName || formatPhone(conversation.phone)}
                     </span>
                     <span className="text-xs text-zinc-400 shrink-0">
-                      {relativeDay(conversation.lastActiveAt)}
+                      {formatDateCO(conversation.lastActiveAt)}
                     </span>
                   </div>
 
@@ -384,7 +367,7 @@ export function ConversationsViewer({
 
                 {visibleMessages.map((message) => {
                   const isAssistant = message.role === 'assistant'
-                  const timestamp = formatDateTime(message.createdAt)
+                  const timestamp = message.createdAt ? formatDateTimeCO(message.createdAt) : null
                   return (
                     <div
                       key={message.id}

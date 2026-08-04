@@ -1,7 +1,12 @@
 import { prisma } from '@/lib/db'
 import { supabaseSelect, supabasePatch } from '@/lib/supabase'
 import { matchPlatformUsers, phoneKey } from '@/lib/whatsapp-conversations'
-import { isOpenStatus, type Ticket, type TicketAdmin } from '@/lib/whatsapp-tickets-shared'
+import {
+  isOpenStatus,
+  isResolvedStatus,
+  type Ticket,
+  type TicketAdmin,
+} from '@/lib/whatsapp-tickets-shared'
 
 // Tickets de escalación que crea el agente de WhatsApp cuando no puede resolver
 // (cliente molesto, pide hablar con un humano, etc.). Viven en el mismo Supabase
@@ -40,14 +45,13 @@ function toDate(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-export async function listTickets(): Promise<Ticket[]> {
-  const [rows, agentUsers] = await Promise.all([
-    supabaseSelect<SupabaseTicket>(
-      'tickets?select=id,user_id,priority,category,status,summary,context,assigned_to,resolution_notes,created_at,updated_at,resolved_at&order=created_at.desc'
-    ),
-    supabaseSelect<SupabaseAgentUser>('users?select=id,phone_number,name'),
-  ])
+const TICKET_FIELDS =
+  'id,user_id,priority,category,status,summary,context,assigned_to,resolution_notes,created_at,updated_at,resolved_at'
 
+async function enrich(rows: SupabaseTicket[]): Promise<Ticket[]> {
+  if (rows.length === 0) return []
+
+  const agentUsers = await supabaseSelect<SupabaseAgentUser>('users?select=id,phone_number,name')
   const usersById = new Map(agentUsers.map((u) => [u.id, u]))
   const phones = rows
     .map((row) => (row.user_id ? usersById.get(row.user_id)?.phone_number : null))
@@ -76,6 +80,30 @@ export async function listTickets(): Promise<Ticket[]> {
       platformUser: phone ? (platformUsers.get(phoneKey(phone)) ?? null) : null,
     }
   })
+}
+
+export async function listTickets(): Promise<Ticket[]> {
+  const rows = await supabaseSelect<SupabaseTicket>(
+    `tickets?select=${TICKET_FIELDS}&order=created_at.desc`
+  )
+  return enrich(rows)
+}
+
+export async function getTicket(id: string): Promise<Ticket | null> {
+  const rows = await supabaseSelect<SupabaseTicket>(
+    `tickets?select=${TICKET_FIELDS}&id=eq.${encodeURIComponent(id)}`
+  )
+  const [ticket] = await enrich(rows)
+  return ticket ?? null
+}
+
+// Tickets creados después de un instante dado. Lo usa el cron que avisa de las
+// escalaciones nuevas.
+export async function listTicketsCreatedSince(since: Date): Promise<Ticket[]> {
+  const rows = await supabaseSelect<SupabaseTicket>(
+    `tickets?select=${TICKET_FIELDS}&created_at=gte.${encodeURIComponent(since.toISOString())}&order=created_at.asc`
+  )
+  return enrich(rows)
 }
 
 // Cuántos tickets sin resolver tiene cada teléfono. Lo usa el módulo de
@@ -120,14 +148,18 @@ export type TicketUpdate = {
 }
 
 // Aplica cambios sobre un ticket. `resolved_at` se deriva del estado en vez de
-// pedirlo: se sella al pasar a resuelto y se limpia si el ticket se reabre, para
-// que la fecha nunca contradiga al estado.
+// pedirlo, para que la fecha nunca contradiga al estado.
+//
+// Solo `resolved` sella `resolved_at`. Un ticket cerrado sin resolver deja esa
+// columna vacía a propósito: no se resolvió nada, y estamparla lo haría contar
+// como atendido en cualquier reporte que mire esa fecha. El momento del cierre
+// queda igual en `updated_at`.
 export async function updateTicket(id: string, changes: TicketUpdate): Promise<Ticket | null> {
   const body: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
   if (changes.status !== undefined) {
     body.status = changes.status
-    body.resolved_at = isOpenStatus(changes.status) ? null : new Date().toISOString()
+    body.resolved_at = isResolvedStatus(changes.status) ? new Date().toISOString() : null
   }
   if (changes.assignedTo !== undefined) {
     body.assigned_to = changes.assignedTo || null
@@ -139,8 +171,6 @@ export async function updateTicket(id: string, changes: TicketUpdate): Promise<T
   const updated = await supabasePatch<SupabaseTicket>(`tickets?id=eq.${encodeURIComponent(id)}`, body)
   if (updated.length === 0) return null
 
-  // Se relee por la vía normal para devolver el ticket ya enriquecido (contacto,
-  // usuario de la plataforma) sin duplicar ese armado aquí.
-  const all = await listTickets()
-  return all.find((ticket) => ticket.id === id) ?? null
+  const [ticket] = await enrich(updated)
+  return ticket ?? null
 }

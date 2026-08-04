@@ -80,6 +80,22 @@ AFFILIATE_REWARD_PERCENT="15"
 # Lista separada por comas. Si se omite, se notifica a todos los usuarios con
 # rol `admin` en la base de datos.
 ADMIN_NOTIFICATION_EMAILS=""
+
+# ============================================
+# AGENTE DE WHATSAPP (n8n + Supabase)
+# ============================================
+# Supabase del agente de WhatsApp, distinto de la base de la plataforma. Sin
+# estas variables, /admin/conversaciones y /admin/tickets muestran un aviso de
+# configuración faltante. Usar la llave `service_role` (NO la `anon`) y sin
+# prefijo NEXT_PUBLIC_: salta las políticas RLS y jamás debe llegar al navegador.
+# Ver MODULO_WHATSAPP.md.
+SUPABASE_URL=""
+SUPABASE_SERVICE_ROLE_KEY=""
+
+# Ventana que revisa el cron de escalaciones nuevas
+# (POST /api/cron/whatsapp-tickets, autenticado con WEBHOOK_TRIGGER_SECRET).
+# Default 48. Solo se amplía para arrastrar tickets viejos en la primera corrida.
+WHATSAPP_TICKETS_LOOKBACK_HOURS="48"
 ```
 
 ### 3. Reiniciar el servidor

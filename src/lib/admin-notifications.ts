@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { formatDateTimeCO } from '@/lib/format-date-co'
+import { formatPhone } from '@/lib/whatsapp-conversations-shared'
+import { priorityLabel, categoryLabel, type Ticket } from '@/lib/whatsapp-tickets-shared'
 
 // Notificaciones internas para el equipo (no van al cliente).
 
@@ -54,19 +57,28 @@ async function sendAdminNotification({
   heading,
   rows,
   alert,
+  to,
+  ctaHref,
+  ctaLabel,
 }: {
   subject: string
   heading: string
   rows: Row[]
   alert?: string
+  // Destinatarios explícitos. Sin esto va a todos los admin.
+  to?: string[]
+  ctaHref?: string
+  ctaLabel?: string
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const recipients = await getAdminNotificationRecipients()
+    const recipients = to?.length ? to : await getAdminNotificationRecipients()
     if (recipients.length === 0) {
       return { success: false, error: 'sin destinatarios' }
     }
 
     const appUrl = (process.env.NEXTAUTH_URL || 'https://happysapiens.co').replace(/\/$/, '')
+    const href = `${appUrl}${ctaHref ?? '/admin/aprovisionamiento'}`
+    const label = ctaLabel ?? 'Abrir panel de administración'
 
     const html = `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #18181b;">
@@ -91,10 +103,10 @@ async function sendAdminNotification({
             .join('')}
         </table>
         <a
-          href="${appUrl}/admin/aprovisionamiento"
+          href="${href}"
           style="display:inline-block;margin-top:8px;padding:10px 24px;background:#16a34a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;"
         >
-          Abrir panel de administración
+          ${label}
         </a>
       </div>
     `
@@ -239,5 +251,86 @@ export async function notifyAdminsRecurringOrder(
     heading: 'Cobro recurrente procesado',
     rows,
     alert,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Tickets de escalación del agente de WhatsApp
+// ---------------------------------------------------------------------------
+
+export type TicketNotification = {
+  id: string
+  contact: string
+  phone: string | null
+  priority: string
+  category: string
+  summary: string | null
+  lastMessage: string | null
+  platformUserEmail?: string | null
+  createdAt?: Date | null
+}
+
+// Reduce un Ticket completo a lo que necesita el correo. Vive aquí y no en las
+// server actions porque un archivo 'use server' solo puede exportar funciones
+// async.
+export function toTicketNotification(ticket: Ticket): TicketNotification {
+  return {
+    id: ticket.id,
+    contact: ticket.contactName || (ticket.phone ? formatPhone(ticket.phone) : 'Contacto desconocido'),
+    phone: ticket.phone,
+    priority: ticket.priority,
+    category: ticket.category,
+    summary: ticket.summary,
+    lastMessage: ticket.lastMessage,
+    platformUserEmail: ticket.platformUser?.email ?? null,
+    createdAt: ticket.createdAt,
+  }
+}
+
+function ticketRows(ticket: TicketNotification): Row[] {
+  return [
+    ['Contacto', ticket.contact],
+    ...(ticket.phone ? ([['Teléfono', formatPhone(ticket.phone)]] as Row[]) : []),
+    ['Prioridad', priorityLabel(ticket.priority)],
+    ['Categoría', categoryLabel(ticket.category)],
+    ...(ticket.summary ? ([['Motivo', ticket.summary]] as Row[]) : []),
+    ...(ticket.lastMessage ? ([['Último mensaje', `«${ticket.lastMessage}»`]] as Row[]) : []),
+    ...(ticket.platformUserEmail ? ([['Suscriptor', ticket.platformUserEmail]] as Row[]) : []),
+    ...(ticket.createdAt ? ([['Abierto el', formatDateTimeCO(ticket.createdAt)]] as Row[]) : []),
+  ]
+}
+
+// Avisa al equipo de una escalación nueva. Como los tickets los crea n8n directo
+// en Supabase, quien dispara esto es el cron de /api/cron/whatsapp-tickets.
+export async function notifyAdminsNewTicket(
+  ticket: TicketNotification
+): Promise<{ success: boolean; error?: string }> {
+  return sendAdminNotification({
+    subject: `⚠️ Escalación de WhatsApp — ${ticket.contact}`,
+    heading: 'El agente escaló una conversación',
+    rows: ticketRows(ticket),
+    alert:
+      'El agente de WhatsApp no pudo resolver por sí solo y abrió un ticket. Requiere que alguien lo atienda.',
+    ctaHref: '/admin/tickets',
+    ctaLabel: 'Ver tickets',
+  })
+}
+
+// Avisa a la persona a la que se le asignó un ticket. Va solo a ella, no a todos.
+export async function notifyTicketAssigned(
+  ticket: TicketNotification,
+  assignee: { email: string; name?: string | null },
+  assignedBy?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  return sendAdminNotification({
+    to: [assignee.email],
+    subject: `Te asignaron una escalación — ${ticket.contact}`,
+    heading: `Te asignaron un ticket${assignee.name ? `, ${assignee.name}` : ''}`,
+    rows: [
+      ...ticketRows(ticket),
+      ...(assignedBy ? ([['Asignado por', assignedBy]] as Row[]) : []),
+    ],
+    ctaHref: '/admin/tickets',
+    ctaLabel: 'Ver el ticket',
   })
 }

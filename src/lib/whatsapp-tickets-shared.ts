@@ -8,14 +8,19 @@ import type { PlatformUserMatch } from '@/lib/whatsapp-conversations-shared'
 // `status` en Supabase es texto libre (sin enum ni CHECK), y n8n crea los tickets
 // con 'open'. Estos son los valores que maneja el panel; cualquier otro que
 // aparezca se muestra tal cual en vez de descartarse.
-export const TICKET_STATUSES = ['open', 'in_progress', 'resolved'] as const
+//
+// `closed` es para tickets que se sacan de la bandeja SIN haberse atendido
+// (duplicados, falsas alarmas, escalaciones que ya no aplican). Se distingue de
+// `resolved` a propósito: mezclarlos haría que las escalaciones descartadas
+// cuenten como atendidas.
+export const TICKET_STATUSES = ['open', 'in_progress', 'resolved', 'closed'] as const
 export type TicketStatus = (typeof TICKET_STATUSES)[number]
 
 export const STATUS_LABELS: Record<string, string> = {
   open: 'Abierto',
   in_progress: 'En proceso',
   resolved: 'Resuelto',
-  closed: 'Cerrado',
+  closed: 'Cerrado sin resolver',
 }
 
 export const PRIORITY_LABELS: Record<string, string> = {
@@ -43,8 +48,15 @@ export function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category
 }
 
+// Sigue pendiente de atención (aparece en la bandeja y cuenta como escalación
+// sin resolver en el módulo de conversaciones).
 export function isOpenStatus(status: string): boolean {
   return status !== 'resolved' && status !== 'closed'
+}
+
+// Se atendió de verdad. `closed` NO cuenta: se cerró sin resolver.
+export function isResolvedStatus(status: string): boolean {
+  return status === 'resolved'
 }
 
 export type Ticket = {

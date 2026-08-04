@@ -5,18 +5,22 @@ import Link from 'next/link'
 import { TicketIcon, MessageSquare, Check, Loader2, ExternalLink } from 'lucide-react'
 import { updateTicketAction } from '@/app/admin/tickets/actions'
 import { formatPhone } from '@/lib/whatsapp-conversations-shared'
+import { formatDateTimeCO } from '@/lib/format-date-co'
 import {
   TICKET_STATUSES,
   statusLabel,
   priorityLabel,
   categoryLabel,
   isOpenStatus,
+  isResolvedStatus,
   type Ticket,
   type TicketAdmin,
 } from '@/lib/whatsapp-tickets-shared'
 
 function statusBadgeClass(status: string) {
-  if (status === 'resolved' || status === 'closed') return 'bg-green-100 text-green-700'
+  if (status === 'resolved') return 'bg-green-100 text-green-700'
+  // Cerrado sin resolver: neutro, no verde — no se atendió nada.
+  if (status === 'closed') return 'bg-zinc-200 text-zinc-600'
   if (status === 'in_progress') return 'bg-blue-100 text-blue-700'
   return 'bg-amber-100 text-amber-700'
 }
@@ -25,18 +29,6 @@ function priorityBadgeClass(priority: string) {
   if (priority === 'high') return 'bg-red-100 text-red-700'
   if (priority === 'low') return 'bg-zinc-100 text-zinc-600'
   return 'bg-orange-100 text-orange-700'
-}
-
-function formatDateTime(date: Date | null) {
-  if (!date) return '—'
-  return new Date(date).toLocaleString('es-CO', {
-    timeZone: 'America/Bogota',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function TicketCard({
@@ -81,7 +73,7 @@ function TicketCard({
         <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${statusBadgeClass(ticket.status)}`}>
           {statusLabel(ticket.status)}
         </span>
-        <span className="text-xs text-zinc-400 ml-auto">{formatDateTime(ticket.createdAt)}</span>
+        <span className="text-xs text-zinc-400 ml-auto">{formatDateTimeCO(ticket.createdAt)}</span>
       </div>
 
       <div className="mb-3">
@@ -157,10 +149,17 @@ function TicketCard({
         )}
         {error && <span className="text-xs text-red-600">{error}</span>}
 
-        {ticket.resolvedAt && (
+        {ticket.resolvedAt ? (
           <span className="text-xs text-zinc-400 ml-auto">
-            Resuelto el {formatDateTime(ticket.resolvedAt)}
+            Resuelto el {formatDateTimeCO(ticket.resolvedAt)}
           </span>
+        ) : (
+          ticket.status === 'closed' &&
+          ticket.updatedAt && (
+            <span className="text-xs text-zinc-400 ml-auto">
+              Cerrado el {formatDateTimeCO(ticket.updatedAt)}
+            </span>
+          )
         )}
       </div>
 
@@ -168,7 +167,11 @@ function TicketCard({
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Notas de resolución…"
+          placeholder={
+            ticket.status === 'closed'
+              ? 'Motivo del cierre…'
+              : 'Notas de resolución…'
+          }
           rows={2}
           className="w-full text-xs border border-zinc-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500"
         />
@@ -186,13 +189,22 @@ function TicketCard({
   )
 }
 
+type Tab = 'open' | 'resolved' | 'closed'
+
 export function TicketsManager({ tickets, admins }: { tickets: Ticket[]; admins: TicketAdmin[] }) {
   const [rows, setRows] = useState(tickets)
-  const [showResolved, setShowResolved] = useState(false)
+  const [tab, setTab] = useState<Tab>('open')
 
   const open = useMemo(() => rows.filter((t) => isOpenStatus(t.status)), [rows])
-  const resolved = useMemo(() => rows.filter((t) => !isOpenStatus(t.status)), [rows])
-  const visible = showResolved ? resolved : open
+  const resolved = useMemo(() => rows.filter((t) => isResolvedStatus(t.status)), [rows])
+  // Todo lo que no está pendiente ni resuelto: cerrado sin atender, más
+  // cualquier estado que venga del flujo de n8n y no manejemos aquí.
+  const closed = useMemo(
+    () => rows.filter((t) => !isOpenStatus(t.status) && !isResolvedStatus(t.status)),
+    [rows]
+  )
+
+  const visible = tab === 'open' ? open : tab === 'resolved' ? resolved : closed
 
   const onChange = (updated: Ticket) => {
     setRows((current) => current.map((t) => (t.id === updated.id ? updated : t)))
@@ -207,34 +219,37 @@ export function TicketsManager({ tickets, admins }: { tickets: Ticket[]; admins:
         </p>
       </div>
 
-      <div className="flex gap-1.5 mb-4">
-        <button
-          onClick={() => setShowResolved(false)}
-          className={`text-xs px-3 py-1.5 rounded-full border transition-colors cursor-pointer ${
-            !showResolved
-              ? 'bg-zinc-900 text-white border-zinc-900'
-              : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
-          }`}
-        >
-          Sin resolver <span className={!showResolved ? 'text-zinc-300' : 'text-zinc-400'}>{open.length}</span>
-        </button>
-        <button
-          onClick={() => setShowResolved(true)}
-          className={`text-xs px-3 py-1.5 rounded-full border transition-colors cursor-pointer ${
-            showResolved
-              ? 'bg-zinc-900 text-white border-zinc-900'
-              : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
-          }`}
-        >
-          Resueltos <span className={showResolved ? 'text-zinc-300' : 'text-zinc-400'}>{resolved.length}</span>
-        </button>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {(
+          [
+            ['open', 'Pendientes', open.length],
+            ['resolved', 'Resueltos', resolved.length],
+            ['closed', 'Cerrados sin resolver', closed.length],
+          ] as [Tab, string, number][]
+        ).map(([key, label, count]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors cursor-pointer ${
+              tab === key
+                ? 'bg-zinc-900 text-white border-zinc-900'
+                : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+            }`}
+          >
+            {label} <span className={tab === key ? 'text-zinc-300' : 'text-zinc-400'}>{count}</span>
+          </button>
+        ))}
       </div>
 
       {visible.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-zinc-400 border border-dashed border-zinc-200 rounded-lg">
           <TicketIcon className="w-8 h-8 mb-2" />
           <p className="text-sm">
-            {showResolved ? 'Todavía no hay tickets resueltos.' : 'No hay tickets sin resolver.'}
+            {tab === 'open'
+              ? 'No hay tickets pendientes.'
+              : tab === 'resolved'
+                ? 'Todavía no hay tickets resueltos.'
+                : 'No hay tickets cerrados sin resolver.'}
           </p>
         </div>
       ) : (

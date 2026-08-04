@@ -90,3 +90,4 @@ Todos los módulos tienen documentación en español en archivos `.md` en la ra�
 - `MERCADOPAGO_CONFIG.md` — integración de pagos
 - `AWS_S3_CLOUDFRONT_SETUP.md` — configuración de storage
 - `MODULO_ANALYTICS.md` — Google Tag Manager + GA4, catálogo de eventos del dataLayer
+- `MODULO_WHATSAPP.md` — conversaciones y tickets del agente de n8n (Supabase aparte), avisos por correo y su cron
