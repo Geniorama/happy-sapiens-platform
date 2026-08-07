@@ -4,8 +4,9 @@ import { useState, useTransition } from "react"
 import {
   Search, Users, Plus, X, ChevronDown, ChevronRight,
   Pencil, Shield, CreditCard, KeyRound, Trash2, Check, Loader2,
-  ToggleLeft, ToggleRight, Mail,
+  ToggleLeft, ToggleRight, Mail, Upload,
 } from "lucide-react"
+import { BulkCreateUsers } from "@/components/admin/bulk-create-users"
 import {
   createUser, updateUser, changeUserRole,
   setSubscription, resetPassword, deleteUser,
@@ -553,6 +554,7 @@ export function UsersManager({ users: initial }: { users: User[] }) {
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState("todos")
   const [showCreate, setShowCreate] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [bulkError, setBulkError] = useState<string | null>(null)
@@ -633,7 +635,12 @@ export function UsersManager({ users: initial }: { users: User[] }) {
           <option value="todos">Todos los roles</option>
           {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <button onClick={() => { setShowCreate(!showCreate); setExpandedId(null) }}
+        <button onClick={() => { setShowBulk(!showBulk); setShowCreate(false); setExpandedId(null) }}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer shrink-0">
+          <Upload className="w-4 h-4" />
+          Carga masiva
+        </button>
+        <button onClick={() => { setShowCreate(!showCreate); setShowBulk(false); setExpandedId(null) }}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors cursor-pointer shrink-0">
           {showCreate ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showCreate ? "Cancelar" : "Nuevo Usuario"}
@@ -644,6 +651,13 @@ export function UsersManager({ users: initial }: { users: User[] }) {
         <CreateUserForm
           onClose={() => setShowCreate(false)}
           onCreated={(user) => setUsers(prev => [user, ...prev])}
+        />
+      )}
+
+      {showBulk && (
+        <BulkCreateUsers
+          onClose={() => setShowBulk(false)}
+          onCreated={(list) => setUsers(prev => [...(list as User[]), ...prev])}
         />
       )}
 
