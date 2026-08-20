@@ -50,3 +50,26 @@ export function formatTimeCO(date: Date | string | null | undefined): string {
   const { hours, minutes } = toBogotaParts(new Date(date))
   return `${hours}:${minutes}`
 }
+
+const MONTHS_LONG = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+]
+
+// "5 de enero de 2000" — para fechas SIN hora (columnas @db.Date de Postgres:
+// fecha de nacimiento, fecha de cita).
+//
+// Una fecha de calendario no es un instante: el 5 de enero es el 5 de enero en
+// cualquier zona horaria. Prisma entrega estas columnas como medianoche UTC
+// ("2000-01-05T00:00:00Z") y sus componentes UTC SON los valores guardados en
+// Postgres, así que se leen en UTC y no se desplazan.
+//
+// Por eso aqui NO sirven formatDateCO (resta el offset de Colombia) ni
+// toLocaleDateString (el navegador aplica el offset local): en ambos casos la
+// medianoche UTC retrocede al dia anterior y el "5 de enero" guardado se muestra
+// como "4 de enero".
+export function formatCalendarDate(date: Date | string | null | undefined): string {
+  if (!isValid(date)) return '—'
+  const d = new Date(date)
+  return `${d.getUTCDate()} de ${MONTHS_LONG[d.getUTCMonth()]} de ${d.getUTCFullYear()}`
+}

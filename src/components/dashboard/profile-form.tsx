@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { User, Phone, Calendar, Users } from "lucide-react"
 import { updateProfile } from "@/app/dashboard/profile/actions"
+import { formatCalendarDate } from "@/lib/format-date-co"
 import { PointsBanner } from "@/components/dashboard/points-banner"
 import { PhoneInput } from "@/components/ui/phone-input"
 import { isValidPhoneNumber } from "react-phone-number-input"
@@ -201,13 +202,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             </label>
             <div className="px-4 py-3 bg-zinc-50 rounded-lg border border-zinc-200">
               <p className="text-zinc-900">
-                {user.birth_date
-                  ? new Date(user.birth_date).toLocaleDateString("es-ES", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })
-                  : "No especificada"}
+                {user.birth_date ? formatCalendarDate(user.birth_date) : "No especificada"}
               </p>
             </div>
           </div>
