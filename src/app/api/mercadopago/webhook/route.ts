@@ -3,7 +3,7 @@ import { paymentClient, invoiceClient, getSubscriptionPlan } from '@/lib/mercado
 import { notifyAdminsRecurringOrder, type RecurringOrderNotification } from '@/lib/admin-notifications'
 import { prisma } from '@/lib/db'
 import { awardPoints, POINT_ACTIONS } from '@/lib/points'
-import { dispatchShopifyOrder } from '@/lib/shopify-dispatch'
+import { dispatchShopifyOrder, findFirstDeliveryCovering } from '@/lib/shopify-dispatch'
 import { provisionFromPreApproval, logSubscription as log } from '@/lib/subscription-provisioning'
 import { recomputeUserSubscription, SUB_STATUS } from '@/lib/subscriptions'
 import { createHmac } from 'crypto'
@@ -179,6 +179,27 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
         paymentDate: paymentDateVal,
       },
     })
+
+    // Primer cobro de la suscripción: la primera entrega ya salió por el flujo de
+    // preaprobación (`preapproval:<id>`). Despacharlo de nuevo aquí crearía un
+    // segundo pedido del mismo pago (incidencia 2026-08: #1084 y #1085 con un
+    // minuto de diferencia). La transacción ya quedó registrada arriba.
+    const firstDelivery = await findFirstDeliveryCovering({
+      subscriptionRowId: subscription.id,
+      paymentDate: paymentDateVal,
+    })
+    if (firstDelivery) {
+      await log('webhook.payment.shopify_order_skipped', email, {
+        reason: 'covered_by_first_delivery',
+        paymentId: mpPaymentId,
+        preapprovalId,
+        existing: firstDelivery,
+      })
+      console.log(
+        `Despacho omitido para ${email}: el primer cobro ya salió en la primera entrega #${firstDelivery.shopifyOrderNumber}`
+      )
+      return
+    }
 
     // Si esta suscripción está pausada, no despachar este mes.
     if (subscription.status === SUB_STATUS.PAUSED) {

@@ -96,3 +96,71 @@ export async function dispatchShopifyOrder({
     throw err
   }
 }
+
+// Ventana para considerar que un cobro es el PRIMERO de su suscripción y, por
+// tanto, ya lo cubre la primera entrega. El primer cobro es justamente el que
+// dispara el aprovisionamiento, así que normalmente caen con minutos de
+// diferencia; el margen holgado absorbe reintentos de MercadoPago y
+// aprovisionamientos hechos a mano desde el admin días después. Sigue muy por
+// debajo del mes que separa dos cobros recurrentes, así que nunca puede
+// confundir una mensualidad legítima con el cobro inicial.
+export const FIRST_DELIVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+export type FirstDeliveryCoverage = {
+  idempotencyKey: string
+  status: string
+  shopifyOrderId: string | null
+  shopifyOrderNumber: number | null
+}
+
+// ¿La primera entrega de esta suscripción (`preapproval:<id>`) ya despachó este
+// cobro?
+//
+// El primer cobro de una suscripción se despacha por el flujo de preaprobación,
+// con clave `preapproval:<id>`. La rama de cobro recurrente lo despacharía otra
+// vez con clave `payment:<id>`: dos claves distintas para un solo pago, así que
+// dispatchShopifyOrder no puede detectarlo por sí solo y salen dos pedidos.
+//
+// La detección es por cercanía temporal con la primera entrega, NO por "esta
+// suscripción no tiene cobros previos": las suscripciones anteriores al fix de
+// julio quedaron con payment_transactions vacío, y esa regla les saltaría un
+// cobro recurrente legítimo.
+//
+// Devuelve null si no hay cobertura (incluidos los despachos legacy sin
+// subscriptionRowId): ante la duda no se salta el despacho.
+export async function findFirstDeliveryCovering({
+  subscriptionRowId,
+  paymentDate,
+}: {
+  subscriptionRowId: string | null | undefined
+  paymentDate: Date
+}): Promise<FirstDeliveryCoverage | null> {
+  if (!subscriptionRowId) return null
+
+  const firstDelivery = await prisma.shopifyOrderDispatch.findFirst({
+    where: {
+      subscriptionRowId,
+      status: 'created',
+      idempotencyKey: { startsWith: 'preapproval:' },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      idempotencyKey: true,
+      status: true,
+      shopifyOrderId: true,
+      shopifyOrderNumber: true,
+      createdAt: true,
+    },
+  })
+  if (!firstDelivery) return null
+
+  const gap = Math.abs(paymentDate.getTime() - firstDelivery.createdAt.getTime())
+  if (gap >= FIRST_DELIVERY_WINDOW_MS) return null
+
+  return {
+    idempotencyKey: firstDelivery.idempotencyKey,
+    status: firstDelivery.status,
+    shopifyOrderId: firstDelivery.shopifyOrderId,
+    shopifyOrderNumber: firstDelivery.shopifyOrderNumber,
+  }
+}

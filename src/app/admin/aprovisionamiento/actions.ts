@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { logAdminAction } from "@/lib/log"
 import { provisionFromPreApproval, provisionRecurringOrder } from "@/lib/subscription-provisioning"
 import { markShopifyOrderAsPaid } from "@/lib/shopify"
+import { FIRST_DELIVERY_WINDOW_MS } from "@/lib/shopify-dispatch"
 import { revalidatePath } from "next/cache"
 
 async function getAdminSession() {
@@ -238,7 +239,7 @@ export type RecurringCharge = {
   currency: string
   status: string
   paymentDate: string
-  orderState: "created" | "skipped" | "missing"
+  orderState: "created" | "skipped" | "missing" | "first_delivery"
   orderNumber: number | null
   hasVariant: boolean
   partialError: boolean
@@ -247,6 +248,11 @@ export type RecurringCharge = {
 // Estado de los cobros recurrentes: cruza payment_transactions (cobros mensuales
 // que registramos) con shopify_order_dispatches de clave `payment:<id>`. Un cobro
 // sin su dispatch `created` es una recurrencia cuyo pedido no se creó en Shopify.
+//
+// Excepción: el PRIMER cobro de una suscripción nunca tiene dispatch `payment:<id>`
+// — lo despacha el flujo de preaprobación con clave `preapproval:<id>`. Sin cruzarlo
+// también contra la primera entrega aparecería como "sin pedido" y recrearlo desde
+// aquí duplicaría el pedido inicial.
 export async function listRecurringCharges(): Promise<
   { ok: true; items: RecurringCharge[] } | { ok: false; error: string }
 > {
@@ -257,6 +263,7 @@ export async function listRecurringCharges(): Promise<
     where: { mercadopagoPaymentId: { not: null } },
     select: {
       mercadopagoPaymentId: true,
+      subscriptionRowId: true,
       amount: true,
       currency: true,
       status: true,
@@ -277,11 +284,44 @@ export async function listRecurringCharges(): Promise<
   })
   const dispatchByKey = new Map(dispatches.map((d) => [d.idempotencyKey, d]))
 
+  // Primeras entregas de las suscripciones involucradas, para reconocer el cobro
+  // inicial y no ofrecer "Crear pedido" sobre algo que ya se despachó.
+  const subRowIds = [...new Set(txs.map((t) => t.subscriptionRowId).filter((id): id is string => !!id))]
+  const firstDeliveries = subRowIds.length
+    ? await prisma.shopifyOrderDispatch.findMany({
+        where: {
+          subscriptionRowId: { in: subRowIds },
+          status: "created",
+          idempotencyKey: { startsWith: "preapproval:" },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { subscriptionRowId: true, createdAt: true, shopifyOrderNumber: true },
+      })
+    : []
+  const firstDeliveryBySub = new Map<string, (typeof firstDeliveries)[number]>()
+  for (const d of firstDeliveries) {
+    if (d.subscriptionRowId && !firstDeliveryBySub.has(d.subscriptionRowId)) {
+      firstDeliveryBySub.set(d.subscriptionRowId, d)
+    }
+  }
+
   const items: RecurringCharge[] = txs.map((t) => {
     const mpPaymentId = t.mercadopagoPaymentId as string
     const dispatch = dispatchByKey.get(`payment:${mpPaymentId}`)
+    const firstDelivery = t.subscriptionRowId ? firstDeliveryBySub.get(t.subscriptionRowId) : undefined
+    const paymentAt = (t.paymentDate ?? t.createdAt).getTime()
+    const coveredByFirstDelivery =
+      !dispatch &&
+      !!firstDelivery &&
+      Math.abs(paymentAt - firstDelivery.createdAt.getTime()) < FIRST_DELIVERY_WINDOW_MS
     const orderState: RecurringCharge["orderState"] =
-      dispatch?.status === "created" ? "created" : dispatch?.status === "skipped" ? "skipped" : "missing"
+      dispatch?.status === "created"
+        ? "created"
+        : dispatch?.status === "skipped"
+          ? "skipped"
+          : coveredByFirstDelivery
+            ? "first_delivery"
+            : "missing"
     return {
       mpPaymentId,
       email: t.user?.email ?? null,
@@ -290,7 +330,7 @@ export async function listRecurringCharges(): Promise<
       status: t.status,
       paymentDate: (t.paymentDate ?? t.createdAt).toISOString(),
       orderState,
-      orderNumber: dispatch?.shopifyOrderNumber ?? null,
+      orderNumber: dispatch?.shopifyOrderNumber ?? (coveredByFirstDelivery ? firstDelivery!.shopifyOrderNumber : null),
       hasVariant: !!t.user?.subscriptionVariantId,
       partialError: !!dispatch?.errorMessage,
     }
