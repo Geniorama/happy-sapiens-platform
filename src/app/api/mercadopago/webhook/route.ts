@@ -60,6 +60,22 @@ async function handleAuthorizedPayment(authorizedPaymentId: string) {
   await handlePayment(realPaymentId, preapprovalId)
 }
 
+// Datos del titular que necesita el flujo recurrente para armar el pedido.
+const SUB_USER_SELECT = {
+  id: true, name: true, firstName: true, lastName: true,
+  billingDocumentType: true, billingDocumentNumber: true,
+  billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
+  shippingFullName: true, shippingFirstName: true, shippingLastName: true,
+  shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
+} as const
+
+function findSubscriptionByPreapproval(preapprovalId: string) {
+  return prisma.subscription.findUnique({
+    where: { mpPreapprovalId: preapprovalId },
+    include: { user: { select: SUB_USER_SELECT } },
+  })
+}
+
 async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
   let payment: Awaited<ReturnType<typeof paymentClient.get>>
   try {
@@ -81,22 +97,9 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
     // Localizar la suscripción concreta de este cobro por su preapproval de MP.
     // Con múltiples suscripciones por usuario, el estado/precio/variant a tocar es
     // el de ESTA fila, no el del usuario entero.
-    const subscription =
+    let subscription =
       typeof preapprovalId === 'string' && preapprovalId
-        ? await prisma.subscription.findUnique({
-            where: { mpPreapprovalId: preapprovalId },
-            include: {
-              user: {
-                select: {
-                  id: true, name: true, firstName: true, lastName: true,
-                  billingDocumentType: true, billingDocumentNumber: true,
-                  billingPhone: true, billingAddress: true, billingCity: true, billingDepartment: true,
-                  shippingFullName: true, shippingFirstName: true, shippingLastName: true,
-                  shippingPhone: true, shippingAddress: true, shippingCity: true, shippingDepartment: true,
-                },
-              },
-            },
-          })
+        ? await findSubscriptionByPreapproval(preapprovalId)
         : null
 
     // Pago rechazado → degradar SOLO esta suscripción a past_due (no crear orden).
@@ -119,19 +122,26 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
 
     if (payment.status !== 'approved') return
 
-    // Primer cobro aprobado tras reintentos: la suscripción aún no está
-    // materializada (no se activó en el preapproval por no haber cobro confirmado).
-    // Este cobro la activa vía el flujo de preaprobación (crea user + email + primer
-    // despacho). No se ejecuta el despacho recurrente porque subscription era null.
+    // Cobro aprobado sin fila de suscripción. Son dos casos: un alta cuyo
+    // preapproval aún no se activó (falta crear user + primer despacho), o una
+    // suscripción anterior a la tabla `subscriptions` que nunca se materializó
+    // —las altas entre el backfill del 10-jul y el deploy del 17-jul quedaron así,
+    // y su cobro recurrente se perdía entero (incidencia 2026-08-14).
+    // En ambos se aprovisiona y se RELEE la fila para seguir con el flujo
+    // recurrente en vez de cortar aquí: ese flujo es idempotente —el cobro se
+    // registra con upsert por paymentId y `findFirstDeliveryCovering` evita
+    // duplicar el pedido cuando la primera entrega ya cubre este cobro.
     if (!subscription) {
       if (typeof preapprovalId === 'string' && preapprovalId) {
         try {
           await provisionFromPreApproval(preapprovalId, { chargeConfirmed: true })
         } catch (err) {
           console.error('Error aprovisionando suscripción desde pago:', err)
+          return
         }
+        subscription = await findSubscriptionByPreapproval(preapprovalId)
       }
-      return
+      if (!subscription) return
     }
 
     const user = subscription.user
