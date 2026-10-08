@@ -86,10 +86,20 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
   }
 
   // Pago de suscripción recurrente (cobro mensual automático). El preapproval llega
-  // en `subscription_id` del pago o, para el flujo authorized_payment, como hint.
-  // subscription_id existe en runtime pero no está en los tipos del SDK.
+  // como hint en el flujo authorized_payment; en el webhook `payment` hay que
+  // sacarlo del propio pago. MP NO lo manda en `subscription_id` (raíz): viene en
+  // `point_of_interaction.transaction_data.subscription_id` y en
+  // `metadata.preapproval_id`. Leer solo la raíz mandaba el cobro a la rama legacy,
+  // que lo descartaba en silencio (incidencia 2026-09: cobro de jshool@gmail.com).
   const paymentAny = payment as unknown as Record<string, unknown>
-  const preapprovalId = (paymentAny.subscription_id as string) || preapprovalIdHint || ''
+  const poiData = (paymentAny.point_of_interaction as Record<string, unknown> | undefined)
+    ?.transaction_data as Record<string, unknown> | undefined
+  const preapprovalId =
+    (paymentAny.subscription_id as string) ||
+    (poiData?.subscription_id as string) ||
+    (payment.metadata?.preapproval_id as string) ||
+    preapprovalIdHint ||
+    ''
   if (preapprovalId) {
     const email = payment.payer?.email
     if (!email) return
@@ -327,7 +337,11 @@ async function handlePayment(paymentId: string, preapprovalIdHint?: string) {
   const userPassword = payment.metadata?.user_password as string
   const referralCode = payment.metadata?.referral_code as string | null
 
-  if (!userEmail || !userName || !userPassword) return
+  if (!userEmail || !userName || !userPassword) {
+    // Pago aprobado que no es de suscripción ni del flujo legacy: que quede traza.
+    await log('webhook.payment.unmatched', 'system', { paymentId, operation_type: paymentAny.operation_type ?? null })
+    return
+  }
 
   let referrerId: string | null = null
   if (referralCode) {
